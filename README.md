@@ -5,7 +5,7 @@ Browse local sources, search memories and manage your server in a simple desktop
 interface. A free community beta under the [MIT license](LICENSE), with no
 official affiliation with Vectorize AI, Inc.
 
-[Download](https://github.com/paabL/hindsight-desktop/releases) · [Privacy](PRIVACY.md) · [Report a bug](https://github.com/paabL/hindsight-desktop/issues)
+[Download](https://github.com/paabL/hindsight-desktop/releases) · [User guide](docs/USER_GUIDE.md) · [Privacy](PRIVACY.md) · [Report a bug](https://github.com/paabL/hindsight-desktop/issues)
 
 ![Hindsight Desktop — example with fictional data](docs/images/hindsight-desktop.png)
 
@@ -22,6 +22,8 @@ download whose source you have verified. [Apple's instructions](https://support.
 Do not disable macOS security protections.
 
 ## Get started
+
+For the everyday workflow, see the short [user guide](docs/USER_GUIDE.md).
 
 1. Open the app. The interface uses English by default; French is available in
    **Settings → Interface language**.
