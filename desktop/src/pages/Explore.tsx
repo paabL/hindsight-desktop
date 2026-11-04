@@ -47,6 +47,19 @@ export function Dashboard({ data, navigate, run, busy }: PageProps) {
           'L’état de votre banque, en quelques repères utiles.',
           'Your memory bank at a glance.',
         )}
+        actions={
+          <div className="action-row">
+            <Button kind="primary" icon={Search} onClick={() => navigate('search')}>
+              {t('Rechercher et questionner', 'Search and ask')}
+            </Button>
+            <Button icon={Layers3} onClick={() => navigate('facts')}>
+              {t('Explorer la mémoire', 'Explore memory')}
+            </Button>
+            <Button icon={FileText} onClick={() => navigate('sources')}>
+              {t('Ajouter des sources', 'Add sources')}
+            </Button>
+          </div>
+        }
       />
       <ErrorNotice message={data.error} />
       <div className="metrics-grid">
@@ -179,6 +192,204 @@ export function Dashboard({ data, navigate, run, busy }: PageProps) {
       {data.partialErrors?.map((e: string) => (
         <ErrorNotice message={e} key={e} />
       ))}
+      {reader && (
+        <DocumentReader reader={reader} busy={busy} run={run} onClose={() => setReader(null)} />
+      )}
+    </>
+  );
+}
+
+export function Facts({ data, run, busy, refresh }: PageProps) {
+  useI18n();
+  const [query, setQuery] = useState('');
+  const [type, setType] = useState('all');
+  const [limit, setLimit] = useState(80);
+  const [reader, setReader] = useState<Row | null>(null);
+  const facts = (data.facts || []) as Row[];
+  const total = typeof data.total === 'number' ? data.total : facts.length;
+  const lowerText = useMemo(
+    () => facts.map((fact) => String(fact.text || '').toLocaleLowerCase()),
+    [facts],
+  );
+  const needle = query.toLocaleLowerCase();
+  const filtered = useMemo(
+    () =>
+      facts.filter(
+        (fact, index) =>
+          (type === 'all' || fact.type === type) && lowerText[index].includes(needle),
+      ),
+    [facts, type, lowerText, needle],
+  );
+  const typeLabels: Record<string, string> = {
+    world: t('Fait du monde', 'World fact'),
+    experience: t('Expérience', 'Experience'),
+    observation: t('Observation', 'Observation'),
+  };
+  const typeLabel = (value?: string) => typeLabels[value || ''] || value || t('Fait', 'Fact');
+
+  async function searchBank(value = query, selectedType = type) {
+    setLimit(80);
+    await refresh({ query: value, type: selectedType });
+  }
+  async function openSource(id: string) {
+    const result = await run('document.open', { id });
+    if (result && !result.error) setReader(result);
+  }
+
+  return (
+    <>
+      <PageHeader
+        eyebrow={t('Ce que la banque retient', 'What the bank remembers')}
+        title={t('Faits', 'Facts')}
+        description={t(
+          'Explorez les faits extraits et les observations consolidées, puis ouvrez les documents sources disponibles.',
+          'Explore extracted facts and consolidated observations, then open available source documents.',
+        )}
+      />
+      <ErrorNotice message={data.error} />
+      <section className="card facts-filters">
+        <form
+          className="list-toolbar"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void searchBank();
+          }}
+        >
+          <div className="input-with-icon">
+            <Search size={16} />
+            <input
+              aria-label={t('Filtrer les faits chargés', 'Filter loaded facts')}
+              placeholder={t('Rechercher dans la mémoire…', 'Search memory…')}
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setLimit(80);
+              }}
+            />
+          </div>
+          <select
+            aria-label={t('Type de fait', 'Fact type')}
+            value={type}
+            onChange={(event) => {
+              setType(event.target.value);
+              setLimit(80);
+            }}
+          >
+            <option value="all">{t('Tous les types', 'All types')}</option>
+            <option value="world">{t('Faits du monde', 'World facts')}</option>
+            <option value="experience">{t('Expériences', 'Experiences')}</option>
+            <option value="observation">{t('Observations', 'Observations')}</option>
+          </select>
+          <Button icon={Search} disabled={busy}>
+            {t('Rechercher dans la banque', 'Search the bank')}
+          </Button>
+          {(data.query || (data.type && data.type !== 'all')) && (
+            <Button
+              kind="ghost"
+              disabled={busy}
+              type="button"
+              onClick={() => {
+                setQuery('');
+                setType('all');
+                void searchBank('', 'all');
+              }}
+            >
+              {t('Effacer la recherche', 'Clear search')}
+            </Button>
+          )}
+        </form>
+        <p className="form-hint">
+          {t(
+            'Le texte et le type filtrent les éléments chargés. Lancez la recherche pour appliquer ces deux filtres à toute la banque.',
+            'Text and type filter the loaded items. Run a search to apply both filters across the bank.',
+          )}
+        </p>
+        <p role="status" className="page-footnote">
+          {t(
+            `${number(facts.length)} chargés sur ${number(total)} dans la banque`,
+            `${number(facts.length)} loaded out of ${number(total)} in the bank`,
+          )}
+          {' · '}
+          {number(filtered.length)} {t('correspondent aux filtres', 'match the filters')}
+          {data.query && (
+            <>
+              {' '}
+              · {t('Recherche serveur :', 'Bank search:')} {data.query}
+            </>
+          )}
+          {data.type && data.type !== 'all' && (
+            <>
+              {' '}
+              · {t('Type recherché :', 'Bank type:')} {typeLabel(data.type)}
+            </>
+          )}
+        </p>
+      </section>
+      {data.truncated && (
+        <div className="notice">
+          {t(
+            `Seuls les ${number(facts.length)} premiers éléments ont été chargés sur ${number(total)}. Affinez la recherche pour explorer une autre partie de la banque.`,
+            `Only the first ${number(facts.length)} items out of ${number(total)} were loaded. Refine the search to explore another part of the bank.`,
+          )}
+        </div>
+      )}
+      <div className="fact-list">
+        {filtered.slice(0, limit).map((fact) => (
+          <article className="card fact-card" key={fact.id}>
+            <div className="action-row">
+              <Badge tone={fact.type === 'observation' ? 'lavender' : 'sage'}>
+                {typeLabel(fact.type)}
+              </Badge>
+              {fact.state === 'invalidated' && <Badge>{t('Invalidé', 'Invalidated')}</Badge>}
+            </div>
+            <p>{fact.text}</p>
+            {(fact.occurredStart || fact.mentionedAt) && (
+              <p className="page-footnote">
+                {fact.occurredStart ? t('Événement :', 'Event:') : t('Mentionné :', 'Mentioned:')}{' '}
+                {date(fact.occurredStart || fact.mentionedAt)}
+              </p>
+            )}
+            {!!fact.sourceFactIDs?.length && (
+              <p className="page-footnote">
+                {t(
+                  `Issue de ${number(fact.sourceFactIDs.length)} faits sources.`,
+                  `Derived from ${number(fact.sourceFactIDs.length)} source facts.`,
+                )}
+              </p>
+            )}
+            {fact.documentID && (
+              <Button
+                kind="ghost"
+                icon={FileText}
+                disabled={busy}
+                onClick={() => void openSource(fact.documentID)}
+              >
+                {t('Ouvrir le document source', 'Open source document')}
+              </Button>
+            )}
+          </article>
+        ))}
+      </div>
+      {!filtered.length && (
+        <Empty
+          icon={Layers3}
+          title={t('Aucun fait à afficher', 'No facts to display')}
+          description={
+            facts.length || query || type !== 'all'
+              ? t(
+                  'Modifiez les filtres ou lancez une recherche dans la banque.',
+                  'Change the filters or run a search in the bank.',
+                )
+              : t(
+                  'Les faits extraits et les observations de cette banque apparaîtront ici.',
+                  'Extracted facts and observations from this bank will appear here.',
+                )
+          }
+        />
+      )}
+      {filtered.length > limit && (
+        <Button onClick={() => setLimit(limit + 80)}>{t('Afficher la suite', 'Load more')}</Button>
+      )}
       {reader && (
         <DocumentReader reader={reader} busy={busy} run={run} onClose={() => setReader(null)} />
       )}
@@ -345,7 +556,7 @@ export function Audit({ data, run, busy }: PageProps) {
     <>
       <PageHeader
         eyebrow={t('Une mémoire qui s’explique', 'Understand your memory')}
-        title={t('Activité & lectures', 'Activity & reads')}
+        title={t('Journaux', 'Logs')}
         description={t(
           'Comprenez qui consulte votre mémoire et quels traitements ont été effectués.',
           'See who reads your memory and which operations have run.',

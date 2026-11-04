@@ -3,6 +3,7 @@ export type Section =
   | 'sources'
   | 'models'
   | 'search'
+  | 'facts'
   | 'documents'
   | 'consumption'
   | 'dashboard'

@@ -224,15 +224,15 @@ export function Models({ data, run, busy }: PageProps) {
     <>
       <PageHeader
         eyebrow={t('Le savoir qui se construit', 'Knowledge that grows')}
-        title={t('Synthèses', 'Summaries')}
+        title={t('Connaissances', 'Knowledge')}
         description={t(
-          'Pages de connaissance générées à partir des faits de la banque.',
-          "Knowledge pages generated from the bank's facts.",
+          'Pages de connaissance et modèles mentaux construits à partir des faits de la banque sélectionnée.',
+          'Knowledge pages and mental models built from the selected bank’s facts.',
         )}
         actions={
           <Button kind="primary" icon={Plus} onClick={() => setCreate(true)}>
             {' '}
-            {t('Nouvelle synthèse', 'New knowledge page')}
+            {t('Nouveau modèle mental', 'New mental model')}
           </Button>
         }
       />
@@ -241,22 +241,26 @@ export function Models({ data, run, busy }: PageProps) {
           <BookOpen size={21} />
         </span>
         <div>
-          <strong>{t('Synthèses de la banque', 'Bank knowledge pages')}</strong>
+          <strong>
+            {t('Pages de connaissance et modèles mentaux', 'Knowledge pages and mental models')}
+          </strong>
           <p>
             {' '}
             {t(
-              'Chaque synthèse répond à une question et s’appuie sur la mémoire de votre banque.',
-              "Each page answers a question using your bank's memory.",
+              'Ces synthèses rassemblent ce que votre banque sait d’un sujet, à partir des faits mémorisés.',
+              'These summaries bring together what your bank knows about a topic, using its stored facts.',
             )}
           </p>
         </div>
-        <Badge>{number(data.models?.length || 0)} pages</Badge>
+        <Badge>
+          {number(data.models?.length || 0)} {t('éléments', 'items')}
+        </Badge>
       </div>
       <div className="standalone-search input-with-icon">
         <Search size={17} />
         <input
-          aria-label={t('Filtrer les synthèses', 'Filter knowledge pages')}
-          placeholder={t('Retrouver une synthèse…', 'Find a knowledge page…')}
+          aria-label={t('Filtrer les connaissances', 'Filter knowledge')}
+          placeholder={t('Retrouver une connaissance…', 'Find knowledge…')}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -305,7 +309,7 @@ export function Models({ data, run, busy }: PageProps) {
           icon={BookOpen}
           title={
             query
-              ? t('Aucune synthèse ne correspond', 'No matching knowledge pages')
+              ? t('Aucune connaissance ne correspond', 'No matching knowledge')
               : t('Faites émerger le savoir', 'Bring knowledge together')
           }
           description={t(
@@ -315,7 +319,7 @@ export function Models({ data, run, busy }: PageProps) {
           action={
             <Button icon={Plus} onClick={() => setCreate(true)}>
               {' '}
-              {t('Créer une synthèse', 'Create a knowledge page')}
+              {t('Créer un modèle mental', 'Create a mental model')}
             </Button>
           }
         />
@@ -326,7 +330,7 @@ export function Models({ data, run, busy }: PageProps) {
             <Badge>
               {model.is_knowledge_page
                 ? t('Page de connaissance', 'Knowledge page')
-                : t('Synthèse', 'Knowledge page')}
+                : t('Modèle mental', 'Mental model')}
             </Badge>
             <span>
               {' '}
@@ -343,7 +347,7 @@ export function Models({ data, run, busy }: PageProps) {
             </Button>
             <IconButton
               icon={Trash2}
-              label={t('Supprimer cette synthèse', 'Delete this knowledge page')}
+              label={t('Supprimer cette connaissance', 'Delete this knowledge item')}
               disabled={busy}
               onClick={() => void run('model.delete', { id: model.id })}
             />
@@ -367,7 +371,7 @@ export function Models({ data, run, busy }: PageProps) {
       )}
       {create && (
         <Modal
-          title={t('Une nouvelle synthèse', 'A new knowledge page')}
+          title={t('Un nouveau modèle mental', 'A new mental model')}
           subtitle={t(
             'Une question durable pour relier vos connaissances.',
             'A lasting question to connect your knowledge.',
@@ -383,7 +387,7 @@ export function Models({ data, run, busy }: PageProps) {
           >
             <label>
               {' '}
-              {t('Nom de la synthèse', 'Page name')}
+              {t('Nom du modèle mental', 'Mental model name')}
               <input
                 required
                 value={name}
@@ -423,7 +427,7 @@ export function Models({ data, run, busy }: PageProps) {
                 disabled={!name.trim() || !question.trim() || busy}
               >
                 {' '}
-                {t('Créer la synthèse', 'Create knowledge page')}
+                {t('Créer le modèle mental', 'Create mental model')}
               </Button>
             </div>
           </form>
@@ -796,14 +800,6 @@ export function Documents({ data, run, busy, refresh, navigate }: PageProps) {
           </Button>
         }
       />
-      <Tabs
-        value="documents"
-        onChange={() => navigate('coverage')}
-        items={[
-          { id: 'documents', label: t('En mémoire', 'In memory'), count: data.total },
-          { id: 'coverage', label: t('Couverture des dossiers', 'Folder coverage') },
-        ]}
-      />
       <section className="card">
         <CardHeader
           title={t('Bibliothèque', 'Library')}
@@ -933,7 +929,7 @@ export function Documents({ data, run, busy, refresh, navigate }: PageProps) {
   );
 }
 
-export function Coverage({ data, run, busy, navigate, notify }: PageProps) {
+export function Coverage({ data, run, busy, notify }: PageProps) {
   const { t } = useI18n();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const items: Row[] = data.items || [];
@@ -948,7 +944,7 @@ export function Coverage({ data, run, busy, navigate, notify }: PageProps) {
   return (
     <>
       <PageHeader
-        title={t('Couverture des dossiers', 'Folder coverage')}
+        title={t('Dossiers suivis', 'Tracked folders')}
         description={t(
           'Comparez vos fichiers à ce que Hindsight a réellement mémorisé.',
           'Compare your files with what Hindsight has actually stored.',
@@ -959,14 +955,6 @@ export function Coverage({ data, run, busy, navigate, notify }: PageProps) {
             {t('Suivre un dossier', 'Track a folder')}
           </Button>
         }
-      />
-      <Tabs
-        value="coverage"
-        onChange={() => navigate('documents')}
-        items={[
-          { id: 'documents', label: t('En mémoire', 'In memory') },
-          { id: 'coverage', label: t('Couverture des dossiers', 'Folder coverage') },
-        ]}
       />
       <ErrorNotice message={data.error} />
       <section className="card">

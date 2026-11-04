@@ -31,10 +31,10 @@ try {
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('http://127.0.0.1:1426/');
-  await expect(page.getByRole('heading', { name: 'Welcome to Hindsight Desktop' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
   expect(await page.evaluate(() => navigator.language)).toBe('fr-CA');
-  await page.getByRole('button', { name: 'Connect my server', exact: true }).click();
+  await page.keyboard.press('Meta+,');
   await expect(page.getByRole('heading', { name: 'Connect to Hindsight' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'View releases', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Rebuild this copy', exact: true })).toBeHidden();
@@ -47,10 +47,10 @@ try {
   await expect(page.getByText('Exemple · données fictives', { exact: true })).toBeVisible();
   await page
     .getByRole('navigation', { name: 'Navigation principale' })
-    .getByRole('button', { name: /^Mémoire/ })
+    .getByRole('button', { name: /^Sources/ })
     .click();
   await page.keyboard.press('Meta+5');
-  await expect(page.getByRole('heading', { name: 'Mémoire', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Sources', exact: true })).toBeVisible();
   await page.locator('.source-row').first().click();
   await expect(page.locator('.modal .markdown')).toBeVisible();
   const originalDocument = await page.locator('.modal .markdown').textContent();
@@ -60,7 +60,7 @@ try {
   await expect(page.getByRole('navigation', { name: 'Main navigation' })).toContainText('Memory');
   await page
     .getByRole('navigation', { name: 'Main navigation' })
-    .getByRole('button', { name: /^Memory/ })
+    .getByRole('button', { name: /^Sources/ })
     .click();
   await page.locator('.source-row').first().click();
   await expect(page.locator('.modal .markdown')).toBeVisible();
@@ -138,18 +138,47 @@ try {
         },
       },
     };
-    window.__TAURI_INTERNALS__ = { invoke: async () => structuredClone(snapshot) };
+    const overview = {
+      snapshot: {
+        stats: {
+          total_nodes: 2648,
+          total_documents: 12,
+          total_observations: 84,
+          total_links: 938,
+          pending_operations: 0,
+          failed_operations: 0,
+          last_consolidated_at: timestamp,
+          nodes_by_fact_type: { world: 1890, experience: 674, observation: 84 },
+        },
+        recentDocuments: records.slice(0, 5).map((record, index) => ({
+          id: record.id,
+          document_metadata: { title: record.title },
+          memory_unit_count: 6 + index * 3,
+          updated_at: timestamp,
+        })),
+      },
+    };
+    const sourceData = snapshot.data;
+    window.__TAURI_INTERNALS__ = {
+      invoke: async (_command, args) => {
+        const route = args?.request?.args?.section || location.hash.slice(1) || 'dashboard';
+        return structuredClone({
+          ...snapshot,
+          section: route,
+          data: route === 'dashboard' ? overview : route === 'sources' ? sourceData : {},
+        });
+      },
+    };
   });
   await preview.goto('http://127.0.0.1:1426/');
-  await expect(preview.getByRole('heading', { name: 'Memory', exact: true })).toBeVisible();
-  await expect(preview.locator('.source-row')).toHaveCount(12);
+  await expect(preview.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible();
+  await expect(preview.locator('.source-row')).toHaveCount(5);
   await preview.screenshot({
     path: fileURLToPath(new URL('../../docs/images/hindsight-desktop.png', import.meta.url)),
   });
 
   // The native titlebar is absent in Chromium; verify its reserved area under
   // the Tauri layout, including the sidebar scroll that caused the overlap.
-  await preview.getByRole('button', { name: 'Advanced', exact: true }).click();
   for (const width of [1440, 1200, 980]) {
     await preview.setViewportSize({ width, height: 680 });
     for (const theme of ['dark', 'light']) {
@@ -171,7 +200,10 @@ try {
         await scroll.evaluate((element, value) => {
           element.scrollTop = value;
         }, position);
-        if (position)
+        const range = await scroll.evaluate(
+          (element) => element.scrollHeight - element.clientHeight,
+        );
+        if (position > 0 && range > 0)
           expect(await scroll.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
         expect(await drag.boundingBox()).toEqual(reserved);
         expect(await sidebar.evaluate((element) => element.scrollTop)).toBe(0);

@@ -260,10 +260,10 @@ export default function Sources({
     return (
       <>
         <PageHeader
-          title={t('Bienvenue dans Hindsight Desktop', 'Welcome to Hindsight Desktop')}
+          title={t('Sources', 'Sources')}
           description={t(
-            'Consultez vos sources, retrouvez des faits et explorez les synthèses de votre mémoire.',
-            'Browse your sources, find facts, and explore your memory summaries.',
+            'Parcourez le catalogue de ce Mac et choisissez ce que vous souhaitez envoyer à la banque Hindsight sélectionnée.',
+            'Browse this Mac’s source catalog and choose what to send to the selected Hindsight bank.',
           )}
         />
         <ErrorNotice message={data.error} />
@@ -319,10 +319,10 @@ export default function Sources({
   return (
     <>
       <PageHeader
-        title={t('Mémoire', 'Memory')}
+        title={t('Sources', 'Sources')}
         description={t(
-          'Vos sources et leur version en mémoire, au même endroit.',
-          'Your sources and their stored versions, in one place.',
+          'Le catalogue de ce Mac et l’état de ses sources dans la banque Hindsight sélectionnée.',
+          'This Mac’s source catalog and the status of its sources in the selected Hindsight bank.',
         )}
         actions={
           <>

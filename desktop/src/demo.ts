@@ -167,14 +167,12 @@ function graphData() {
         weight: 3,
         mentionedAt: f.mentionedAt,
       })),
-      edges: facts
-        .slice(1)
-        .map((f, i) => ({
-          source: facts[Math.floor(i / 3)].id,
-          target: f.id,
-          kind: i % 3 === 0 ? 'temporal' : 'semantic',
-          weight: 0.55 + (i % 4) * 0.1,
-        })),
+      edges: facts.slice(1).map((f, i) => ({
+        source: facts[Math.floor(i / 3)].id,
+        target: f.id,
+        kind: i % 3 === 0 ? 'temporal' : 'semantic',
+        weight: 0.55 + (i % 4) * 0.1,
+      })),
     };
   return {
     mode: 'entities',
@@ -246,6 +244,7 @@ const data: Partial<Record<Section, Row>> = {
     items: [],
   },
   search: { hits: [], total: 0, serverIs120: true },
+  facts: { facts, total: facts.length, truncated: false, query: '' },
   timeline: { facts, total: facts.length },
   graph: graphData(),
   operations: { items: operations, total: operations.length },
@@ -408,6 +407,22 @@ const data: Partial<Record<Section, Row>> = {
 };
 
 let selectedBank = 'horizon';
+let factQuery = '';
+let factType = 'all';
+function factsData() {
+  const matching = facts.filter(
+    (fact) =>
+      (factType === 'all' || fact.type === factType) &&
+      fact.text.toLocaleLowerCase().includes(factQuery.toLocaleLowerCase()),
+  );
+  return {
+    facts: matching,
+    total: matching.length,
+    truncated: false,
+    query: factQuery,
+    type: factType,
+  };
+}
 export function exampleSnapshot(section: Section): Snapshot {
   return {
     app: {
@@ -422,7 +437,9 @@ export function exampleSnapshot(section: Section): Snapshot {
       paused: [],
     },
     section,
-    data: structuredClone(section === 'graph' ? graphData() : data[section] || {}),
+    data: structuredClone(
+      section === 'graph' ? graphData() : section === 'facts' ? factsData() : data[section] || {},
+    ),
     messages: [],
     confirmations: [],
   };
@@ -430,7 +447,15 @@ export function exampleSnapshot(section: Section): Snapshot {
 export async function exampleRequest(command: string, args: Row, section: Section): Promise<any> {
   await new Promise((resolve) => setTimeout(resolve, 130));
   if (command === 'section' && args.section === 'graph' && args.mode) graphMode = args.mode;
-  if (command === 'bank.select') selectedBank = args.id;
+  if (command === 'section' && args.section === 'facts') {
+    factQuery = typeof args.query === 'string' ? args.query : '';
+    factType = ['world', 'experience', 'observation'].includes(args.type) ? args.type : 'all';
+  }
+  if (command === 'bank.select') {
+    selectedBank = args.id;
+    factQuery = '';
+    factType = 'all';
+  }
   const snapshot = exampleSnapshot((command === 'section' ? args.section : section) as Section);
   if (command === 'model.open') return { model: models.find((m) => m.id === args.id) || models[0] };
   if (command === 'folder.read') return { text: sourceText, path: args.path };

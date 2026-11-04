@@ -8,8 +8,9 @@ Vectorize AI, Inc. See [License](../LICENSE), [Privacy](../PRIVACY.md) and
 The app uses **Tauri 2 + React / TypeScript** on macOS 15 or newer. React is the
 only frontend. The existing `HindsightCore` engine is reused through a private
 Swift bridge; the Rust shell provides the native connection and file dialogs.
-The interface offers English and French, light and dark themes. Memory is the
-home view; specialized tools are grouped under Advanced.
+The interface offers English and French, light and dark themes. Overview is the
+initial view. Memory, Knowledge, Search, Sources and Activity are visible in the
+sidebar; contextual tabs organize related views, and Settings stays at the bottom.
 
 ## Development
 
@@ -40,20 +41,22 @@ opens explicitly labeled fictional data. Native file and server access uses Taur
 
 | View | Contents |
 | --- | --- |
-| Memory | Local sources and Hindsight documents, version status, source selection, collection and upload previews |
-| Summaries | Read, create, refresh and delete summaries with confirmation |
+| Overview | Bank statistics, processing status and recent documents; initial view |
+| Memory → Facts | Stored bank facts and links to their original documents |
+| Knowledge | Read, create, refresh and delete knowledge pages and mental models with confirmation |
+| Sources → Catalog | Local sources, version status, selection, collection and upload previews |
 | Search | Recall, exact text and confirmed reflect; filters and links to original documents |
-| Document reader | Stored text, facts, history, attachments, tags, scopes, reprocessing and deletion |
-| Folder coverage | File coverage, selection and confirmed uploads; automatic folder sync is suspended |
-| Usage | Traces, costs, token rates, subscription quota checks, price lists, limits and processing controls |
-| Overview | Statistics, fact types, queues and recent documents |
-| Timeline | Event or mention dates, search and source documents, up to 20,000 facts |
-| Graph | Memory atlas, groups, bridges, two-hop neighborhoods, paths, filters and source facts |
-| Activity & reads | Read history, model traces and access logs |
-| Memory structure | Missions, extraction, consolidation, recall, disposition, advanced settings and previews |
-| Server & models | launchd service, model roles, official sign-in clients, changes, backups and logs |
-| Administration | Banks, directives, exports, cloning, merging, imports, sync previews and deletions |
-| Import Hermes | Session previews and confirmed imports |
+| Memory → Documents | Stored text, facts, history, attachments, tags, scopes, reprocessing and deletion |
+| Sources → Tracked folders | File coverage, selection and confirmed uploads; automatic folder sync is suspended |
+| Activity → Processing | Queued and completed work, errors and confirmed processing controls |
+| Activity → Usage | Traces, costs, token rates, subscription quota checks, price lists, limits and processing controls |
+| Memory → Timeline | Event or mention dates, search and source documents, up to 20,000 facts |
+| Memory → Graph | Memory atlas, groups, bridges, two-hop neighborhoods, paths, filters and source facts |
+| Activity → Logs | Read history, model traces and access logs |
+| Settings → Memory behavior | Missions, extraction, consolidation, recall, disposition, advanced settings and previews |
+| Settings → Server & models | launchd service, model roles, official sign-in clients, changes, backups and logs |
+| Settings → Memory bank | Banks, directives, exports, cloning, merging, imports, sync previews and deletions |
+| Sources → Imports | Session previews and confirmed imports |
 
 Bank configuration changes use the server API. Model settings are edited in the
 local launch script. Features depend on server capabilities and separately
@@ -132,8 +135,9 @@ if replacement fails. Downloaded source code runs with the user's permissions.
 ## Local sources and uploads
 
 At first launch, the memory folder is selected explicitly. Settings remain
-accessible without a connected Hindsight server. The home view reads the chosen
-folder's catalog. Optional collection is driven by a separately configured
+accessible without a connected Hindsight server. Overview summarizes the selected
+bank; Sources keeps local files separate from stored memory. Sources → Catalog
+reads the chosen folder's catalog. Optional collection is driven by a separately configured
 `collect.py` and `projects.toml`. Filters cover project, repository, source type
 and text, including original identifiers and provenance.
 

@@ -456,9 +456,11 @@ final class DesktopBridge {
         case "operations":
             s.operations.statusFilter = OperationsViewModel.StatusFilter(rawValue: p["status"] as? String ?? "all") ?? .all
             await s.operations.reload()
-        case "timeline":
+        case "facts", "timeline":
             s.timeline.text = p["query"] as? String ?? ""
-            s.timeline.maxFacts = 20_000
+            let type = p["type"] as? String ?? ""
+            s.timeline.filter.types = name == "facts" && ["world", "experience", "observation"].contains(type) ? Set([type]) : []
+            s.timeline.maxFacts = section == "facts" ? 1_000 : 20_000
             await s.timeline.reload()
         case "graph":
             graphMode = GraphViewModel.Mode(rawValue: p["mode"] as? String ?? graphMode.rawValue) ?? .entities
@@ -573,14 +575,16 @@ final class DesktopBridge {
                     "events": wire(Array(m.events.suffix(5000))), "queues": wire(m.queues), "budgets": wire(m.budgets),
                     "prices": wire(app.services.estimator.priceBook), "lastPoll": wire(m.lastPoll), "error": wire(m.pollError), "quotaProblems": m.quotaProblems,
                     "services": wire(m.services), "servicesError": wire(m.servicesError)]
-        case "timeline":
-            // Jusqu'à 20 000 faits : seulement les champs que la chronologie affiche ou filtre, soit 2,5 fois moins
-            // de données à sérialiser, transmettre et analyser que le fait complet (contexte, entités, étiquettes…).
+        case "facts", "timeline":
+            // Liste limitée à 1 000 faits, chronologie à 20 000 : projeter seulement les champs affichés,
+            // sans transmettre le fait complet (contexte, entités, étiquettes…).
             let facts = (s?.timeline.facts ?? []).map { fact -> [String: Any] in
-                ["id": fact.id, "text": fact.text, "type": wire(fact.type), "occurredStart": wire(fact.occurredStart),
-                 "mentionedAt": wire(fact.mentionedAt), "documentID": wire(fact.documentID)]
+                var item: [String: Any] = ["id": fact.id, "text": fact.text, "type": wire(fact.type), "occurredStart": wire(fact.occurredStart),
+                                          "mentionedAt": wire(fact.mentionedAt), "documentID": wire(fact.documentID)]
+                if section == "facts" { item["state"] = wire(fact.state); item["sourceFactIDs"] = fact.sourceFactIDs }
+                return item
             }
-            return ["facts": facts, "periods": wire(s?.timeline.bars ?? []), "total": s?.timeline.totalAvailable ?? 0, "truncated": s?.timeline.isTruncated ?? false, "error": wire(s?.timeline.state.errorMessage)]
+            return ["facts": facts, "periods": wire(s?.timeline.bars ?? []), "total": s?.timeline.totalAvailable ?? 0, "truncated": s?.timeline.isTruncated ?? false, "error": wire(s?.timeline.state.errorMessage), "query": s?.timeline.text ?? "", "type": s?.timeline.filter.types.first ?? "all"]
         case "graph":
             let graph = s?.graph
             let facts = graph?.mode == .facts ? graph?.selectedFact.map { [$0.hit] } ?? [] : graph?.nodeFacts.value ?? []
