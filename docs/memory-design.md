@@ -1,99 +1,114 @@
-# Piloter la structure de la mémoire Hindsight
+# Configuring Hindsight memory
 
-Recherche du 2026-10-19 : comment décider **ce qui est retenu**, **ce qui compte**, **l'objectif** d'une
-banque, et sous quelle forme (un « prompt »). Sources : code amont `hindsight-api-slim`
-(`hindsight_api/config.py`, `engine/audit.py`, `api/http.py`), contrat `docs/openapi.json` (API 1.0.0),
-documentation publique de Hindsight.
+Historical findings from 2026-10-19, with later notes for server 1.1 and 1.2. The
+original review used upstream `hindsight-api-slim` (`hindsight_api/config.py`,
+`engine/audit.py`, `api/http.py`), `docs/openapi.json` for API 1.0.0, and public
+Hindsight documentation. This is a design reference, not a guarantee that every
+server version exposes the same settings. Use the bundled API contract and
+capability checks when implementing a change.
 
-## En bref
+## Missions and extraction instructions
 
-Oui, avec des **missions** (texte libre injecté dans les prompts) et, si besoin, un vrai **prompt
-d'extraction**. Ces réglages sont **propres à chaque banque** : ce sont des surcharges posées par
-`PATCH /v1/default/banks/{id}/config`, qui l'emportent sur la configuration du serveur. Ils
-s'appliquent aux **prochaines** extractions et consolidations ; les faits existants ne changent pas
-tant qu'un document n'est pas retraité.
+Missions are free text included in model prompts. A custom extraction prompt offers
+finer control when needed. These settings are bank-specific overrides applied with
+`PATCH /v1/default/banks/{id}/config`; they take precedence over server defaults.
+They affect future extraction and consolidation. Existing facts do not change until
+the relevant documents are reprocessed.
 
-Dans l'app, tout est dans la section **Structure de la mémoire**, avec un **essai à blanc**
-(`POST …/memories/dry-run-extract`, qui accepte les réglages non enregistrés) pour voir les faits produits
-avant d'enregistrer.
+In the app, use Memory structure. Its dry run calls
+`POST …/memories/dry-run-extract` with unsaved settings so you can inspect extracted
+facts before saving the configuration. A dry run can still use model tokens and
+requires confirmation.
 
-## Les leviers, du plus important au plus fin
+## Configuration controls
 
-| Étape | Réglage (clé de configuration) | Effet |
+| Stage | Configuration key | Effect |
 |---|---|---|
-| Extraction | `retain_mission` | **Ce qui mérite d'être retenu.** Injecté dans le prompt d'extraction quel que soit le mode. C'est le levier principal de l'« importance ». |
-| Extraction | `retain_extraction_mode` | `concise` (défaut), `verbose`, `custom`, `verbatim`, `chunks` (pas d'extraction LLM). |
-| Extraction | `retain_custom_instructions` | Le **prompt** d'extraction, utilisé seulement en mode `custom` à la place des consignes par défaut (la structure de sortie reste imposée). |
-| Extraction | `entity_labels`, `entities_allow_free_form` | Vocabulaire contrôlé : dimensions (`value`, `multi-values`, `text`, `multi-text`, `map`) et valeurs permises. Avec `tag: true`, la valeur devient un tag `clé:valeur` : filtrable, et **périmètre de consolidation**. |
-| Extraction | `retain_chunk_size`, `retain_strategies`, `retain_default_strategy` | Taille des morceaux ; stratégies nommées (jeux de réglages choisis par requête). |
-| Consolidation | `enable_observations`, `enable_auto_consolidation` | Couche d'observations au-dessus des faits ; consolidation après chaque rétention. |
-| Consolidation | `observations_mission` | **Ce que les observations doivent capturer** (synthèse, tendances, ce qui remplace quoi). |
-| Consolidation | `max_observations_per_scope`, `consolidation_strategies` | Plafond par périmètre de tags ; stratégies par périmètre, chacune avec sa propre mission (ex. un périmètre partagé qui ne nomme personne). |
-| Réponses | `reflect_mission` | Objectif de la banque **quand elle répond** (reflect, modèles mentaux). Sans effet sur l'extraction. |
-| Réponses | `disposition_skepticism`, `_literalism`, `_empathy` (1–5) | Style de raisonnement de reflect. |
-| Réponses | Directives (`…/directives`) | Règles impératives de reflect (langue, format, interdits), avec priorité et tags. |
-| Réponses | Modèles mentaux (`…/mental-models`) | Synthèses épinglées, rafraîchies par le LLM ; consultées en premier par reflect. |
-| Lecture | `enable_text_search`, `enable_temporal_retrieval`, `enable_graph_retrieval`, `enable_reranking` | Branches du pipeline de recall. |
-| Données | `store_document_text` | Garder ou non le texte source (minimisation). |
-| Sécurité | `memory_defense` | Politique contre l'empoisonnement de la mémoire (format `DefensePolicy`). |
+| Extraction | `retain_mission` | Defines what is worth remembering. Included in every extraction mode; the main control for relevance. |
+| Extraction | `retain_extraction_mode` | `concise` (default), `verbose`, `custom`, `verbatim`, or `chunks` (no LLM extraction). |
+| Extraction | `retain_custom_instructions` | Replaces default extraction instructions in `custom` mode. The required output structure still applies. |
+| Extraction | `entity_labels`, `entities_allow_free_form` | Controlled vocabulary with `value`, `multi-values`, `text`, `multi-text`, and `map` dimensions and permitted values. With `tag: true`, a value becomes a `key:value` tag used for filtering and consolidation scope. |
+| Extraction | `retain_chunk_size`, `retain_strategies`, `retain_default_strategy` | Chunk size and named sets of settings selected per request. |
+| Consolidation | `enable_observations`, `enable_auto_consolidation` | Observation layer above facts and consolidation after retention. |
+| Consolidation | `observations_mission` | Defines what observations should capture: summaries, patterns, or superseded knowledge. |
+| Consolidation | `max_observations_per_scope`, `consolidation_strategies` | Limit per tag scope and scope-specific strategies, each with its own mission. |
+| Answers | `reflect_mission` | The bank's objective when answering through reflect or mental models. Does not control extraction. |
+| Answers | `disposition_skepticism`, `disposition_literalism`, `disposition_empathy` (1–5) | Reflect's reasoning style. |
+| Answers | Directives (`…/directives`) | Mandatory reflect rules for language, format, or exclusions, with priority and tags. |
+| Answers | Mental models (`…/mental-models`) | Pinned model-generated summaries, consulted first by reflect. |
+| Retrieval | `enable_text_search`, `enable_temporal_retrieval`, `enable_graph_retrieval`, `enable_reranking` | Recall pipeline branches. |
+| Data | `store_document_text` | Whether to keep source text. |
+| Security | `memory_defense` | Memory-poisoning policy in `DefensePolicy` format. |
 
-Hindsight n'a **pas de score d'importance réglable** par fait. L'importance s'exprime à l'extraction
-(mission de rétention, prompt du mode `custom`, vocabulaire), puis à la consolidation (mission des
-observations, stratégies par périmètre). Les **tags** comptent doublement : ils filtrent les recherches et
-séparent les périmètres de consolidation.
+The reviewed API did not expose an adjustable importance score per fact. Relevance
+was controlled at extraction through the mission, `custom` instructions, and
+vocabulary, then at consolidation through observation missions and scope-specific
+strategies. Tags both filter retrieval and separate consolidation scopes.
 
-Les modèles LLM utilisés par chaque rôle restent des réglages du serveur (variables d'environnement) : voir
-la section « Modèles & serveur ».
+Models used by each role remain server settings, configured through environment
+variables. See Server & models in the app.
 
-## Lectures : qui a lu quoi et quand
+## Reads and audit history
 
-- Le journal d'audit (`audit_log_enabled`, activable par banque) enregistre chaque accès : action,
-  transport, requête et **réponse complète** (pour un recall : les faits renvoyés). L'app en tire l'onglet
-  **Lectures** et les « faits les plus lus ».
-- Pour les appels **HTTP**, le serveur n'enregistre **aucune identité** (ni client, ni user-agent, ni IP :
-  voir `_make_audited_http` dans `api/http.py`). Seuls les clients **MCP** sont nommés. L'app regroupe donc
-  les appels HTTP par **signature de requête** (réglages propres à chaque intégration) et permet de nommer
-  chaque signature. Pour une identification native, connectez les agents en MCP.
-- Le serveur 1.0.0 ne tient pas d'historique par fait. À partir de 1.1.0, `GET …/documents/{id}/history`
-  liste ce qui a changé un document et ses faits (envois, retraitements, tags et portée, faits modifiés,
-  consolidations) : le lecteur de document l'affiche sous son en-tête.
-- Pour un reflect, les traces LLM du moment montrent les faits réellement fournis au modèle. Elles sont
-  conservées 1 jour par défaut (`HINDSIGHT_API_LLM_TRACE_RETENTION_DAYS`).
+- Per-bank audit logging (`audit_log_enabled`) records actions, transport, requests,
+  and complete responses, including facts returned by recall. The app uses this
+  for Activity & reads and frequently read facts. Audit logs can contain sensitive
+  source content.
+- In the reviewed HTTP implementation, `_make_audited_http` in `api/http.py` did not
+  record a client identity, user agent, or IP. MCP clients were named. The app
+  therefore groups HTTP calls by request signature and lets users name those
+  signatures. Use MCP when native agent identification is needed.
+- Server 1.0.0 had no per-fact history. From 1.1.0,
+  `GET …/documents/{id}/history` records changes to a document and its facts:
+  uploads, reprocessing, tags, scope, fact changes, and consolidation. The document
+  reader displays this history when available.
+- LLM traces for a reflect call show the facts actually supplied to the model.
+  The reviewed default retention was one day
+  (`HINDSIGHT_API_LLM_TRACE_RETENTION_DAYS`).
 
-## Coûts
+## Cost estimates and usage
 
-Les traces LLM donnent, par appel, le modèle et les jetons (entrée, sortie, cache, réflexion). L'app :
+LLM traces provide model names and token counts for input, output, cache, and
+reasoning. The app values them using an editable price book, treats subscription
+providers (`claude-code`, `openai-codex`) as quota rather than usage fees, and shows
+an equivalent usage-based value. A local ledger retains counters without prompt
+or response text beyond the server's trace retention period.
 
-- les valorise avec une grille tarifaire modifiable (Réglages › Tarifs) ;
-- traite les fournisseurs par **abonnement** (`claude-code`, `openai-codex`) comme du quota plutôt que de
-  l'argent, avec leur équivalent à l'usage ;
-- garde un historique local des compteurs (sans contenu), au-delà de la rétention du serveur ;
-- estime le coût **avant** une action (import, retraitement, consolidation, reflect, modèle mental). Elle
-  part de la moyenne par appel observée sur la banque, sinon de valeurs par défaut, et donne une
-  fourchette.
+Before imports, reprocessing, consolidation, reflect, or mental-model generation,
+the app estimates a range using the bank's observed average per call, falling back
+to defaults when needed. These are estimates, not invoices.
 
-Ne sont pas comptés : embeddings, reranker et modèle de décision. Le serveur 1.0.0 ne les trace pas ; à partir
-de 1.1.0, `/llm-requests` les enregistre aussi (reconnaissables à leur `scope` : `embedding_*`, `rerank`,
-`decision_*`), et l'app ne lit que les appels LLM (`call_type=llm`), hors quotas, plafonds et estimations.
-Avec un serveur 1.2.0, l'écran Consommation montre à part ces appels sur 7 jours, toutes banques, par modèle
-(`/llm-requests/stats` avec `call_type` et `split_by=model`, relu au plus toutes les 5 min). Seuls les modèles
-Hindsight Inference (`hs-decide-1-flash`, `hs-rerank-1`, `hs-embed-1`) sont chiffrés, à l'entrée seulement ;
-chargés en local, ils portent le nom de leur dépôt (`hindsight-ai/hs-rerank-1`) et restent gratuits.
+Embedding, reranking, and decision-model calls are excluded from generative LLM
+quotas, limits, and estimates. Server 1.0.0 did not trace them. From 1.1.0,
+`/llm-requests` also includes these services, with `scope` values such as `embedding_*`,
+`rerank`, and `decision_*`; the app filters generative reads with `call_type=llm`.
 
-## Fusion et renommage
+With server 1.2.0, Usage separately shows seven days of specialized-service calls
+across banks, grouped by model through `/llm-requests/stats` with `call_type` and
+`split_by=model`. These statistics refresh at most every five minutes. Recognized
+Hindsight Inference names (`hs-decide-1-flash`, `hs-rerank-1`, `hs-embed-1`) receive an
+indicative hosted input-token value. Repository-style local names such as
+`hindsight-ai/hs-rerank-1` are not priced. A public model name alone does not prove
+a hosted charge: statistics do not identify the provider or endpoint, and a local
+decision model may use the same name.
 
-- **Fusion** : `POST …/transfer/export` sur la source, puis `POST …/transfer/import?mode=merge` sur la
-  cible, sans LLM : faits ré-embarqués, entités re-résolues. Les conflits d'identifiants de documents sont
-  réglés par `document_conflict` (`skip`, `replace` ou `new-id`).
-- **Renommer** : nom affiché (`PATCH /banks/{id}`), alias affiché (`POST …/aliases` avec `primary: true`),
-  ou nouvel identifiant (clone, suppression de l'ancien, ancien id conservé comme alias).
+## Merging and renaming banks
 
-## Sources externes
+- Merge: `POST …/transfer/export` on the source, then
+  `POST …/transfer/import?mode=merge` on the target, without LLM generation.
+  Facts are re-embedded and entities resolved again. `document_conflict` handles
+  document-ID collisions with `skip`, `replace`, or `new-id`.
+- Rename: change the display name with `PATCH /banks/{id}`, set a displayed alias
+  through `POST …/aliases` with `primary: true`, or obtain a new ID through cloning
+  and deletion while preserving the old ID as an alias. Destructive steps require
+  their own confirmations.
 
-- Documentation Hindsight : [Best Practices](https://hindsight.vectorize.io/best-practices),
-  [Hindsight Cloud](https://docs.hindsight.vectorize.io),
-  [API](https://hindsight.vectorize.io/api-reference),
-  [0.8.5 (audit par banque)](https://hindsight.vectorize.io/blog/2026/07/21/version-0-8-5)
-- Article : [Hindsight is 20/20](https://arxiv.org/html/2512.12818v1)
-- Hermes Agent (format des sessions) : [Session Storage](https://hermes-agent.nousresearch.com/docs/developer-guide/session-storage)
-  et `hermes_state*.py` du dépôt `NousResearch/hermes-agent`
+## External references
+
+- Hindsight: [Best Practices](https://hindsight.vectorize.io/best-practices),
+  [Cloud documentation](https://docs.hindsight.vectorize.io),
+  [API reference](https://hindsight.vectorize.io/api-reference), and
+  [version 0.8.5: per-bank auditing](https://hindsight.vectorize.io/blog/2026/07/21/version-0-8-5).
+- Research paper: [Hindsight is 20/20](https://arxiv.org/html/2512.12818v1).
+- Hermes Agent: [Session Storage](https://hermes-agent.nousresearch.com/docs/developer-guide/session-storage)
+  and `hermes_state*.py` in `NousResearch/hermes-agent`.

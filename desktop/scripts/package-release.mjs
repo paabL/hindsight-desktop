@@ -13,21 +13,21 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-// Construction locale uniquement : ne publie rien, n'installe rien, ne contacte aucun serveur mémoire.
+// Local build only: does not publish, install, or contact a memory server.
 const desktop = fileURLToPath(new URL('../', import.meta.url));
 const root = path.dirname(desktop);
 if (process.platform !== 'darwin' || process.arch !== 'arm64')
-  throw new Error('Cette distribution est destinée à macOS sur Apple Silicon.');
+  throw new Error('This package targets macOS on Apple Silicon.');
 const commit = process.env.HINDSIGHT_RELEASE_COMMIT;
 if (!commit || !/^[a-f0-9]{40}$/.test(commit))
-  throw new Error('Indiquez HINDSIGHT_RELEASE_COMMIT avec le commit du dépôt public vérifié.');
+  throw new Error('Set HINDSIGHT_RELEASE_COMMIT to the verified public source commit.');
 const { version } = JSON.parse(readFileSync(path.join(desktop, 'package.json'), 'utf8'));
 const output = path.join(desktop, 'release');
 mkdirSync(output, { recursive: true });
 const run = (command, args, env = process.env) => {
   const result = spawnSync(command, args, { cwd: desktop, stdio: 'inherit', env });
   if (result.error) throw result.error;
-  if (result.status !== 0) throw new Error(`${path.basename(command)} : échec (${result.status}).`);
+  if (result.status !== 0) throw new Error(`${path.basename(command)}: failed (${result.status}).`);
 };
 run(
   process.execPath,
@@ -44,10 +44,10 @@ run(
 const app = path.join(desktop, 'src-tauri/target/release/bundle/macos/Hindsight Desktop.app');
 const bridge = path.join(app, 'Contents/Resources/native/HindsightBridge');
 for (const file of [path.join(app, 'Contents/MacOS/hindsight-desktop'), bridge]) {
-  if (!existsSync(file)) throw new Error(`Fichier absent : ${file}`);
+  if (!existsSync(file)) throw new Error(`Missing file: ${file}`);
   run('/usr/bin/lipo', ['-verify_arch', 'arm64', file]);
 }
-// Signature locale gratuite, sans prétendre être une signature Developer ID ou une notarisation.
+// Free ad-hoc signing; this is neither Developer ID signing nor notarization.
 run('/usr/bin/codesign', ['--force', '--sign', '-', '--timestamp=none', bridge]);
 run('/usr/bin/codesign', ['--force', '--sign', '-', '--timestamp=none', app]);
 run('/usr/bin/codesign', ['--verify', '--deep', '--strict', '--verbose=2', app]);
@@ -61,27 +61,23 @@ try {
     cpSync(path.join(root, file), path.join(stage, file));
   writeFileSync(
     path.join(stage, 'START-HERE.txt'),
-    `Hindsight Desktop ${version} — community beta / bêta communautaire
+    `Hindsight Desktop ${version} — community beta
 
-macOS 15+ · Apple Silicon (M1 ou plus récent / M1 or newer)
-Français / English : Réglages → Langue / Settings → Language.
+macOS 15+ · Apple Silicon (M1 or newer)
 
-FR : Glissez Hindsight Desktop dans Applications. Cette bêta gratuite n'est pas
-notariée par Apple. Si macOS bloque l'ouverture après votre première tentative,
-consultez Réglages Système → Confidentialité et sécurité → Ouvrir quand même.
-Vérifiez la provenance du téléchargement ; ne désactivez pas les protections.
-L'app nécessite votre propre serveur Hindsight pour les fonctions de mémoire.
-Le mode exemple fonctionne sans serveur. Le serveur et les modèles sont séparés.
-
-EN: Drag Hindsight Desktop into Applications. This free beta is not notarized by
+Drag Hindsight Desktop into Applications. This free beta is not notarized by
 Apple. If macOS blocks it after your first attempt to open it, see System Settings
-→ Privacy & Security → Open Anyway. Verify the download's origin; keep macOS
-security protections enabled. Memory features require your own Hindsight server.
-Example mode works without a server. Server and models are separate.
+→ Privacy & Security → Open Anyway. Verify the download's origin and keep macOS
+security protections enabled.
+
+Memory features require your own Hindsight server. The server and models are
+separate. Example mode works without a server.
+
+The app starts in English. French is available in Settings → Language.
 
 https://github.com/paabL/hindsight-desktop
 Independent client, not affiliated with Vectorize AI, Inc.
-Client indépendant, sans affiliation officielle avec Vectorize AI, Inc.
+
 `,
   );
   run('/usr/bin/hdiutil', [
@@ -116,7 +112,7 @@ Client indépendant, sans affiliation officielle avec Vectorize AI, Inc.
       2,
     ) + '\n',
   );
-  console.log(`Distribution prête : ${dmg}`);
+  console.log(`Release package ready: ${dmg}`);
 } finally {
   rmSync(stage, { recursive: true, force: true });
 }

@@ -37,6 +37,7 @@ try {
         : undefined),
   });
   const page = await browser.newPage({ viewport: { width: 1440, height: 960 }, locale: 'fr-CA' });
+  await page.addInitScript(() => localStorage.setItem('hindsight-desktop-language', 'fr'));
   await page.goto('http://127.0.0.1:1423/?demo=1');
   page.on('pageerror', (error) => errors.push(error.message));
   await page.evaluate(() => localStorage.setItem('hindsight-desktop-theme-v2', 'dark'));

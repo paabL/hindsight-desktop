@@ -30,6 +30,7 @@ try {
         : undefined),
   });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, locale: 'fr-CA' });
+  await page.addInitScript(() => localStorage.setItem('hindsight-desktop-language', 'fr'));
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('http://127.0.0.1:1425/?demo=1');

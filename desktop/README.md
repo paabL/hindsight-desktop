@@ -1,154 +1,177 @@
-# Hindsight Desktop — guide technique
+# Hindsight Desktop — technical guide
 
-Pour installer la bêta et les premiers pas, lire le [guide public](../README.md).
-Client communautaire indépendant, sans affiliation officielle avec Vectorize AI, Inc.
-Voir [licence](../LICENSE), [confidentialité](../PRIVACY.md) et [crédits](../THIRD_PARTY_NOTICES.md).
+For installation and first steps, see the [public guide](../README.md).
+This is an independent community client, with no official affiliation with
+Vectorize AI, Inc. See [License](../LICENSE), [Privacy](../PRIVACY.md) and
+[Third-party notices](../THIRD_PARTY_NOTICES.md).
 
-Application **Tauri 2 + React / TypeScript** sur macOS 15 et plus, unique frontend du dépôt. L’interface est entièrement en React. Le moteur existant `HindsightCore` reste réutilisé en interne via un pont Swift ; la coque Tauri contient uniquement la liaison Rust nécessaire à l’application.
+The app uses **Tauri 2 + React / TypeScript** on macOS 15 or newer. React is the
+only frontend. The existing `HindsightCore` engine is reused through a private
+Swift bridge; the Rust shell provides the native connection and file dialogs.
+The interface offers English and French, light and dark themes. Memory is the
+home view; specialized tools are grouped under Advanced.
 
-La direction visuelle privilégie le graphite, le blanc et les gris froids : navigation stable, tableaux lisibles, hiérarchie sobre, thèmes sombre et clair. La vue Mémoire est l’accueil ; les outils spécialisés restent dans Avancé.
+## Development
 
-## Démarrer
-
-Node.js 22.18 ou plus récent, Xcode 16+, Swift 6 et Rust stable sont nécessaires pour le développement. Les commandes se lancent dans ce dossier.
+Requires Node.js 22.18+, Xcode 16+ / Swift 6 and stable Rust. Run these commands
+from `desktop/`:
 
 ```sh
 npm ci
 npm run dev
 ```
 
-Le script utilise le Rust système, ou le Rust isolé dans `.toolchain/` s’il existe. Aucun changement du PATH utilisateur n’est nécessaire. Le moteur Swift est compilé automatiquement.
-
-## Construire l’application
+The launcher uses system Rust, or the isolated `.toolchain/` installation when
+present, without changing the user's PATH. It builds the Swift bridge automatically.
 
 ```sh
 npm run tauri:build -- --bundles app
 ```
 
-Le bundle se trouve dans `src-tauri/target/release/bundle/macos/Hindsight Desktop.app`. Il est construit localement et n’est pas installé automatiquement. Son identifiant est `local.hindsight.desktop.tauri`. Le pont natif est inclus : Node et Rust ne sont pas nécessaires pour ouvrir l’application construite.
+The app is written to `src-tauri/target/release/bundle/macos/Hindsight Desktop.app`
+and is not installed automatically. Its bundle identifier is
+`local.hindsight.desktop.tauri`. The built app includes the native bridge and
+does not need Node.js or Rust to run.
 
-`npm run web:dev` ouvre seulement l’interface dans un navigateur. Le bouton « Explorer un exemple » donne accès à des données fictives, explicitement signalées. L’accès aux fichiers et au serveur passe par Tauri.
+`npm run web:dev` serves only the frontend in a browser. **Explore the example**
+opens explicitly labeled fictional data. Native file and server access uses Tauri.
 
-## Fonctions
+## Features
 
-| Vue             | Contenu                                                                                                                                                   |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Mémoire         | Sources locales et documents Hindsight, état réel des versions, inclusion par source ou filtre, collecte et aperçu avant envoi                                    |
-| Synthèses       | Liste, contenu, création, actualisation et suppression confirmées                                                                                         |
-| Recherche       | Recall, texte, reflect confirmé ; filtres par tags, type, entité, tâche et période ; faits et document d’origine                                          |
-| Lecteur de documents (Avancé) | Texte mémorisé, faits, historique, pièces jointes, tags, portées, retraitement et suppression |
-| Dossiers suivis | Couverture, sélection et envoi, retrait, suivi des fichiers texte et activation confirmée de la synchronisation automatique                               |
-| Consommation    | Traces, rythme, coûts, quotas Codex et Claude, graphiques, tarifs, plafonds quotidiens et d’abonnement, pause / gel / vidage                              |
-| Vue d’ensemble  | Statistiques, types de faits, file et derniers documents                                                                                                  |
-| Chronologie     | Événement ou mention, recherche, documents d’origine, jusqu’à 20 000 faits                                                                                |
-| Graphe          | Atlas par groupes, passerelles, voisinage à deux degrés, parcours entre idées, filtres de liens et faits avec leurs sources                                                                         |
-| Activité        | Lectures, traces des modèles et journal d’accès                                                                                                           |
-| Structure       | Missions, extraction, consolidation, recherche, disposition, réglages avancés, essai à blanc                                                              |
-| Serveur         | Service launchd, modèles par rôle, comptes OAuth via clients officiels, diff, sauvegardes et journal                                                      |
-| Administration  | Banques, directives, export, clone, fusion, import ZIP / JSON, aperçu de synchronisation du projet, surcharges et suppressions                            |
-| Hermes          | Sessions, aperçu, préparation et import confirmé                                                                                                          |
+| View | Contents |
+| --- | --- |
+| Memory | Local sources and Hindsight documents, version status, source selection, collection and upload previews |
+| Summaries | Read, create, refresh and delete summaries with confirmation |
+| Search | Recall, exact text and confirmed reflect; filters and links to original documents |
+| Document reader | Stored text, facts, history, attachments, tags, scopes, reprocessing and deletion |
+| Folder coverage | File coverage, selection and confirmed uploads; automatic folder sync is suspended |
+| Usage | Traces, costs, token rates, subscription quota checks, price lists, limits and processing controls |
+| Overview | Statistics, fact types, queues and recent documents |
+| Timeline | Event or mention dates, search and source documents, up to 20,000 facts |
+| Graph | Memory atlas, groups, bridges, two-hop neighborhoods, paths, filters and source facts |
+| Activity & reads | Read history, model traces and access logs |
+| Memory structure | Missions, extraction, consolidation, recall, disposition, advanced settings and previews |
+| Server & models | launchd service, model roles, official sign-in clients, changes, backups and logs |
+| Administration | Banks, directives, exports, cloning, merging, imports, sync previews and deletions |
+| Import Hermes | Session previews and confirmed imports |
 
-Les changements de configuration de banque utilisent l’API du serveur. Les modèles sont toujours réglés dans le script de lancement, via le moteur existant. Les fonctions dépendent des capacités annoncées par le serveur et des outils locaux configurés.
+Bank configuration changes use the server API. Model settings are edited in the
+local launch script. Features depend on server capabilities and separately
+configured local tools. Quota checks require an explicit confirmed request in
+Usage; the app does not enable automatic credential access for these checks.
 
-Dans **Réglages → Mises à jour de l’application**, recherchez les commits disponibles puis confirmez leur installation. La copie locale est reconstruite dans `.update-target/`, puis le bundle est remplacé avec restauration de l’ancienne version si l’échange échoue. Un bouton propose ensuite la relance. Une copie modifiée bloque les commits distants ; **Recompiler cette copie** permet de reconstruire les modifications locales après confirmation. Node.js, Xcode et Rust restent nécessaires. La barre des menus n’est pas intégrée ; les quotas restent dans Consommation.
-
-## Architecture et protections
+## Architecture and protections
 
 ```text
-src/                       Interface React / TypeScript
-src-tauri/                 Coque Tauri, commande privée et dialogues de fichiers
-../Sources/HindsightBridge Projections de données et commandes vers HindsightCore
-../Sources/HindsightCore   Logique existante, API, fichiers, coûts et confirmations
+src/                       React / TypeScript frontend
+src-tauri/                 Tauri shell, private command and file dialogs
+../Sources/HindsightBridge Data projections and commands to HindsightCore
+../Sources/HindsightCore   API, files, costs, services and confirmations
 ```
 
-Le pont est un processus enfant privé, connecté par son entrée et sa sortie standard. Il n’ouvre aucun serveur HTTP supplémentaire. Les commandes sont déclarées explicitement ; le renderer n’a ni accès Node, ni accès direct au système de fichiers, ni commande shell générique. Tauri utilise une politique de contenu restrictive. Les documents sont rendus sans HTML brut.
+The bridge is a private child process using standard input and output. It opens
+no additional HTTP server. Commands are explicitly declared; the renderer has
+no Node.js access, direct filesystem access or generic shell command. Tauri uses
+a restrictive content security policy. Documents are rendered without raw HTML.
 
-Les écritures, suppressions, générations et opérations de service passent par les `ConfirmationRequest` du moteur. Le pont exige l’identifiant de confirmation actif et le texte requis, puis consomme la confirmation avant l’action. Changer de banque ou de serveur invalide les demandes en attente. Les pièces jointes sont limitées aux pièces du document ouvert ; les lectures locales sont confinées au dossier `collection/`, après résolution des liens symboliques.
+Server writes, deletions, generations and service operations use the engine's
+`ConfirmationRequest` mechanism. The bridge requires the active confirmation ID
+and any required text, then consumes that confirmation before acting. Changing
+banks or servers invalidates pending confirmations. Attachments are limited to
+the open document; local source reads are confined to the selected `collection/`
+folder after resolving symbolic links.
 
-Les préférences utilisent `local.hindsight.desktop`, dans un domaine dédié. L’historique des compteurs de consommation est conservé dans `~/Library/Application Support/HindsightDesktop/usage-ledger.json`, sans prompts ni réponses. La collecte ne lance pas l’extraction ou la consolidation. Aucun traitement mémoire ne démarre automatiquement au premier lancement. Le suivi des compteurs peut fonctionner en arrière-plan tant que l’application est ouverte ; une action automatique sur plafond exige l’autorisation explicite dans les réglages de plafonds.
+Preferences use `local.hindsight.desktop`. The local usage ledger is stored at
+`~/Library/Application Support/HindsightDesktop/usage-ledger.json`; it contains
+counts and metadata, without prompt or response text. Collection does not run
+extraction or consolidation. No memory processing starts automatically on first
+launch. Usage monitoring can run while the app is open; an automatic action on
+reaching a limit requires explicit authorization in the limit settings.
 
-## Vérifier
+## Checks
 
 ```sh
 npm run bridge:build
 npm test
 npm run build
-npx playwright install chromium  # une fois, pour le test de rendu en navigateur
+npx playwright install chromium  # Once, for browser rendering checks
 npm run test:ui
 ```
 
-Les tests du pont utilisent un faux serveur HTTP et des réglages en mémoire. Ils vérifient notamment l’absence d’écriture lors des lectures, la confirmation de reflect, les confirmations non rejouables, le texte de suppression, le confinement des fichiers et la validation des URL. Le test de rendu en navigateur fonctionne sans accès natif. Ses captures utilisent uniquement l’exemple fictif et sont enregistrées dans `screenshots/`.
+Bridge tests use a fake HTTP server and in-memory settings. They cover read-only
+requests, reflect confirmation, non-replayable confirmations, deletion text,
+file confinement and URL validation. Browser checks use fictional data without
+native access and write screenshots to `screenshots/`. They do not run real
+collection, consolidation, deletion, sign-in or service control.
 
-La suite Swift d’origine reste disponible avec `swift test` à la racine du dépôt. Les opérations réelles de collecte, consolidation, suppression, connexion OAuth et contrôle du service ne sont pas exécutées par le test visuel.
+Run the Swift suite with `swift test` from the repository root.
 
-## Mettre à jour depuis l’app
+## Updates
 
-Ouvrir **Réglages → Mises à jour de l’application**, rechercher les commits disponibles puis confirmer leur installation. L’app reconstruit la version dans `desktop/.update-target/`, valide le bundle, remplace l’app ouverte et propose de la relancer. Node.js, Xcode et Rust sont nécessaires. La copie locale doit être propre pour appliquer des commits distants ; **Recompiler cette copie** permet de reconstruire les modifications locales après confirmation. Le remplacement restaure l’ancien bundle si l’échange échoue.
+Downloaded builds are updated by installing a new version from
+[Releases](https://github.com/paabL/hindsight-desktop/releases).
+**Settings → Application updates → Build from source (advanced)** is for a local
+source checkout with Node.js, Xcode and Rust installed. It builds in
+`desktop/.update-target/`, validates the bundle, replaces the open app and offers
+to relaunch. A modified checkout blocks remote commits; **Rebuild this copy**
+can rebuild local changes after confirmation. The previous bundle is restored
+if replacement fails. Downloaded source code runs with the user's permissions.
 
-Au premier lancement, le dossier mémoire est choisi explicitement, sans parcourir automatiquement les projets configurés. Les réglages restent accessibles sans connexion au serveur Hindsight.
+## Local sources and uploads
 
-## Dossier commun et archives à part
+At first launch, the memory folder is selected explicitly. Settings remain
+accessible without a connected Hindsight server. The home view reads the chosen
+folder's catalog. Optional collection is driven by a separately configured
+`collect.py` and `projects.toml`. Filters cover project, repository, source type
+and text, including original identifiers and provenance.
 
-La vue d’accueil lit le catalogue du dossier sélectionné ; la collecte reste pilotée par
-`collect.py` et sa configuration `projects.toml`, réutilisables pour plusieurs projets et dépôts.
-**Ouvrir le dossier** donne accès aux archives et à cette configuration. Le catalogue se filtre
-par projet, dépôt, famille et texte ; la recherche inclut les identifiants d’origine et la provenance.
+`internal_review` and `empty_export` records stay under **Separate archives**,
+collapsed by default. They are excluded from the project's active source count.
+A conversation title does not determine its classification. Filters also apply
+to these readable archives.
 
-Les enregistrements classés `internal_review` (validations internes de Codex) et `empty_export`
-(exports vides ou interrompus) sont conservés sous **Archives à part**, replié par défaut.
-Ils ne comptent pas dans les sources du projet à traiter. Le titre d’une conversation ne décide
-jamais de ce classement. Les filtres s’appliquent aussi aux archives, dont le texte reste consultable.
+**Refresh folder** runs collection and updates the local catalog without
+contacting Hindsight. Collection requires confirmation. Codex and Claude Code
+exports use Agent Dump; Hermes imports are separate. Source dates take priority
+over archive dates, and collection-date fallbacks are labeled.
 
-**Collecter les sources** attend une confirmation et ne déclenche aucun traitement Hindsight.
-Codex et Claude Code passent par Agent Dump, sans import natif maison. Les traitements de mémoire
-et l’import manuel Hermes restent accessibles séparément. La date d’une source est prioritaire
-sur sa date d’archivage ; une date de collecte utilisée en secours est explicitement étiquetée.
+**Add documents** accepts `.md`, `.tex` and `.pdf` files and a configured project.
+After confirmation, `collect.py --project ID --import-file PATH` copies originals
+into `documents/<project>/` and indexes those documents only. Other collectors
+are not run. Markdown is readable in the app, TeX is shown as text and PDFs open
+in the local viewer. This does not extract PDFs, compile TeX or run Hindsight.
+Reimporting the same path updates its copy; identical names from different paths
+remain separate. Original files are kept.
 
-### Documents ajoutés à la main
+**Prepare upload** compares already collected files with the selected bank and
+previews additions and changes to enabled sources. It works from the catalog
+even if the collector is unavailable and does not collect again. Nothing is
+uploaded until **Send** is confirmed. Full text is sent with stable identifiers;
+changed sources replace their stored versions. PDFs need a TeX or Markdown
+source for this text-upload workflow.
 
-Depuis **Dossier mémoire → Ajouter des documents**, choisir des fichiers `.md`, `.tex` ou `.pdf`, puis leur projet. Après confirmation, `collect.py --project ID --import-file PATH` copie les originaux dans `documents/<projet>/` et indexe uniquement ces documents dans le catalogue commun. Les collecteurs de conversations/GitHub/W&B/benchmarks ne sont pas lancés. Les projets proviennent de la configuration publiée dans le catalogue ; les anciens catalogues restent compatibles.
+**Remove from memory** requires confirmation, backs up the document, removes
+it from Hindsight and excludes future uploads while keeping the local file.
+Disabling a source alone keeps its stored version. Documents added by other
+tools can be linked explicitly to a catalog source.
 
-Le Markdown est lisible dans l’app ; le TeX est affiché tel quel ; un PDF s’ouvre avec le lecteur local. Aucun traitement Hindsight, extraction PDF ou compilation TeX. Réimporter le même chemin met à jour la copie ; des noms identiques provenant de chemins différents restent distincts. Les sources originales ne sont pas modifiées.
+Selection and tracking state are stored per bank in
+`collection/.memory-workspace.json`; resumable batches are kept in
+`collection/.memory-operations/`. Interrupted uploads require an explicit resume
+using the original batch identifier. This workflow does not start consolidation
+or summary refreshes; automatic server processing follows the bank's settings.
 
-### Validation des envois de mémoire
-
-La synchronisation du projet présente les identifiants de chaque document avant confirmation. Le script `sync.py` lie cette confirmation au contenu et aux métadonnées précis du plan : si le plan ou le script change, il faut préparer un nouvel aperçu. Des identifiants peuvent être saisis un par ligne dans la section avancée pour limiter le lot. La file doit être lisible et vide à la préparation et à la confirmation.
-
-Les envois de fichiers suivis et les imports Hermes affichent aussi la liste avant validation. La synchronisation automatique des dossiers est suspendue, y compris pour les anciens réglages déjà activés. Ces protections ne contrôlent pas les autres clients ou appels directs à l’API Hindsight.
-
-## Actualiser la mémoire
-
-La vue **Mémoire** rassemble le dossier commun et la banque sélectionnée. Les filtres par projet,
-dépôt, type et état permettent de voir les sources **à ajouter**, **à jour**, **modifiées**,
-**en cours**, **exclues**, ou les documents dont la **source reste à relier**. La comparaison
-porte sur le texte envoyé, et ne déduit pas la fraîcheur d’une date de collecte.
-
-1. Ajouter des fichiers depuis l’app ou utiliser les collecteurs déjà configurés.
-2. Inclure ou exclure les sources, individuellement ou pour le filtre courant.
-3. **Actualiser le dossier** lance uniquement la collecte et met à jour le catalogue local.
-   Cette action fonctionne sans banque sélectionnée et sans contacter Hindsight.
-4. **Préparer l’envoi à Hindsight** compare les fichiers déjà collectés à la banque et présente
-   tous les ajouts et changements des sources activées. La collecte n’est pas relancée ; le
-   catalogue peut être utilisé même si le collecteur est absent. Aucun envoi avant **Envoyer**.
-5. Après validation, le texte complet est envoyé avec des identifiants stables ; les sources
-   modifiées remplacent leur version précédente. Les PDF nécessitent une source TeX ou Markdown.
-
-**Retirer** demande confirmation, sauvegarde le document, le retire de Hindsight et exclut ses
-futurs envois en conservant le fichier local. Désactiver seulement une source conserve sa version
-mémorisée. Les décisions de l’audit et les cas différés restent protégés. Les documents ajoutés
-par d’autres outils sont visibles et peuvent être reliés explicitement à une source locale.
-
-La collecte est déclenchée sur demande, sans nouvelle automatisation. Un envoi interrompu n’est
-pas répété aveuglément : la reprise explicite réutilise le lot et son identifiant d’origine.
-L’app ne lance pas de consolidation ni de rafraîchissement des synthèses dans ce parcours ;
-les éventuels traitements automatiques restent ceux des réglages du serveur.
-Les choix et le suivi des envois sont conservés par banque dans
-`collection/.memory-workspace.json`, les lots de reprise dans `collection/.memory-operations/`.
-
-La mention **À jour** compare l’identifiant du document et l’empreinte du texte complet.
-Ces sources sont automatiquement écartées des prochains aperçus. Un lot marqué terminé par
-le serveur peut avoir seulement créé ses tâches d’extraction : les sources non encore enregistrées
-restent **En cours** tant que les tâches de mémorisation continuent. Un vrai échec reste visible
-et exige une nouvelle validation. Le suivi des anciennes fausses erreurs est récupéré depuis
-les lots sauvegardés, sans nouvel envoi, avec sauvegarde préalable dans
+**Up to date** compares the document identifier and full-text fingerprint, not
+collection timestamps. Matching sources are skipped in later previews. A batch
+marked complete by the server may have only queued extraction tasks; sources
+remain **In progress** until memorization finishes. Failures remain visible and
+require renewed approval. Legacy tracking recovery uses saved batches without
+uploading again and first backs up the state to
 `collection/.memory-workspace.pre-tracking-v2.json`.
+
+Advanced project sync previews list document IDs. `sync.py` binds approval to
+the plan's exact content and metadata; changing the plan or script requires a
+new preview. Its queue must be readable and empty at preparation and confirmation.
+Folder uploads and Hermes imports also display their selection before approval.
+Automatic folder sync is suspended, including previously enabled settings.
+These protections do not govern other clients or direct Hindsight API calls.
