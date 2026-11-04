@@ -1,0 +1,8 @@
+{"bank_id":"codex-diag-01a12843","total_nodes":8012,"total_links":503211,"total_documents":79,
+ "nodes_by_fact_type":{"world":4100,"experience":3500,"observation":412},
+ "links_by_link_type":{"semantic":300000,"temporal":150000,"entity":53211},
+ "links_by_fact_type":{"world":200000,"experience":250000,"observation":53211},
+ "links_breakdown":{"world":{"semantic":100000}},
+ "pending_operations":2,"failed_operations":3,"operations_by_status":{"completed":120,"failed":3,"pending":2},
+ "last_consolidated_at":"2026-10-15T10:00:00Z","last_memory_write_at":"2026-10-17T20:31:12Z",
+ "pending_consolidation":250,"failed_consolidation":7,"total_observations":412}

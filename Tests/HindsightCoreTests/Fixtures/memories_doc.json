@@ -1,0 +1,4 @@
+{"items":[
+ {"id":"m1","text":"Les tests de l'étape 1 ont échoué trois fois.","context":"task 002","date":"2026-10-17T19:30:00Z","fact_type":"experience","document_id":"codex-abc-task-002","mentioned_at":"2026-10-17T19:30:00Z","occurred_start":"2026-10-17T19:00:00Z","occurred_end":null,"entities":"Codex, tests","chunk_id":"codex-abc-task-002_0","proof_count":1,"tags":["source:codex"],"metadata":{},"state":"active","source_memory_ids":[]},
+ {"id":"m2","text":"La capture montre l'erreur de compilation.","context":"","date":"2026-10-17T19:31:00Z","fact_type":"world","document_id":"codex-abc-task-002","chunk_id":"codex-abc-task-002_1","proof_count":1,"tags":[],"metadata":{},"state":"active","source_memory_ids":[]}
+],"total":30,"limit":200,"offset":0}

@@ -1,0 +1,20 @@
+Hindsight Desktop
+Copyright (c) 2026 Pablo Boitel
+https://github.com/paabL/hindsight-desktop
+
+An independent community desktop client for Hindsight.
+This project is not affiliated with, endorsed by, or maintained by Vectorize AI, Inc.
+Hindsight is a trademark of its respective owner. This project's MIT license
+does not grant rights to third-party names, trademarks, or logos.
+
+Hindsight HTTP API specification and generated API models:
+https://github.com/vectorize-io/hindsight
+Copyright (c) 2025 Vectorize AI, Inc.
+The upstream repository is distributed under MIT; its HTTP API specification
+also declares Apache-2.0. Both license texts are included in the third-party
+notices. The API models are generated from docs/openapi.json and adapted for
+this Swift client. The Hindsight server and model weights are not bundled.
+
+Third-party components retain their original licenses and notices, separately
+from the license for Hindsight Desktop. See THIRD_PARTY_NOTICES.md and the
+complete notices at desktop/public/THIRD_PARTY_NOTICES.txt.

@@ -1,0 +1,6 @@
+{"results":[
+ {"id":"m1","text":"Les tests de l'étape 1 ont échoué trois fois.","type":"experience","entities":["Codex","tests"],"context":"task 002","occurred_start":"2026-10-17T19:00:00Z","occurred_end":null,"mentioned_at":"2026-10-17T19:30:00Z","document_id":"codex-abc-task-002","metadata":null,"chunk_id":"codex-abc-task-002_0","tags":["source:codex","task:002"],"source_fact_ids":null,"scores":{"final":0.91,"reranker":0.8,"semantic":0.7,"keyword":0.2}},
+ {"id":"obs1","text":"Codex corrige les tests après lecture des captures.","type":"observation","entities":["Codex"],"mentioned_at":"2026-10-17T20:00:00Z","document_id":null,"chunk_id":null,"tags":["source:codex"],"source_fact_ids":["m1","m2"],"scores":{"final":0.85}},
+ {"id":"m3","text":"Le build Xcode a réussi.","type":"world","entities":["Xcode"],"mentioned_at":"2026-09-01T10:00:00Z","document_id":"codex-abc-task-010","chunk_id":"codex-abc-task-010_3","tags":["task:010"],"scores":{"final":0.5}}
+],
+ "chunks":{"codex-abc-task-002_0":{"id":"codex-abc-task-002_0","text":"Étape 1 : lancer les tests.\nRésultat : 3 échecs.","chunk_index":0,"truncated":false}}}

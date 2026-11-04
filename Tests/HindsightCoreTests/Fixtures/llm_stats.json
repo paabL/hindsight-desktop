@@ -1,0 +1,1 @@
+{"bank_id": "b", "period": "7d", "trunc": "day", "start": "2026-10-11T00:00:00Z", "buckets": [{"time": "2026-10-17T00:00:00Z", "statuses": {"success": 2, "error": 1}, "total": 3, "tokens": {"input": 4000, "output": 250, "cached": 100, "thoughts": null, "total": 4250}}]}

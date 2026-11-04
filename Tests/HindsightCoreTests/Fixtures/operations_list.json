@@ -1,0 +1,8 @@
+{"bank_id":"codex-diag-01a12843","total":5,"limit":100,"offset":0,"operations":[
+ {"id":"op-proc","task_type":"consolidation","operation_type":"consolidation","items_count":0,"created_at":"2026-10-18T09:00:00Z","updated_at":"2026-10-18T09:00:30Z","status":"processing","error_message":null,"progress":{"stage":"llm_batches","at":"2026-10-18T09:00:30Z","processed":30,"total":120}},
+ {"id":"op-pend","task_type":"retain","operation_type":"retain","items_count":4,"document_id":"codex-abc-task-011","created_at":"2026-10-18T08:59:00Z","status":"pending","error_message":null},
+ {"id":"op-f1","task_type":"retain","operation_type":"retain","items_count":1,"document_id":"codex-abc-task-003","created_at":"2026-10-17T10:00:00Z","status":"failed","error_message":"Gemini VLM error 429 quota exceeded for request 1234567\nstack...","retry_count":3},
+ {"id":"op-f2","task_type":"retain","operation_type":"retain","items_count":1,"document_id":"codex-abc-task-004","created_at":"2026-10-17T10:05:00Z","status":"failed","error_message":"Gemini VLM error 429 quota exceeded for request 7654321","retry_count":3},
+ {"id":"op-f3","task_type":"refresh_mental_model","mental_model_id":"mm1","items_count":0,"created_at":"2026-10-16T10:05:00Z","status":"failed","error_message":null},
+ {"id":"op-ok","task_type":"retain","items_count":1,"created_at":"2026-10-16T10:05:00Z","status":"completed","error_message":null}
+]}
