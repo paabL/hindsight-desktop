@@ -240,12 +240,23 @@ tbody tr:hover {
   flex-direction: column;
   padding: 0 16px;
   z-index: 10;
-  overflow-y: auto;
+  overflow: hidden;
 }
 .window-drag {
   height: 42px;
   flex-shrink: 0;
   -webkit-app-region: drag;
+}
+/* Native window controls stay above the independently scrolling sidebar. */
+.sidebar-scroll {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  margin-inline: -16px;
+  padding-inline: 16px;
+  overflow-y: auto;
 }
 .brand {
   display: flex;
@@ -520,7 +531,8 @@ tbody tr:hover {
   position: absolute;
   top: calc(100% + 7px);
   left: 0;
-  min-width: 230px;
+  min-width: 0;
+  width: 100%;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -544,6 +556,8 @@ tbody tr:hover {
 }
 .bank-menu button > span {
   flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .bank-menu button:hover {
   background: var(--hover);

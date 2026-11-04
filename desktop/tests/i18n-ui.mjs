@@ -146,9 +146,57 @@ try {
   await preview.screenshot({
     path: fileURLToPath(new URL('../../docs/images/hindsight-desktop.png', import.meta.url)),
   });
+
+  // The native titlebar is absent in Chromium; verify its reserved area under
+  // the Tauri layout, including the sidebar scroll that caused the overlap.
+  await preview.getByRole('button', { name: 'Advanced', exact: true }).click();
+  for (const width of [1440, 1200, 980]) {
+    await preview.setViewportSize({ width, height: 680 });
+    for (const theme of ['dark', 'light']) {
+      if ((await preview.locator('html').getAttribute('data-theme')) !== theme)
+        await preview.getByRole('button', { name: `Use ${theme} theme`, exact: true }).click();
+      const sidebar = preview.locator('.sidebar');
+      const scroll = preview.locator('.sidebar-scroll');
+      const drag = preview.locator('.window-drag');
+      const reserved = await drag.boundingBox();
+      expect(reserved.y).toBe(0);
+      expect(reserved.height).toBeGreaterThanOrEqual(32);
+      expect((await scroll.boundingBox()).y).toBeGreaterThanOrEqual(reserved.y + reserved.height);
+      await scroll.evaluate((element) => {
+        element.scrollTop = 0;
+      });
+      const activeRow = await preview.locator('.nav-item.active').boundingBox();
+      const activeUnderTitlebar = activeRow.y + activeRow.height / 2 - 18;
+      for (const position of [100, activeUnderTitlebar, 10000, 0]) {
+        await scroll.evaluate((element, value) => {
+          element.scrollTop = value;
+        }, position);
+        if (position)
+          expect(await scroll.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+        expect(await drag.boundingBox()).toEqual(reserved);
+        expect(await sidebar.evaluate((element) => element.scrollTop)).toBe(0);
+        for (const x of [18, 50])
+          expect(
+            await preview.evaluate(
+              (left) => !!document.elementFromPoint(left, 18)?.closest('button, a, input, select'),
+              x,
+            ),
+          ).toBe(false);
+      }
+      await preview.locator('.workspace-switch').click();
+      const menu = preview.locator('.bank-menu');
+      await expect(menu).toBeVisible();
+      const menuBounds = await menu.boundingBox();
+      const sidebarBounds = await sidebar.boundingBox();
+      expect(menuBounds.x + menuBounds.width).toBeLessThanOrEqual(
+        sidebarBounds.x + sidebarBounds.width,
+      );
+      await preview.getByRole('button', { name: 'Close memory bank menu', exact: true }).click();
+    }
+  }
   if (errors.length) throw new Error(errors.join('\n'));
   console.log(
-    'English default on a French system verified; explicit French/English preferences persist; user content unchanged. Public screenshot refreshed with an English fixture.',
+    'English default, saved languages and unchanged content verified. Native titlebar space stays clear while scrolling, in both themes and three window widths.',
   );
 } finally {
   await browser?.close();
