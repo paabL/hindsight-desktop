@@ -1,0 +1,12 @@
+node_modules
+.toolchain/
+dist/
+native/
+release/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/binaries/
+*.tsbuildinfo
+screenshots/
+
+.update-target/

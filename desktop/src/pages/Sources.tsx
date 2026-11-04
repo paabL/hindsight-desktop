@@ -1,0 +1,1078 @@
+import { useI18n } from '../i18n';
+import { translate as t, getLocale } from '../i18n-core';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ArrowDownToLine,
+  RefreshCw,
+  ArrowRight,
+  BookOpen,
+  ChevronDown,
+  CircleCheck,
+  Clock3,
+  FileChartColumnIncreasing,
+  FileText,
+  Folder,
+  FolderOpen,
+  FolderPlus,
+  GitCommitHorizontal,
+  MessageSquare,
+  Search,
+  Sparkles,
+  WandSparkles,
+} from 'lucide-react';
+import type { PageProps, Row } from '../types';
+import {
+  catalogRecords,
+  catalogProjects,
+  sourceOriginalPath,
+  filterRecords,
+  isAsideRecord,
+  asideLabel,
+  kindLabels,
+  sourceKind,
+  sourceTextPath,
+} from '../catalog';
+import {
+  Badge,
+  Button,
+  CardHeader,
+  Empty,
+  ErrorNotice,
+  IconButton,
+  Markdown,
+  Modal,
+  PageHeader,
+  Step,
+  date,
+  number,
+  shortName,
+} from '../ui';
+import { pickDirectory, pickDocuments } from '../transport';
+
+const memoryLabels: Record<string, string> = {
+  get new() {
+    return t('À ajouter', 'To add');
+  },
+  get current() {
+    return t('À jour', 'Up to date');
+  },
+  get modified() {
+    return t('À mettre à jour', 'Update needed');
+  },
+  get queued() {
+    return t('En cours', 'In progress');
+  },
+  get error() {
+    return t('Erreur de source', 'Source error');
+  },
+  get unknown() {
+    return t('État non vérifié', 'Unchecked status');
+  },
+  get excluded() {
+    return t('Exclu des envois', 'Excluded from uploads');
+  },
+  get unlinked() {
+    return t('Source à relier', 'Link this source');
+  },
+  get missing() {
+    return t('Source absente du catalogue', 'Source missing from catalog');
+  },
+};
+
+const kindIcons = {
+  conversation: MessageSquare,
+  git: GitCommitHorizontal,
+  note: Sparkles,
+  report: FileChartColumnIncreasing,
+  document: FileText,
+};
+
+export default function Sources({
+  data,
+  run,
+  busy,
+  notify,
+  demo,
+  navigate,
+  serverConnected,
+  onExploreExample,
+}: PageProps & { serverConnected: boolean; onExploreExample: () => void }) {
+  useI18n();
+
+  const [query, setQuery] = useState('');
+  const [memoryFilter, setMemoryFilter] = useState('all');
+  const [linkSource, setLinkSource] = useState('');
+  const [kind, setKind] = useState('all');
+  const [project, setProject] = useState('all');
+  const [repository, setRepository] = useState('all');
+  const [asideOpen, setAsideOpen] = useState(false);
+  const [asideLimit, setAsideLimit] = useState(30);
+  const [limit, setLimit] = useState(30);
+  const [selected, setSelected] = useState<Row | null>(null);
+  const [text, setText] = useState<string | null>(null);
+  const [reading, setReading] = useState(false);
+  const [readError, setReadError] = useState<string | null>(null);
+  const readRequest = useRef(0);
+  const [collectorsOpen, setCollectorsOpen] = useState(false);
+  const [importFiles, setImportFiles] = useState<string[]>([]);
+  const [importProject, setImportProject] = useState('');
+  const [importError, setImportError] = useState<string | null>(null);
+  useEffect(() => {
+    readRequest.current++;
+    setQuery('');
+    setKind('all');
+    setProject('all');
+    setRepository('all');
+    setLimit(30);
+    setAsideLimit(30);
+    setAsideOpen(false);
+    setSelected(null);
+    setImportFiles([]);
+    setImportError(null);
+  }, [data.folder]);
+  const allRecords = useMemo(() => catalogRecords(data.catalog), [data.catalog]);
+  const records = useMemo(() => allRecords.filter((r) => !isAsideRecord(r)), [allRecords]);
+  const archives = useMemo(() => allRecords.filter(isAsideRecord), [allRecords]);
+  const filteredArchives = useMemo(
+    () => filterRecords(archives, query, kind, project, repository),
+    [archives, query, kind, project, repository],
+  );
+  const filtered = useMemo(
+    () =>
+      filterRecords(records, query, kind, project, repository).filter(
+        (r) => memoryFilter === 'all' || r.memory?.state === memoryFilter,
+      ),
+    [records, query, kind, project, repository, memoryFilter],
+  );
+  // Comptes et listes dérivés du catalogue : recalculés à chaque réponse du moteur, pas à chaque rendu.
+  const projects = useMemo(() => catalogProjects(data.catalog), [data.catalog]);
+  const repositories = useMemo(
+    () =>
+      [
+        ...new Set(
+          allRecords
+            .filter((r) => project === 'all' || r.project === project)
+            .map((r) => r.repository)
+            .filter(Boolean),
+        ),
+      ].sort((a, b) => a.localeCompare(b, getLocale())),
+    [allRecords, project],
+  );
+  const counts = useMemo(
+    () =>
+      records.reduce<Record<string, number>>((acc, r) => {
+        const k = sourceKind(r.kind);
+        acc[k] = (acc[k] || 0) + 1;
+        return acc;
+      }, {}),
+    [records],
+  );
+  const stateCounts = useMemo(() => {
+    const byState = new Map<unknown, number>();
+    for (const r of records) byState.set(r.memory?.state, (byState.get(r.memory?.state) || 0) + 1);
+    return byState;
+  }, [records]);
+  const enabledCount = useMemo(() => records.filter((r) => r.memory?.enabled).length, [records]);
+  const toggleable = useMemo(
+    () => filtered.filter((r) => !String(r.id).startsWith('bank:') && !r.memory?.locked),
+    [filtered],
+  );
+  const sources: Row[] = data.catalog?.sources || [];
+  const problems = sources.filter((s) => /error|fail|partial/.test(s.status));
+
+  async function choose() {
+    try {
+      const path = await pickDirectory();
+      if (path) await run('folder.choose', { path });
+    } catch (error) {
+      notify(String((error as Error).message));
+    }
+  }
+  async function chooseDocuments() {
+    try {
+      const paths = await pickDocuments();
+      if (!paths.length) return;
+      setImportFiles(paths);
+      setImportProject(project !== 'all' ? project : projects[0]?.[0] || '');
+      setImportError(null);
+    } catch (error) {
+      notify((error as Error).message);
+    }
+  }
+  async function addDocuments() {
+    setImportError(null);
+    const result = await run('folder.import', { paths: importFiles, project: importProject });
+    if (result.error || result.data?.error) {
+      setImportError(result.error || result.data.error);
+    } else if (result.confirmations?.length) {
+      setImportFiles([]);
+      setProject(importProject);
+      setRepository('all');
+      setQuery('');
+      setKind('document');
+      setLimit(30);
+    }
+  }
+  async function open(record: Row) {
+    const request = ++readRequest.current;
+    setSelected(record);
+    setText(null);
+    setReadError(null);
+    setReading(false);
+    const path = sourceTextPath(record);
+    if (!path && record.memory?.stored) {
+      setReading(true);
+      try {
+        const result = await run('folder.stored', { id: record.id });
+        if (request === readRequest.current) {
+          setText(result.text || null);
+          setReadError(result.error || null);
+        }
+      } finally {
+        if (request === readRequest.current) setReading(false);
+      }
+      return;
+    }
+    if (!path) {
+      if (!sourceOriginalPath(record))
+        setReadError(
+          t(
+            'Cette source ne contient pas de version texte consultable.',
+            'This source has no readable text version.',
+          ),
+        );
+      return;
+    }
+    setReading(true);
+    try {
+      const result = await run('folder.read', { path });
+      if (request !== readRequest.current) return;
+      if (result.error) setReadError(result.error);
+      else setText(result.text);
+    } catch (e) {
+      if (request === readRequest.current) setReadError((e as Error).message);
+    } finally {
+      if (request === readRequest.current) setReading(false);
+    }
+  }
+
+  if (!demo && !data.folder && !data.catalog)
+    return (
+      <>
+        <PageHeader
+          title={t('Bienvenue dans Hindsight Desktop', 'Welcome to Hindsight Desktop')}
+          description={t(
+            'Consultez vos sources, retrouvez des faits et explorez les synthèses de votre mémoire.',
+            'Browse your sources, find facts, and explore your memory summaries.',
+          )}
+        />
+        <ErrorNotice message={data.error} />
+        <section className="card">
+          <Empty
+            icon={BookOpen}
+            title={t(
+              'Commencez avec votre serveur ou un exemple',
+              'Start with your server or an example',
+            )}
+            description={t(
+              'Hindsight Desktop est une interface pour un serveur Hindsight séparé. L’exemple permet de découvrir l’application avec des données fictives.',
+              'Hindsight Desktop connects to a separate Hindsight server. Explore the example to try the app with fictional data.',
+            )}
+            action={
+              <div className="action-row">
+                <Button
+                  kind="primary"
+                  onClick={() => navigate(serverConnected ? 'admin' : 'settings')}
+                >
+                  {serverConnected
+                    ? t('Gérer mes banques', 'Manage my banks')
+                    : t('Connecter mon serveur', 'Connect my server')}
+                </Button>
+                <Button icon={Sparkles} onClick={onExploreExample}>
+                  {t('Explorer l’exemple', 'Explore the example')}
+                </Button>
+              </div>
+            }
+          />
+        </section>
+        <section className="card settings-card">
+          <CardHeader
+            title={t('Vous avez déjà un dossier mémoire ?', 'Already have a memory folder?')}
+            subtitle={t(
+              'Ouvrez un catalogue existant pour parcourir ses sources, même sans connexion au serveur.',
+              'Open an existing catalog to browse its sources, even without a server connection.',
+            )}
+          />
+          <Button icon={FolderOpen} disabled={busy} onClick={choose}>
+            {t('Choisir le dossier mémoire', 'Choose a memory folder')}
+          </Button>
+          <p className="form-hint">
+            {t(
+              'Le choix du dossier permet sa lecture. L’envoi de contenu au serveur demande votre confirmation.',
+              'Choosing a folder allows the app to read it. Sending content to the server requires your confirmation.',
+            )}
+          </p>
+        </section>
+      </>
+    );
+
+  return (
+    <>
+      <PageHeader
+        title={t('Mémoire', 'Memory')}
+        description={t(
+          'Vos sources et leur version en mémoire, au même endroit.',
+          'Your sources and their stored versions, in one place.',
+        )}
+        actions={
+          <>
+            <IconButton
+              icon={FolderOpen}
+              label={t('Choisir le dossier mémoire', 'Choose a memory folder')}
+              onClick={choose}
+              disabled={busy || data.collecting}
+            />
+            <Button
+              icon={FolderPlus}
+              disabled={busy || data.collecting || !data.canCollect || !projects.length || demo}
+              onClick={() => void chooseDocuments()}
+            >
+              {t('Ajouter des documents', 'Add documents')}
+            </Button>
+            <Button
+              icon={RefreshCw}
+              disabled={busy || data.collecting || !data.canCollect || demo}
+              onClick={() => void run('folder.refresh')}
+            >
+              {data.collecting && !data.importing
+                ? t('Actualisation en cours…', 'Refreshing…')
+                : t('Actualiser le dossier', 'Refresh folder')}
+            </Button>
+            <Button
+              icon={ArrowDownToLine}
+              kind="primary"
+              disabled={busy || data.collecting || !data.catalog || demo}
+              onClick={() => void run('folder.prepare')}
+            >
+              {t('Préparer l’envoi à Hindsight', 'Prepare upload to Hindsight')}
+            </Button>
+          </>
+        }
+      />
+      <ErrorNotice message={data.error} />
+      {data.memoryMessage && (
+        <p role="status" className="form-hint">
+          {data.memoryMessage}
+        </p>
+      )}
+      <section className="archive-panel">
+        <div className="archive-identity">
+          <span className="archive-icon">
+            <Folder size={25} strokeWidth={1.35} />
+          </span>
+          <div>
+            <div className="archive-heading">
+              <h2>{data.folder ? shortName(data.folder) : t('Dossier local', 'Local folder')}</h2>
+              <Badge>
+                {data.catalog
+                  ? t('Catalogue disponible', 'Catalog available')
+                  : t('Non configuré', 'Not configured')}
+              </Badge>
+            </div>
+            <p>
+              {data.folder ||
+                t(
+                  'Sélectionnez le dépôt commun ou son dossier collection.',
+                  'Select the shared repository or its collection folder.',
+                )}
+            </p>
+          </div>
+          <Button
+            kind="ghost"
+            icon={FolderOpen}
+            disabled={!data.folder}
+            onClick={() => void run('folder.reveal')}
+          >
+            {t('Ouvrir le dossier', 'Open folder')}
+          </Button>
+        </div>
+        <div className="archive-stats">
+          <div>
+            <span>{t('Sources et documents en mémoire', 'Sources and stored documents')}</span>
+            <strong>{number(records.length)}</strong>
+          </div>
+          <div>
+            <span>{t('Projets', 'Projects')}</span>
+            <strong>{number(projects.length)}</strong>
+          </div>
+          <div>
+            <span>{t('Collecteurs', 'Collectors')}</span>
+            <strong>
+              {number(
+                new Set(
+                  sources.filter((s) => s.kind !== 'documents').map((s) => sourceKind(s.kind)),
+                ).size,
+              )}
+            </strong>
+          </div>
+          <div className="archive-updated">
+            <span>{t('Dernière collecte du catalogue', 'Last catalog collection')}</span>
+            <strong>
+              {data.catalog?.generated_at
+                ? date(data.catalog.generated_at, true)
+                : t('Aucune collecte', 'No collection yet')}
+            </strong>
+          </div>
+        </div>
+      </section>
+
+      <div className="source-layout">
+        <section className="card source-list">
+          <CardHeader
+            title={t('Sources et mémoire', 'Sources and memory')}
+            subtitle={t(
+              `${number(records.length)} sources${projects.length ? ` dans ${number(projects.length)} projet${projects.length > 1 ? 's' : ''}` : ''}`,
+              `${number(records.length)} sources${projects.length ? ` in ${number(projects.length)} project${projects.length > 1 ? 's' : ''}` : ''}`,
+            )}
+            action={
+              <span className="subtle-label">
+                <Clock3 size={13} />
+                {data.catalog?.generated_at
+                  ? t(
+                      `Collecté le ${date(data.catalog.generated_at)}`,
+                      `Collected on ${date(data.catalog.generated_at)}`,
+                    )
+                  : t('Prêt à collecter', 'Ready to collect')}
+              </span>
+            }
+          />
+          <div className="list-toolbar source-filters">
+            <div className="input-with-icon">
+              <Search size={16} />
+              <input
+                aria-label={t('Filtrer les sources', 'Filter sources')}
+                placeholder={t('Retrouver une source…', 'Find a source…')}
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setLimit(30);
+                }}
+              />
+            </div>
+            <select
+              aria-label={t('Filtrer par état mémoire', 'Filter by memory status')}
+              value={memoryFilter}
+              onChange={(e) => {
+                setMemoryFilter(e.target.value);
+                setLimit(30);
+              }}
+            >
+              <option value="all">{t('Tous les états', 'All statuses')}</option>
+              {Object.entries(memoryLabels).map(([id, label]) => (
+                <option key={id} value={id}>
+                  {label} ({stateCounts.get(id) || 0})
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label={t('Filtrer par projet', 'Filter by project')}
+              value={project}
+              onChange={(e) => {
+                setProject(e.target.value);
+                setRepository('all');
+                setLimit(30);
+                setAsideLimit(30);
+              }}
+            >
+              <option value="all">{t('Tous les projets', 'All projects')}</option>
+              {projects.map(([id, title]) => (
+                <option value={id} key={id}>
+                  {title}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label={t('Filtrer par dépôt', 'Filter by repository')}
+              value={repository}
+              onChange={(e) => {
+                setRepository(e.target.value);
+                setLimit(30);
+                setAsideLimit(30);
+              }}
+            >
+              <option value="all">{t('Tous les dépôts', 'All repositories')}</option>
+              {repositories.map((id) => (
+                <option value={id} key={id}>
+                  {id}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="workspace-bulk">
+            <span>
+              {enabledCount}
+              {t(' sources activées · ', ' sources enabled · ')}
+              {toggleable.length}
+              {t(' modifiables dans ce filtre', ' editable in this filter')}
+            </span>
+            <Button
+              disabled={busy || demo || !toggleable.length}
+              onClick={() =>
+                void run('folder.enabled', { ids: toggleable.map((r) => r.id), enabled: true })
+              }
+            >
+              {t('Inclure ce filtre', 'Include matching sources')}
+            </Button>
+            <Button
+              disabled={busy || demo || !toggleable.length}
+              onClick={() =>
+                void run('folder.enabled', { ids: toggleable.map((r) => r.id), enabled: false })
+              }
+            >
+              {t('Exclure ce filtre', 'Exclude matching sources')}
+            </Button>
+          </div>
+          <div className="filter-chips">
+            {[
+              { id: 'all', title: t('Toutes', 'All') },
+              { id: 'conversation', title: t('Conversations', 'Conversations') },
+              { id: 'git', title: t('Commits', 'Commits') },
+              { id: 'note', title: t('Notes', 'Notes') },
+              { id: 'report', title: t('Rapports', 'Reports') },
+              { id: 'document', title: t('Documents', 'Documents') },
+            ].map((k) => (
+              <button
+                key={k.id}
+                onClick={() => {
+                  setKind(k.id);
+                  setLimit(30);
+                }}
+                className={kind === k.id ? 'active' : ''}
+              >
+                {k.title}
+                {k.id === 'all' && <span>{number(records.length)}</span>}
+              </button>
+            ))}
+          </div>
+          {filtered.length ? (
+            <SourceRows records={filtered.slice(0, limit)} onOpen={open} />
+          ) : (
+            <Empty
+              icon={records.length ? Search : Folder}
+              title={
+                allRecords.length
+                  ? t('Aucune source de projet ne correspond', 'No matching project sources')
+                  : data.folder
+                    ? t('Aucune source collectée', 'No sources collected')
+                    : t('Aucun dossier sélectionné', 'No folder selected')
+              }
+              description={
+                allRecords.length
+                  ? t(
+                      'Essayez un autre filtre. Les validations internes et exports vides restent accessibles dans Archives à part.',
+                      'Try another filter. Internal reviews and empty exports remain available in Separate archives.',
+                    )
+                  : data.folder
+                    ? t(
+                        'Collectez les sources définies dans la configuration du dossier.',
+                        'Collect the sources defined in the folder configuration.',
+                      )
+                    : t(
+                        'Choisissez votre dossier mémoire pour consulter ses conversations, commits, notes et rapports.',
+                        'Choose your memory folder to browse its conversations, commits, notes, and reports.',
+                      )
+              }
+              action={
+                !data.folder && (
+                  <Button icon={FolderOpen} onClick={choose}>
+                    {t('Choisir le dossier mémoire', 'Choose a memory folder')}
+                  </Button>
+                )
+              }
+            />
+          )}
+          {filtered.length > limit && (
+            <div className="card-footer">
+              <Button kind="ghost" icon={ChevronDown} onClick={() => setLimit(limit + 50)}>
+                {t('Afficher plus de sources', 'Show more sources')}
+              </Button>
+              <span>
+                {number(limit)}
+                {t(' sur ', ' of ')}
+                {number(filtered.length)}
+              </span>
+            </div>
+          )}
+        </section>
+        <aside className="source-aside">
+          <section className="card collector-card">
+            <CardHeader
+              title={t('État des collectes', 'Collection status')}
+              action={<Badge>{sources.length}</Badge>}
+            />
+            <div className="collector-status-list">
+              {sources.slice(0, 5).map((source) => (
+                <div key={source.id}>
+                  <span
+                    className={`status-dot ${/error|fail|partial/.test(source.status) ? 'warning' : /ok|success/.test(source.status) ? 'green' : ''}`}
+                  />
+                  <div>
+                    <strong>
+                      {source.repository
+                        ? shortName(source.repository)
+                        : kindLabels[sourceKind(source.kind)]}
+                    </strong>
+                    <span>
+                      {kindLabels[sourceKind(source.kind)]} · {number(source.count)}{' '}
+                      {source.count === 1 ? 'source' : 'sources'}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {!sources.length && (
+              <p className="collector-empty">
+                {t(
+                  'Les collecteurs apparaîtront après le choix d’un catalogue.',
+                  'Collectors will appear once you choose a catalog.',
+                )}
+              </p>
+            )}
+            {!!sources.length && (
+              <button className="collector-more" onClick={() => setCollectorsOpen(true)}>
+                {t('Voir les ', 'View all ')}
+                {number(sources.length)}
+                {t(' collectes', ' collections')}
+                <ArrowRight size={14} />
+              </button>
+            )}
+          </section>
+          <section className="card processing-note">
+            <div>
+              <LayersIcon />
+              <h3>{t('Sources et mémoire', 'Sources and memory')}</h3>
+            </div>
+            <p>
+              {t(
+                'Actualiser le dossier collecte les sources et met à jour le catalogue, sans traitement Hindsight. Préparer l’envoi compare les fichiers déjà collectés à la mémoire, sans relancer la collecte. Vous validez les ajouts et changements des sources activées avant tout envoi. Retirer conserve le fichier et exclut les envois futurs.',
+                'Refresh folder collects sources and updates the catalog without Hindsight processing. Prepare upload compares collected files with memory without collecting again. You approve additions and changes to enabled sources before any upload. Removing a source keeps the file and excludes future uploads.',
+              )}
+            </p>
+          </section>
+          {problems.map((p) => (
+            <div className="notice error" key={p.id}>
+              {p.message ||
+                t(`${p.kind} : collecte incomplète`, `${p.kind}: incomplete collection`)}
+            </div>
+          ))}
+        </aside>
+      </div>
+      {!!archives.length && (
+        <details
+          className="card log-details source-list"
+          open={asideOpen}
+          onToggle={(e) => setAsideOpen(e.currentTarget.open)}
+        >
+          <summary>
+            {t('Archives à part (', 'Separate archives (')}
+            {number(archives.length)})
+          </summary>
+          {asideOpen && (
+            <>
+              <p className="form-hint">
+                {t(
+                  'Validations internes de Codex et exports vides ou interrompus, conservés pour diagnostic. Ils ne figurent pas dans les sources du projet à traiter. Les filtres ci-dessus s’appliquent aussi à cette liste.',
+                  'Internal Codex reviews and empty or interrupted exports, kept for troubleshooting. They are excluded from project sources to process. The filters above also apply to this list.',
+                )}
+              </p>
+              {filteredArchives.length ? (
+                <SourceRows
+                  records={filteredArchives.slice(0, asideLimit)}
+                  onOpen={open}
+                  archived
+                />
+              ) : (
+                <p className="form-hint">
+                  {t(
+                    'Aucune archive ne correspond aux filtres.',
+                    'No archives match these filters.',
+                  )}
+                </p>
+              )}
+              {filteredArchives.length > asideLimit && (
+                <div className="card-footer">
+                  <Button
+                    kind="ghost"
+                    icon={ChevronDown}
+                    onClick={() => setAsideLimit(asideLimit + 50)}
+                  >
+                    {t('Afficher plus d’archives', 'Show more archives')}
+                  </Button>
+                  <span>
+                    {number(asideLimit)}
+                    {t(' sur ', ' of ')}
+                    {number(filteredArchives.length)}
+                  </span>
+                </div>
+              )}
+            </>
+          )}
+        </details>
+      )}
+      {!!data.output && (
+        <details className="card log-details">
+          <summary>{t('Dernière collecte', 'Last collection')}</summary>
+          <pre>{data.output}</pre>
+        </details>
+      )}
+
+      {collectorsOpen && (
+        <Modal
+          title={t('État des collectes', 'Collection status')}
+          subtitle={t(
+            'Statuts enregistrés dans le catalogue local',
+            'Statuses saved in the local catalog',
+          )}
+          onClose={() => setCollectorsOpen(false)}
+          wide
+        >
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>{t('Dépôt / source', 'Repository / source')}</th>
+                  <th>{t('Projet', 'Project')}</th>
+                  <th>{t('Sources', 'Sources')}</th>
+                  <th>{t('État', 'Status')}</th>
+                  <th>{t('Dernier succès', 'Last success')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sources.map((source) => (
+                  <tr key={source.id}>
+                    <td>{source.repository ? shortName(source.repository) : source.kind}</td>
+                    <td>{source.project}</td>
+                    <td>{number(source.count)}</td>
+                    <td>
+                      <Badge>{source.status}</Badge>
+                    </td>
+                    <td>{date(source.last_success_at, true)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Modal>
+      )}
+      {!!importFiles.length && (
+        <Modal
+          title={t('Ajouter des documents', 'Add documents')}
+          subtitle={t(
+            'Une copie locale, avant tout traitement mémoire.',
+            'A local copy, before any memory processing.',
+          )}
+          onClose={() => {
+            if (!busy) setImportFiles([]);
+          }}
+        >
+          <div className="document-import">
+            <label htmlFor="document-project">{t('Projet', 'Project')}</label>
+            <select
+              id="document-project"
+              value={importProject}
+              onChange={(e) => setImportProject(e.target.value)}
+              disabled={busy}
+            >
+              {projects.map(([id, title]) => (
+                <option value={id} key={id}>
+                  {title}
+                </option>
+              ))}
+            </select>
+            <p className="muted">
+              {t('Destination : documents/', 'Destination: documents/')}
+              {importProject}
+              {t('/ dans le dossier commun.', '/ in the shared folder.')}
+            </p>
+            <ul>
+              {importFiles.map((path) => (
+                <li key={path} title={path}>
+                  <FileText size={15} />
+                  <span>{shortName(path)}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="muted">
+              {t(
+                'Les originaux restent à leur emplacement. Les copies rejoignent le catalogue, sans envoi ni traitement Hindsight.',
+                'Original files stay where they are. Copies are added to the catalog without uploading or Hindsight processing.',
+              )}
+            </p>
+            <ErrorNotice message={importError} />
+          </div>
+          <div className="modal-actions">
+            <Button disabled={busy} onClick={() => setImportFiles([])}>
+              {t('Annuler', 'Cancel')}
+            </Button>
+            <Button
+              kind="primary"
+              disabled={busy || !importProject}
+              onClick={() => void addDocuments()}
+            >
+              {t('Ajouter ', 'Add ')}
+              {number(importFiles.length)}
+              {t(' document', ' document')}
+              {importFiles.length > 1 ? 's' : ''}
+            </Button>
+          </div>
+        </Modal>
+      )}
+      {selected && (
+        <Modal
+          title={selected.title || t('Source', 'Source')}
+          subtitle={`${selected.project_name || selected.project} · ${kindLabels[sourceKind(selected.kind)]}`}
+          wide
+          onClose={() => setSelected(null)}
+        >
+          <div className="reader-meta">
+            <Badge>{kindLabels[sourceKind(selected.kind)]}</Badge>
+            <span>
+              {t('Collecté le ', 'Collected on ')}
+              {date(selected.collected_at, true)}
+            </span>
+            {sourceOriginalPath(selected) && (
+              <Button
+                icon={FolderOpen}
+                disabled={busy}
+                onClick={() => void run('folder.open', { path: sourceOriginalPath(selected) })}
+              >
+                {selected.context?.format === 'pdf'
+                  ? t('Ouvrir le PDF', 'Open PDF')
+                  : t('Ouvrir l’original', 'Open original')}
+              </Button>
+            )}
+            {demo && <Badge tone="amber">{t('Données fictives', 'Fictional data')}</Badge>}
+          </div>
+          {selected.memory && (
+            <section className="workspace-actions">
+              {String(selected.id).startsWith('bank:') && !selected.memory.locked && (
+                <div className="form-stack">
+                  <label>
+                    {t('Relier à une source du catalogue', 'Link to a catalog source')}
+                    <select value={linkSource} onChange={(e) => setLinkSource(e.target.value)}>
+                      <option value="">{t('Choisir une source…', 'Choose a source…')}</option>
+                      {allRecords
+                        .filter(
+                          (r) =>
+                            !String(r.id).startsWith('bank:') &&
+                            !r.memory?.stored &&
+                            !r.memory?.locked,
+                        )
+                        .map((r) => (
+                          <option key={r.id} value={r.id}>
+                            {r.title}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  <Button
+                    disabled={busy || !linkSource || demo}
+                    onClick={async () => {
+                      await run('folder.link', {
+                        id: linkSource,
+                        document: selected.memory.document_id,
+                      });
+                      setLinkSource('');
+                      setSelected(null);
+                    }}
+                  >
+                    {t('Relier et comparer les versions', 'Link and compare versions')}
+                  </Button>
+                </div>
+              )}
+              <Badge>
+                {memoryLabels[selected.memory.state] || t('État non vérifié', 'Unchecked status')}
+              </Badge>
+              <p className="form-hint">{selected.memory.reason}</p>
+              {!String(selected.id).startsWith('bank:') && (
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={!!selected.memory.enabled}
+                    disabled={busy || selected.memory.locked || demo}
+                    onChange={async (e) => {
+                      await run('folder.enabled', { id: selected.id, enabled: e.target.checked });
+                      setSelected(null);
+                    }}
+                  />{' '}
+                  {t('Inclure dans les mises à jour', 'Include in updates')}
+                </label>
+              )}
+              {selected.memory.state === 'queued' && (
+                <Button
+                  disabled={busy || demo}
+                  onClick={async () => {
+                    await run('folder.retry', { id: selected.id });
+                    setSelected(null);
+                  }}
+                >
+                  {t('Vérifier / reprendre l’envoi', 'Check / resume upload')}
+                </Button>
+              )}
+              {selected.memory.stored && (
+                <Button
+                  disabled={busy || demo}
+                  onClick={async () => {
+                    setReading(true);
+                    const result = await run('folder.stored', { id: selected.id });
+                    setReading(false);
+                    setText(result.text || null);
+                    setReadError(result.error || null);
+                  }}
+                >
+                  {t('Version mémorisée', 'Stored version')}
+                </Button>
+              )}
+              {sourceTextPath(selected) && (
+                <Button disabled={busy} onClick={() => void open(selected)}>
+                  {t('Source actuelle', 'Current source')}
+                </Button>
+              )}
+              <Button
+                disabled={busy || !selected.memory.can_remove || demo}
+                onClick={async () => {
+                  await run('folder.remove', { id: selected.id });
+                  setSelected(null);
+                }}
+              >
+                {t('Retirer de la mémoire', 'Remove from memory')}
+              </Button>
+            </section>
+          )}
+          <ErrorNotice message={readError} />
+          {reading ? (
+            <div className="loading-state">{t('Lecture de la source…', 'Loading source…')}</div>
+          ) : text ? (
+            /\.tex$/i.test(sourceTextPath(selected) || '') ? (
+              <pre className="source-code">{text}</pre>
+            ) : (
+              <Markdown text={text} />
+            )
+          ) : (
+            sourceOriginalPath(selected) && (
+              <p className="muted">
+                {selected.context?.format === 'pdf'
+                  ? t(
+                      'Original conservé dans le dossier commun. Aucun texte n’a été extrait de ce PDF.',
+                      'Original kept in the shared folder. No text has been extracted from this PDF.',
+                    )
+                  : t(
+                      'Original conservé dans le dossier commun. Ouvrez le fichier pour le consulter.',
+                      'Original kept in the shared folder. Open the file to read it.',
+                    )}
+              </p>
+            )
+          )}
+          <details className="provenance">
+            <summary>{t('Provenance et métadonnées', 'Provenance and metadata')}</summary>
+            <dl>
+              <dt>{t('Identifiant', 'ID')}</dt>
+              <dd>{selected.id}</dd>
+              {selected.source_id && (
+                <>
+                  <dt>{t('Identifiant d’origine', 'Original ID')}</dt>
+                  <dd>{selected.source_id}</dd>
+                </>
+              )}
+              {isAsideRecord(selected) && (
+                <>
+                  <dt>{t('Classement', 'Category')}</dt>
+                  <dd>{asideLabel(selected)}</dd>
+                </>
+              )}
+              <dt>{t('Dépôt', 'Repository')}</dt>
+              <dd>{selected.repository || '—'}</dd>
+              <dt>{t('Fichier', 'File')}</dt>
+              <dd>{sourceOriginalPath(selected) || sourceTextPath(selected) || '—'}</dd>
+              {selected.context?.original_path && (
+                <>
+                  <dt>{t('Emplacement d’origine', 'Original location')}</dt>
+                  <dd>{selected.context.original_path}</dd>
+                  <dt>{t('Copie dans le dossier commun', 'Copy in shared folder')}</dt>
+                  <dd>{selected.context.managed_path}</dd>
+                </>
+              )}
+              <dt>{t('Date de la source', 'Source date')}</dt>
+              <dd>{date(selected.source_updated_at, true)}</dd>
+              <dt>{t('Collecté le', 'Collected on')}</dt>
+              <dd>{date(selected.collected_at, true)}</dd>
+            </dl>
+          </details>
+        </Modal>
+      )}
+    </>
+  );
+}
+
+function LayersIcon() {
+  return <BookOpen size={17} strokeWidth={1.6} />;
+}
+
+function SourceRows({
+  records,
+  onOpen,
+  archived = false,
+}: {
+  records: Row[];
+  onOpen: (record: Row) => Promise<void>;
+  archived?: boolean;
+}) {
+  return (
+    <div className="source-rows">
+      {records.map((record) => {
+        const type = sourceKind(record.kind);
+        const Icon = kindIcons[type];
+        return (
+          <button className="source-row" onClick={() => void onOpen(record)} key={record.id}>
+            <span className={`file-icon ${type}`}>
+              <Icon size={19} strokeWidth={1.6} />
+            </span>
+            <span className="source-row-main">
+              <strong>{record.title || record.id}</strong>
+              <span>
+                {record.project_name || record.project}
+                <span className="middot">·</span>
+                {archived
+                  ? asideLabel(record)
+                  : record.kind === 'documents' && record.context?.format
+                    ? `Document ${String(record.context.format).toUpperCase()}`
+                    : kindLabels[type]}
+                {record.repository && (
+                  <>
+                    <span className="middot">·</span>
+                    {record.repository}
+                  </>
+                )}
+              </span>
+            </span>
+            {record.memory && (
+              <Badge>
+                {memoryLabels[record.memory.state] || t('État non vérifié', 'Unchecked status')}
+                {record.memory.state === 'excluded' && record.memory.stored ? ' · En mémoire' : ''}
+              </Badge>
+            )}
+            <span className="source-date">
+              {record.source_updated_at
+                ? date(record.source_updated_at)
+                : t(
+                    `Collecté le ${date(record.collected_at)}`,
+                    `Collected on ${date(record.collected_at)}`,
+                  )}
+            </span>
+            <ArrowRight size={15} />
+          </button>
+        );
+      })}
+    </div>
+  );
+}

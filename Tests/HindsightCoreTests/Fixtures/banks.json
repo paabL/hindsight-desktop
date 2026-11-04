@@ -1,0 +1,4 @@
+{"banks":[
+ {"bank_id":"codex-diag-01a12843","name":"Codex diag","disposition":{"skepticism":3,"literalism":3,"empathy":3},"mission":null,"created_at":"2026-09-01T08:00:00Z","updated_at":"2026-10-17T21:00:00Z","fact_count":8012,"last_document_at":"2026-10-17T20:30:00Z","last_write_at":"2026-10-17T20:31:12Z","display_alias":null,"matched_aliases":[]},
+ {"bank_id":"scratch","name":null,"disposition":{"skepticism":3,"literalism":3,"empathy":3},"fact_count":0,"matched_aliases":[]}
+],"total":2,"limit":200,"offset":0}

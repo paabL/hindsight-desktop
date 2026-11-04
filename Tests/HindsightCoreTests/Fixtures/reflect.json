@@ -1,0 +1,3 @@
+{"text":"Les échecs venaient d'une capture mal lue ; ils ont été corrigés à l'étape 2.",
+ "based_on":{"memories":[{"id":"m1","text":"Les tests de l'étape 1 ont échoué trois fois.","type":"experience","document_id":"codex-abc-task-002","chunk_id":"codex-abc-task-002_0","tags":["task:002"]}],"mental_models":[{"id":"mm1","text":"Synthèse des sessions"}],"directives":[]},
+ "structured_output":null,"usage":{"input_tokens":1200,"output_tokens":80,"total_tokens":1280,"cached_tokens":0,"thoughts_tokens":0},"trace":null}

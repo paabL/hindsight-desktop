@@ -1,0 +1,3 @@
+{"bank_id":"codex-diag-01a12843","period":"30d","trunc":"day","time_field":"created_at","buckets":[
+ {"time":"2026-10-16T00:00:00Z","world":10,"experience":20,"observation":0},
+ {"time":"2026-10-17T00:00:00Z","world":50,"experience":60,"observation":4}]}
