@@ -6,11 +6,20 @@ use tauri_plugin_dialog::DialogExt;
 use base64::Engine;
 use tokio::{io::{AsyncBufReadExt, AsyncWriteExt, BufReader}, process::{Child, ChildStdin, ChildStdout, Command}, sync::Mutex};
 
+mod release_update;
+
 struct NativeBridge { _child: Child, stdin: ChildStdin, stdout: BufReader<ChildStdout>, next: u64 }
 struct BridgeState(Mutex<Option<NativeBridge>>);
 
 #[tauri::command]
 async fn bridge(app: tauri::AppHandle, request: Value, state: State<'_, BridgeState>) -> Result<Value, String> {
+    let mut guard = state.0.lock().await;
+    let result = bridge_call(&app, request, &mut guard).await?;
+    if result["relaunch"] == true { app.restart(); }
+    Ok(result)
+}
+
+async fn bridge_call(app: &tauri::AppHandle, request: Value, guard: &mut Option<NativeBridge>) -> Result<Value, String> {
     let command = request.get("command").and_then(Value::as_str).ok_or("Action invalide")?;
     if command.len() > 80 || !command.chars().all(|c| c.is_ascii_alphabetic() || c == '.') { return Err("Action invalide".into()); }
     let args = match request.get("args") {
@@ -19,7 +28,6 @@ async fn bridge(app: tauri::AppHandle, request: Value, state: State<'_, BridgeSt
         Some(_) => return Err("Paramètres invalides".into()),
     };
     if args.len() > 16_000_000 { return Err("Paramètres invalides".into()); }
-    let mut guard = state.0.lock().await;
     if guard.is_none() {
         let executable = if cfg!(debug_assertions) {
             std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../native/HindsightBridge")
@@ -50,14 +58,15 @@ async fn bridge(app: tauri::AppHandle, request: Value, state: State<'_, BridgeSt
     let mut reply: Value = serde_json::from_str(&line).map_err(|e| e.to_string())?;
     if reply["id"] != id { return Err("Réponse du moteur désynchronisée".into()); }
     if let Some(error) = reply.get("error").and_then(Value::as_str) { return Err(error.into()); }
-    if reply["result"]["relaunch"] == true { app.restart(); }
     // Le résultat est rendu sans copie profonde (plusieurs mégaoctets pour certaines sections). Il reste
     // décodé puis réencodé : les clés repartent triées vers la vue, quel que soit l'ordre du moteur.
     Ok(reply.get_mut("result").map(Value::take).unwrap_or(Value::Null))
 }
 
 #[tauri::command]
-async fn save_export(app: tauri::AppHandle, filename: String, base64: String) -> Result<bool, String> {
+async fn save_export(app: tauri::AppHandle, state: State<'_, BridgeState>, filename: String, base64: String) -> Result<bool, String> {
+    // A file save is also a foreground operation that an update must not interrupt.
+    let _guard = state.0.lock().await;
     if base64.len() > 160_000_000 { return Err("L'archive dépasse la limite d'export.".into()); }
     let name = std::path::Path::new(&filename).file_name().and_then(|v| v.to_str()).unwrap_or("hindsight-export.zip");
     let selected = app.dialog().file().set_file_name(name).blocking_save_file();
@@ -75,8 +84,10 @@ async fn save_export(app: tauri::AppHandle, filename: String, base64: String) ->
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(BridgeState(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![bridge, save_export])
+        .manage(release_update::ReleaseUpdateState::default())
+        .invoke_handler(tauri::generate_handler![bridge, save_export, release_update::release_update_check, release_update::release_update_install])
         .run(tauri::generate_context!())
         .expect("Impossible de démarrer Hindsight Desktop");
 }

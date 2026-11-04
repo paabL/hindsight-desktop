@@ -1,15 +1,133 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Download, RefreshCw, FolderOpen, RotateCcw } from 'lucide-react';
 import type { Request, Row } from '../types';
 import { Badge, Button, CardHeader, ErrorNotice, date } from '../ui';
 import { pickDirectory, host } from '../transport';
 import { useI18n } from '../i18n';
 
-export default function Updates({ data, run, demo }: { data: Row; run: Request; demo: boolean }) {
+type ReleaseOffer = { version: string };
+type ReleasePhase = 'idle' | 'checking' | 'available' | 'current' | 'installing' | 'restarting';
+const releaseErrorCodes = new Set([
+  'UPDATE_BUSY',
+  'UPDATE_CHECK_FAILED',
+  'UPDATE_NOT_AVAILABLE',
+  'UPDATE_VERSION_CHANGED',
+  'UPDATE_INSTALL_FAILED',
+  'UPDATE_MOVE_TO_APPLICATIONS',
+  'UPDATE_UNTRUSTED_SOURCE',
+]);
+function releaseErrorCode(error: unknown, fallback: string) {
+  return typeof error === 'string' && releaseErrorCodes.has(error) ? error : fallback;
+}
+
+export default function Updates({
+  data,
+  run,
+  demo,
+  busy,
+}: {
+  data: Row;
+  run: Request;
+  demo: boolean;
+  busy: boolean;
+}) {
   const { t } = useI18n();
   demo = demo || host !== 'Tauri';
   const [path, setPath] = useState('');
   const working = !!data.working;
+  const [phase, setPhase] = useState<ReleasePhase>('idle');
+  const [offer, setOffer] = useState<ReleaseOffer | null>(null);
+  const [releaseError, setReleaseError] = useState<string | null>(null);
+  // A ref closes the small gap before React commits the disabled button state.
+  const releaseLock = useRef(false);
+  const updating = phase === 'checking' || phase === 'installing' || phase === 'restarting';
+  const blocked = demo || busy || working || updating;
+  async function checkRelease() {
+    if (blocked || releaseLock.current) return;
+    releaseLock.current = true;
+    setReleaseError(null);
+    setOffer(null);
+    setPhase('checking');
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const available = await invoke<ReleaseOffer | null>('release_update_check');
+      setOffer(available);
+      setPhase(available ? 'available' : 'current');
+    } catch (error) {
+      setReleaseError(releaseErrorCode(error, 'UPDATE_CHECK_FAILED'));
+      setPhase('idle');
+    } finally {
+      releaseLock.current = false;
+    }
+  }
+  async function installRelease() {
+    if (blocked || releaseLock.current || !offer) return;
+    releaseLock.current = true;
+    setReleaseError(null);
+    setPhase('installing');
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('release_update_install', { version: offer.version });
+      setPhase('restarting');
+    } catch (error) {
+      setReleaseError(releaseErrorCode(error, 'UPDATE_INSTALL_FAILED'));
+      setOffer(null);
+      setPhase('idle');
+      releaseLock.current = false;
+    }
+  }
+  function releaseErrorMessage(code: string | null) {
+    switch (code) {
+      case null:
+        return null;
+      case 'UPDATE_BUSY':
+        return t(
+          'Attendez la fin de l’action en cours, puis réessayez.',
+          'Wait for the current action to finish, then try again.',
+        );
+      case 'UPDATE_MOVE_TO_APPLICATIONS':
+        return t(
+          'Déplacez Hindsight Desktop dans Applications, rouvrez l’app et réessayez.',
+          'Move Hindsight Desktop to Applications, reopen the app and try again.',
+        );
+      case 'UPDATE_NOT_AVAILABLE':
+      case 'UPDATE_VERSION_CHANGED':
+        return t(
+          'Cette mise à jour n’est plus disponible. Relancez la recherche.',
+          'This update is no longer available. Check for updates again.',
+        );
+      case 'UPDATE_UNTRUSTED_SOURCE':
+        return t(
+          'La mise à jour n’a pas pu être vérifiée et n’a pas été installée. Réessayez plus tard.',
+          'The update could not be verified and was not installed. Please try again later.',
+        );
+      case 'UPDATE_INSTALL_FAILED':
+        return t(
+          'L’installation n’a pas abouti. Réessayez ou téléchargez l’app depuis « Voir les versions ».',
+          'The update could not be installed. Try again or download the app from View releases.',
+        );
+      default:
+        return t(
+          'Impossible de rechercher les mises à jour. Vérifiez votre connexion ou utilisez « Voir les versions ».',
+          'Could not check for updates. Check your connection or use View releases.',
+        );
+    }
+  }
+  const releaseStatus =
+    phase === 'checking'
+      ? t('Recherche des mises à jour…', 'Checking for updates…')
+      : phase === 'available' && offer
+        ? t(`La version ${offer.version} est disponible.`, `Version ${offer.version} is available.`)
+        : phase === 'current'
+          ? t('Vous utilisez la dernière version.', 'You’re up to date.')
+          : phase === 'installing'
+            ? t(
+                'Téléchargement et vérification… L’app va redémarrer lorsque la mise à jour sera prête.',
+                'Downloading and verifying… The app will restart when the update is ready.',
+              )
+            : phase === 'restarting'
+              ? t('Redémarrage de l’application…', 'Restarting the app…')
+              : null;
   async function choose() {
     try {
       const value = await pickDirectory(
@@ -34,25 +152,34 @@ export default function Updates({ data, run, demo }: { data: Row; run: Request; 
             : undefined
         }
         action={
-          <Badge>
-            {working
-              ? t('En cours', 'In progress')
-              : data.state === 'ready'
-                ? t('Installée', 'Installed')
-                : 'Tauri'}
-          </Badge>
+          <Badge>{working || updating ? t('En cours', 'In progress') : t('Bêta', 'Beta')}</Badge>
         }
       />
       <p>
         {t(
-          'Retrouvez les nouvelles versions et leurs instructions d’installation sur la page du projet.',
-          'Find new versions and installation instructions on the project page.',
+          'Recherchez une nouvelle version, puis mettez à jour et redémarrez. Vos réglages et dossiers mémoire sont conservés.',
+          'Check for a new version, then update and restart. Your settings and memory folders are kept.',
         )}
       </p>
+      <ErrorNotice message={releaseErrorMessage(releaseError)} />
+      {releaseStatus && <p role="status">{releaseStatus}</p>}
       <div className="action-row">
+        <Button icon={RefreshCw} disabled={blocked} onClick={() => void checkRelease()}>
+          {t('Rechercher les mises à jour', 'Check for updates')}
+        </Button>
+        {offer && (
+          <Button
+            kind="primary"
+            icon={Download}
+            disabled={blocked}
+            onClick={() => void installRelease()}
+          >
+            {t('Mettre à jour et redémarrer', 'Update and restart')}
+          </Button>
+        )}
         <Button
           icon={Download}
-          disabled={demo}
+          disabled={demo || updating}
           onClick={() =>
             void run('external.open', {
               url: 'https://github.com/paabL/hindsight-desktop/releases',
@@ -84,13 +211,17 @@ export default function Updates({ data, run, demo }: { data: Row; run: Request; 
                 aria-label={t('Dossier source des mises à jour', 'Update source folder')}
                 value={path || data.repository || ''}
                 onChange={(e) => setPath(e.target.value)}
-                disabled={working || demo}
+                disabled={working || demo || busy || updating}
                 placeholder={t(
                   'Choisir le dépôt Hindsight Desktop',
                   'Choose the Hindsight Desktop repository',
                 )}
               />
-              <Button icon={FolderOpen} disabled={working || demo} onClick={() => void choose()}>
+              <Button
+                icon={FolderOpen}
+                disabled={working || demo || busy || updating}
+                onClick={() => void choose()}
+              >
                 {t('Choisir', 'Choose')}
               </Button>
             </div>
@@ -130,16 +261,23 @@ export default function Updates({ data, run, demo }: { data: Row; run: Request; 
           <div className="action-row">
             <Button
               icon={RefreshCw}
-              disabled={working || demo}
+              disabled={working || demo || busy || updating}
               onClick={() => void run('updates.check', { path: path || data.repository })}
             >
-              {t('Rechercher les mises à jour', 'Check for updates')}
+              {t('Rechercher les changements du code', 'Check source changes')}
             </Button>
             {data.state === 'available' && (
               <Button
                 kind="primary"
                 icon={Download}
-                disabled={working || demo || data.dirty || (!!path && path !== data.repository)}
+                disabled={
+                  working ||
+                  demo ||
+                  busy ||
+                  updating ||
+                  data.dirty ||
+                  (!!path && path !== data.repository)
+                }
                 onClick={() => void run('updates.install')}
               >
                 {t('Installer la mise à jour', 'Install update')}
@@ -147,7 +285,7 @@ export default function Updates({ data, run, demo }: { data: Row; run: Request; 
             )}
             <Button
               icon={RotateCcw}
-              disabled={working || demo || !(path || data.repository)}
+              disabled={working || demo || busy || updating || !(path || data.repository)}
               onClick={() => void run('updates.rebuild', { path: path || data.repository })}
             >
               {t('Recompiler cette copie', 'Rebuild this copy')}
@@ -155,7 +293,7 @@ export default function Updates({ data, run, demo }: { data: Row; run: Request; 
             {data.state === 'ready' && (
               <Button
                 kind="primary"
-                disabled={working || demo}
+                disabled={working || demo || busy || updating}
                 onClick={() => void run('updates.relaunch')}
               >
                 {t('Relancer l’application', 'Relaunch application')}

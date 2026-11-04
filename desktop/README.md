@@ -108,8 +108,20 @@ Run the Swift suite with `swift test` from the repository root.
 
 ## Updates
 
-Downloaded builds are updated by installing a new version from
-[Releases](https://github.com/paabL/hindsight-desktop/releases).
+From version 0.1.3, **Settings → Application updates → Check for updates** checks
+the public beta feed. **Update and restart** downloads the offered version,
+verifies its signature and installs it. No update check or download runs
+automatically. Public update packages currently target macOS 15+ on Apple Silicon.
+Version 0.1.2 and earlier need one manual installation of a newer build from
+[Releases](https://github.com/paabL/hindsight-desktop/releases). That page also
+remains the manual fallback.
+
+The Rust shell uses Tauri’s updater with a fixed HTTPS feed and embedded public
+key. Update signatures are bound to the app version. The private signing key is
+kept outside the repository. This free signature system is independent of Apple
+Developer ID and notarization; first-install macOS approval can still be needed.
+See the [release guide](../docs/RELEASE.md).
+
 **Settings → Application updates → Build from source (advanced)** is for a local
 source checkout with Node.js, Xcode and Rust installed. It builds in
 `desktop/.update-target/`, validates the bundle, replaces the open app and offers

@@ -26,9 +26,15 @@ Hindsight server you configure and does not host your memories.
   existing Codex credentials and, when allowed, Claude Code credentials, only
   with their own services. Quota checks are not run automatically. These
   interfaces may change; no document or prompt is needed for the check.
-- **Updates and GitHub.** Source update checks contact your configured Git
-  repository. GitHub downloads and issue reports are also subject to GitHub's
-  terms.
+- **Updates and GitHub.** Choosing **Check for updates** contacts the public
+  beta feed at
+  `https://raw.githubusercontent.com/paabL/hindsight-desktop/main/updates/beta.json`.
+  Choosing **Update and restart** downloads the signed app package from GitHub
+  Releases. These requests send no memory, document or conversation content;
+  GitHub receives normal connection information such as your IP address and
+  request headers. No update check or download runs automatically. Advanced
+  source update checks contact your configured Git repository. GitHub downloads
+  and issue reports are subject to GitHub's terms.
 
 Removing the app leaves your server, memory banks, memory folder and official
 accounts in place. To erase server memories, use confirmed server deletions and

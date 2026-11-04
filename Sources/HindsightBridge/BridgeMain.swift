@@ -131,6 +131,12 @@ final class DesktopBridge {
             if updater.isWorking || updateTask != nil { break }
             if let path = p["path"] as? String { updater.selectRepository(path) }
             updateTask = Task { @MainActor in await self.updater.check(); self.updateTask = nil }
+        case "updates.releaseReady":
+            let ready = !updater.isWorking && updateTask == nil
+                && !app.memoryFolder.collecting && !app.memoryFolder.importing
+                && !app.localDecision.isBusy && decisionTask == nil
+                && app.coverage.sending == nil && app.projectSync.running == nil
+            return ["releaseUpdateReady": ready]
         case "updates.install":
             guard updateTask == nil, !updater.isWorking else { throw BridgeFailure("Une mise à jour est en cours.") }; updater.requestUpdate()
         case "updates.rebuild":

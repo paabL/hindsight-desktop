@@ -890,7 +890,7 @@ function Settings({
           )}
         </p>
       </section>
-      <Updates data={snapshot.updates || {}} run={run} demo={demo} />
+      <Updates data={snapshot.updates || {}} run={run} demo={demo} busy={busy} />
       <section className="card settings-card">
         <div className="settings-section-heading">
           <span className="category-icon peach">
@@ -973,7 +973,7 @@ function Settings({
         </div>
       </section>
       <p className="page-footnote">
-        Hindsight Desktop 0.1.2 · {host} · HindsightCore ·{' '}
+        Hindsight Desktop 0.1.3 · {host} · HindsightCore ·{' '}
         {t('macOS 15 et plus', 'macOS 15 or later')}
       </p>
       <p className="page-footnote">

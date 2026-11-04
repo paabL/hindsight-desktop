@@ -107,6 +107,12 @@ test('une lecture de banque ne déclenche aucune écriture', async () => {
   assert.equal(result.app.bank, 'fixture');
 });
 
+test('le précontrôle de mise à jour est une lecture sans appel au serveur', async () => {
+  const before = calls.length;
+  assert.deepEqual(await bridge.request('updates.releaseReady'), { releaseUpdateReady: true });
+  assert.equal(calls.length, before);
+});
+
 test('les quotas OAuth nécessitent une confirmation ponctuelle', async () => {
   const before = calls.length;
   const prepared = await bridge.request('subscription.refresh');
@@ -195,6 +201,23 @@ test('la reconstruction attend confirmation et une relance prématurée est refu
   await bridge.request('cancel');
   await assert.rejects(bridge.request('confirm', { id, typed: '' }), /expiré/);
   await assert.rejects(bridge.request('updates.relaunch'));
+  // A tiny isolated source task exercises work that outlives its IPC response.
+  // It deliberately fails before any bundle can be produced or installed.
+  await writeFile(
+    path.join(repository, 'desktop/scripts/update-build.mjs'),
+    'await new Promise((resolve) => setTimeout(resolve, 1000)); throw new Error("Isolated test completed");',
+  );
+  const again = await bridge.request('updates.rebuild', { path: repository });
+  await bridge.request('confirm', { id: again.confirmations[0].id, typed: '' });
+  assert.deepEqual(await bridge.request('updates.releaseReady'), { releaseUpdateReady: false });
+  const deadline = Date.now() + 5000;
+  let ready = false;
+  while (Date.now() < deadline) {
+    ready = (await bridge.request('updates.releaseReady')).releaseUpdateReady;
+    if (ready) break;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.equal(ready, true, 'the app becomes eligible again after detached work finishes');
 });
 
 test('la collecte locale reste distincte de Hindsight et attend une confirmation', async () => {

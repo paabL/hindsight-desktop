@@ -22,6 +22,28 @@ const commit = process.env.HINDSIGHT_RELEASE_COMMIT;
 if (!commit || !/^[a-f0-9]{40}$/.test(commit))
   throw new Error('Set HINDSIGHT_RELEASE_COMMIT to the verified public source commit.');
 const { version } = JSON.parse(readFileSync(path.join(desktop, 'package.json'), 'utf8'));
+// The private update key stays outside source control. Local release builds use
+// macOS Keychain; CI may provide its own protected environment variables.
+let signingKey = process.env.TAURI_SIGNING_PRIVATE_KEY;
+if (!signingKey) {
+  const stored = spawnSync(
+    '/usr/bin/security',
+    [
+      'find-generic-password',
+      '-s',
+      'io.github.paabL.hindsight-desktop.updater',
+      '-a',
+      'release-signing-key',
+      '-w',
+    ],
+    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+  );
+  if (stored.status !== 0 || !stored.stdout.trim())
+    throw new Error(
+      'Provide TAURI_SIGNING_PRIVATE_KEY or configure the release signing key in macOS Keychain.',
+    );
+  signingKey = stored.stdout.trim();
+}
 const output = path.join(desktop, 'release');
 mkdirSync(output, { recursive: true });
 const run = (command, args, env = process.env) => {
@@ -92,8 +114,49 @@ Independent client, not affiliated with Vectorize AI, Inc.
     dmg,
   ]);
   run('/usr/bin/hdiutil', ['verify', dmg]);
+  // Archive only the final signed bundle, after every modification above.
+  // Signature verification is separate from Apple Developer ID/notarization.
+  const archiveName = `Hindsight-Desktop_${version}_macOS-Apple-Silicon.app.tar.gz`;
+  const archive = path.join(output, archiveName);
+  run('/usr/bin/tar', ['-czf', archive, '-C', path.dirname(app), path.basename(app)], {
+    ...process.env,
+    COPYFILE_DISABLE: '1',
+  });
+  run(
+    process.execPath,
+    ['scripts/tauri.mjs', 'signer', 'sign', '--app-version', version, archive],
+    {
+      ...process.env,
+      TAURI_SIGNING_PRIVATE_KEY: signingKey,
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '',
+    },
+  );
+  const signature = readFileSync(`${archive}.sig`, 'utf8').trim();
+  if (!signature) throw new Error('Missing updater archive signature.');
   const sha256 = createHash('sha256').update(readFileSync(dmg)).digest('hex');
-  writeFileSync(path.join(output, 'SHA256SUMS.txt'), `${sha256}  ${name}\n`);
+  const archiveSHA256 = createHash('sha256').update(readFileSync(archive)).digest('hex');
+  writeFileSync(
+    path.join(output, 'SHA256SUMS.txt'),
+    `${sha256}  ${name}\n${archiveSHA256}  ${archiveName}\n`,
+  );
+  writeFileSync(
+    path.join(output, 'beta.json'),
+    JSON.stringify(
+      {
+        version,
+        notes: `Hindsight Desktop ${version} community beta.`,
+        pub_date: new Date().toISOString(),
+        platforms: {
+          'darwin-aarch64': {
+            url: `https://github.com/paabL/hindsight-desktop/releases/download/v${version}/${archiveName}`,
+            signature,
+          },
+        },
+      },
+      null,
+      2,
+    ) + '\n',
+  );
   writeFileSync(
     path.join(output, 'release-manifest.json'),
     JSON.stringify(
@@ -107,6 +170,12 @@ Independent client, not affiliated with Vectorize AI, Inc.
         notarized: false,
         file: name,
         sha256,
+        updater: {
+          file: archiveName,
+          sha256: archiveSHA256,
+          signature: `${archiveName}.sig`,
+          signedVersion: version,
+        },
       },
       null,
       2,

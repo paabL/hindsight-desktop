@@ -76,6 +76,20 @@ are written to `desktop/screenshots/`.
 Browser tests do not verify native Tauri dialogs or macOS permissions. Check those
 in the packaged app.
 
+## Signed application updates
+
+`npm run test:updates` uses a mocked native host and fictional data to cover the
+explicit update check, available/current states, download failures, repeated
+clicks, active work, and English/French messages. It never installs an app.
+
+From `desktop/src-tauri`, `cargo test --locked` checks the native release source,
+selected version, installation location and rejection of altered or incorrectly
+versioned signatures. The ignored release qualification test accepts the built
+archive and feed through `HINDSIGHT_VERIFY_ARCHIVE` and
+`HINDSIGHT_VERIFY_FEED`; it verifies and installs into its own temporary bundle,
+then checks the installed version and code signature. It does not modify the
+app in Applications.
+
 ## Build and check Tauri
 
 ```sh
