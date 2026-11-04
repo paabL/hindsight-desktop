@@ -2,9 +2,11 @@
 
 Canal officiel proposé par le dépôt upstream : [communauté Slack](https://vectorize.io/slack).
 Le [dépôt Hindsight](https://github.com/vectorize-io/hindsight) propose aussi des
-discussions publiques. Envoyer après la disponibilité d'une release vérifiée.
+discussions publiques.
 
-## Message prêt à envoyer
+Message publié le 4 novembre 2026 dans [Show and tell](https://github.com/vectorize-io/hindsight/discussions/6338), après la vérification du téléchargement public. Aucun retour de mainteneur n’est encore confirmé.
+
+## Message envoyé
 
 Hi Hindsight team — I built a small independent macOS desktop client for
 Hindsight, with a React/Tauri interface and a native Swift API client.
