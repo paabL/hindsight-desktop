@@ -457,149 +457,155 @@ export default function App() {
     <div className={`app-shell host-${host.toLowerCase()}`}>
       <aside className="sidebar">
         <div className="window-drag" data-tauri-drag-region />
-        <div className="brand">
-          <Logo />
-          <div>
-            <strong>Hindsight</strong>
-            <span>{t('ESPACE DE MÉMOIRE', 'DESKTOP WORKSPACE')}</span>
+        <div className="sidebar-scroll">
+          <div className="brand">
+            <Logo />
+            <div>
+              <strong>Hindsight</strong>
+              <span>{t('ESPACE DE MÉMOIRE', 'DESKTOP WORKSPACE')}</span>
+            </div>
           </div>
-        </div>
-        <div className="workspace-wrapper">
-          <button
-            className="workspace-switch"
-            aria-expanded={bankMenu}
-            onClick={() => setBankMenu(!bankMenu)}
-          >
-            <span className="workspace-avatar">
-              {bankName
-                .split(/[\s-]+/)
-                .filter(Boolean)
-                .slice(0, 2)
-                .map((s: string) => s[0])
-                .join('')
-                .toUpperCase()}
-            </span>
-            <span>
-              <strong>{bankName}</strong>
-              <small>
-                {bank
-                  ? t(
-                      `${number(bank.fact_count)} faits en mémoire`,
-                      `${number(bank.fact_count)} facts in memory`,
-                    )
-                  : t('Espace personnel', 'Personal workspace')}
-              </small>
-            </span>
-            <ChevronDown size={14} />
-          </button>
-          {bankMenu && (
-            <>
+          <div className="workspace-wrapper">
+            <button
+              className="workspace-switch"
+              aria-expanded={bankMenu}
+              onClick={() => setBankMenu(!bankMenu)}
+            >
+              <span className="workspace-avatar">
+                {bankName
+                  .split(/[\s-]+/)
+                  .filter(Boolean)
+                  .slice(0, 2)
+                  .map((s: string) => s[0])
+                  .join('')
+                  .toUpperCase()}
+              </span>
+              <span>
+                <strong>{bankName}</strong>
+                <small>
+                  {bank
+                    ? t(
+                        `${number(bank.fact_count)} faits en mémoire`,
+                        `${number(bank.fact_count)} facts in memory`,
+                      )
+                    : t('Espace personnel', 'Personal workspace')}
+                </small>
+              </span>
+              <ChevronDown size={14} />
+            </button>
+            {bankMenu && (
+              <>
+                <button
+                  className="menu-dismiss"
+                  aria-label={t('Fermer le choix de banque', 'Close memory bank menu')}
+                  onClick={() => setBankMenu(false)}
+                />
+                <div className="bank-menu">
+                  <span className="eyebrow">{t('Vos banques', 'Your memory banks')}</span>
+                  {snapshot.app.banks.map((b) => (
+                    <button
+                      key={b.bank_id}
+                      onClick={() => {
+                        setBankMenu(false);
+                        void run('bank.select', { id: b.bank_id });
+                      }}
+                    >
+                      <Database size={15} />
+                      <span>{b.display_alias || b.name || b.bank_id}</span>
+                      {snapshot.app.bank === b.bank_id && <Check size={14} />}
+                    </button>
+                  ))}
+                  {!snapshot.app.banks.length && (
+                    <p className="muted">
+                      {t('Aucune banque connectée', 'No connected memory banks')}
+                    </p>
+                  )}
+                  <button onClick={() => navigate('admin')}>
+                    <Plus size={15} />
+                    {t('Gérer les banques', 'Manage memory banks')}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+          <div className="sidebar-label">{t('VOTRE MÉMOIRE', 'YOUR MEMORY')}</div>
+          <nav aria-label={t('Navigation principale', 'Main navigation')}>
+            {primary.map(({ id, label, icon: Icon }, i) => (
               <button
-                className="menu-dismiss"
-                aria-label={t('Fermer le choix de banque', 'Close memory bank menu')}
-                onClick={() => setBankMenu(false)}
-              />
-              <div className="bank-menu">
-                <span className="eyebrow">{t('Vos banques', 'Your memory banks')}</span>
-                {snapshot.app.banks.map((b) => (
+                key={id}
+                className={`nav-item ${route === id ? 'active' : ''}`}
+                onClick={() => navigate(id)}
+                aria-current={route === id ? 'page' : undefined}
+              >
+                <Icon size={18} strokeWidth={1.6} />
+                <span>{label}</span>
+                {id === 'models' && demo ? (
+                  <span className="nav-count">4</span>
+                ) : (
+                  <kbd>{i + 1}</kbd>
+                )}
+              </button>
+            ))}
+          </nav>
+          <div className="advanced-nav">
+            <button
+              className="advanced-toggle"
+              aria-expanded={advanced}
+              onClick={() => setAdvanced(!advanced)}
+            >
+              <Settings2 size={16} />
+              <span>{t('Avancé', 'Advanced')}</span>
+              <ChevronRight size={14} className={advanced ? 'rotated' : ''} />
+            </button>
+            {advanced && (
+              <nav aria-label={t('Outils avancés', 'Advanced tools')}>
+                {advancedItems.map(({ id, label, icon: Icon }) => (
                   <button
-                    key={b.bank_id}
-                    onClick={() => {
-                      setBankMenu(false);
-                      void run('bank.select', { id: b.bank_id });
-                    }}
+                    key={id}
+                    className={`nav-item secondary-nav ${route === id ? 'active' : ''}`}
+                    onClick={() => navigate(id)}
                   >
-                    <Database size={15} />
-                    <span>{b.display_alias || b.name || b.bank_id}</span>
-                    {snapshot.app.bank === b.bank_id && <Check size={14} />}
+                    <Icon size={16} strokeWidth={1.6} />
+                    <span>{label}</span>
                   </button>
                 ))}
-                {!snapshot.app.banks.length && (
-                  <p className="muted">
-                    {t('Aucune banque connectée', 'No connected memory banks')}
-                  </p>
-                )}
-                <button onClick={() => navigate('admin')}>
-                  <Plus size={15} />
-                  {t('Gérer les banques', 'Manage memory banks')}
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-        <div className="sidebar-label">{t('VOTRE MÉMOIRE', 'YOUR MEMORY')}</div>
-        <nav aria-label={t('Navigation principale', 'Main navigation')}>
-          {primary.map(({ id, label, icon: Icon }, i) => (
+              </nav>
+            )}
+          </div>
+          <div className="sidebar-bottom">
             <button
-              key={id}
-              className={`nav-item ${route === id ? 'active' : ''}`}
-              onClick={() => navigate(id)}
-              aria-current={route === id ? 'page' : undefined}
+              className={`nav-item ${route === 'settings' ? 'active' : ''}`}
+              onClick={() => navigate('settings')}
             >
-              <Icon size={18} strokeWidth={1.6} />
-              <span>{label}</span>
-              {id === 'models' && demo ? <span className="nav-count">4</span> : <kbd>{i + 1}</kbd>}
+              <Settings2 size={17} />
+              <span>{t('Réglages', 'Settings')}</span>
+              <kbd>⌘ ,</kbd>
             </button>
-          ))}
-        </nav>
-        <div className="advanced-nav">
-          <button
-            className="advanced-toggle"
-            aria-expanded={advanced}
-            onClick={() => setAdvanced(!advanced)}
-          >
-            <Settings2 size={16} />
-            <span>{t('Avancé', 'Advanced')}</span>
-            <ChevronRight size={14} className={advanced ? 'rotated' : ''} />
-          </button>
-          {advanced && (
-            <nav aria-label={t('Outils avancés', 'Advanced tools')}>
-              {advancedItems.map(({ id, label, icon: Icon }) => (
-                <button
-                  key={id}
-                  className={`nav-item secondary-nav ${route === id ? 'active' : ''}`}
-                  onClick={() => navigate(id)}
-                >
-                  <Icon size={16} strokeWidth={1.6} />
-                  <span>{label}</span>
-                </button>
-              ))}
-            </nav>
-          )}
-        </div>
-        <div className="sidebar-bottom">
-          <button
-            className={`nav-item ${route === 'settings' ? 'active' : ''}`}
-            onClick={() => navigate('settings')}
-          >
-            <Settings2 size={17} />
-            <span>{t('Réglages', 'Settings')}</span>
-            <kbd>⌘ ,</kbd>
-          </button>
-          <div className="connection-footer">
-            <span className={`status-dot ${snapshot.app.connected ? 'green' : ''}`} />
-            <div>
-              <strong>
-                {demo
-                  ? t('Espace de démonstration', 'Example workspace')
-                  : snapshot.app.connected
-                    ? t('Hindsight est connecté', 'Hindsight is connected')
-                    : t('Dossier disponible hors ligne', 'Browse a folder offline')}
-              </strong>
-              <span>
-                {demo
-                  ? t('Toutes les données sont fictives', 'All data is fictional')
-                  : snapshot.app.connected
-                    ? t('Votre mémoire est à portée de main', 'Your memory is within reach')
-                    : t('Le serveur est déconnecté', 'The server is disconnected')}
-              </span>
+            <div className="connection-footer">
+              <span className={`status-dot ${snapshot.app.connected ? 'green' : ''}`} />
+              <div>
+                <strong>
+                  {demo
+                    ? t('Espace de démonstration', 'Example workspace')
+                    : snapshot.app.connected
+                      ? t('Hindsight est connecté', 'Hindsight is connected')
+                      : t('Dossier disponible hors ligne', 'Browse a folder offline')}
+                </strong>
+                <span>
+                  {demo
+                    ? t('Toutes les données sont fictives', 'All data is fictional')
+                    : snapshot.app.connected
+                      ? t('Votre mémoire est à portée de main', 'Your memory is within reach')
+                      : t('Le serveur est déconnecté', 'The server is disconnected')}
+                </span>
+              </div>
+              <IconButton
+                icon={RefreshCw}
+                label={t('Vérifier la connexion au serveur', 'Check the server connection')}
+                disabled={busy}
+                onClick={() => void run('connect')}
+              />
             </div>
-            <IconButton
-              icon={RefreshCw}
-              label={t('Vérifier la connexion au serveur', 'Check the server connection')}
-              disabled={busy}
-              onClick={() => void run('connect')}
-            />
           </div>
         </div>
       </aside>
@@ -679,7 +685,7 @@ export default function App() {
               <Logo small />
               <span>Hindsight Desktop</span>
               <span className="spacer" />
-              <span>Hindsight Desktop · 0.1.1</span>
+              <span>Hindsight Desktop · 0.1.2</span>
             </footer>
           </div>
         </div>
@@ -967,7 +973,7 @@ function Settings({
         </div>
       </section>
       <p className="page-footnote">
-        Hindsight Desktop 0.1.1 · {host} · HindsightCore ·{' '}
+        Hindsight Desktop 0.1.2 · {host} · HindsightCore ·{' '}
         {t('macOS 15 et plus', 'macOS 15 or later')}
       </p>
       <p className="page-footnote">
