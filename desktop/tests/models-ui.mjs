@@ -48,22 +48,26 @@ try {
   await expect(prune).toHaveCount(0);
   await page.getByRole('tab', { name: 'Retrouver des faits', exact: true }).click();
   await expect(prune).toHaveValue('false');
-  await nav.getByRole('button', { name: /Consommation/ }).click();
+  await nav.getByRole('button', { name: /^Activité/ }).click();
+  await page
+    .getByRole('tablist', { name: 'Vues de l’activité' })
+    .getByRole('tab', { name: 'Consommation', exact: true })
+    .click();
   await expect(page.getByRole('columnheader', { name: 'Équivalent API' })).toBeVisible();
   await expect(page.getByRole('cell', { name: 'hs-decide-1-flash', exact: true })).toBeVisible();
   await expect(
     page.getByText('Montants indicatifs aux tarifs Hindsight Inference', { exact: false }),
   ).toBeVisible();
-  await page.getByRole('button', { name: 'Avancé', exact: true }).click();
-  const advanced = page.getByRole('navigation', { name: 'Outils avancés' });
-  await advanced.getByRole('button', { name: 'Structure de la mémoire', exact: true }).click();
+  await page.keyboard.press('Meta+,');
+  const settings = page.getByRole('tablist', { name: 'Vues des réglages' });
+  await settings.getByRole('tab', { name: 'Comportement de la mémoire', exact: true }).click();
   await page.getByRole('tab', { name: 'Réponses', exact: true }).click();
   await expect(page.getByRole('switch')).toHaveCount(3);
   await page.getByRole('tab', { name: 'Recherche', exact: true }).click();
   await expect(page.getByRole('switch', { name: /Écarter les faits inutiles/ })).not.toBeChecked();
   await page.getByRole('switch', { name: /Retirer les doublons/ }).check();
   await expect(page.getByRole('switch', { name: /Retirer les doublons/ })).toBeChecked();
-  await advanced.getByRole('button', { name: 'Serveur & modèles', exact: true }).click();
+  await settings.getByRole('tab', { name: 'Serveur & modèles', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Modèles Hindsight', exact: true })).toBeVisible();
   await mkdir(path.join(root, 'screenshots'), { recursive: true });
   for (const width of [1440, 1000]) {

@@ -130,10 +130,10 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
     <>
       <PageHeader
         eyebrow={t('Une mémoire à votre image', 'Memory that works for you')}
-        title={t('Structure de la mémoire', 'Memory structure')}
+        title={t('Comportement de la mémoire', 'Memory behavior')}
         description={t(
-          'Définissez ce qui compte, comment le retenir et comment y réfléchir.',
-          'Define what matters, how to remember it, and how to reason about it.',
+          'Choisissez ce que la banque sélectionnée retient, comment elle consolide ses souvenirs et répond aux questions.',
+          'Choose what the selected bank remembers, how it consolidates memories and answers questions.',
         )}
         actions={
           <Button kind="primary" icon={Save} disabled={busy} onClick={() => action('memory.save')}>
@@ -524,10 +524,10 @@ export function Admin({ data, run, busy, notify }: PageProps) {
     <>
       <PageHeader
         eyebrow={t('Les outils de votre banque', 'Tools for your bank')}
-        title="Administration"
+        title={t('Banque', 'Memory bank')}
         description={t(
-          'Gérez la banque, ses directives et ses sauvegardes.',
-          'Manage the bank, its directives, and backups.',
+          'Gérez l’identité, les directives et les sauvegardes de la banque sélectionnée.',
+          'Manage the selected bank’s identity, directives and backups.',
         )}
         actions={
           <Button
@@ -1504,11 +1504,11 @@ export function Hermes({ data, run, busy }: PageProps) {
   return (
     <>
       <PageHeader
-        eyebrow={t('Import manuel avancé', 'Advanced manual import')}
-        title={t('Conversations Hermes', 'Hermes conversations')}
+        eyebrow={t('Import de conversations', 'Conversation import')}
+        title={t('Imports', 'Imports')}
         description={t(
-          'Prévisualisez les sessions locales avant de préparer leur import.',
-          'Preview local sessions before preparing an import.',
+          'Prévisualisez les conversations Hermes de ce Mac avant de préparer leur envoi à la banque sélectionnée.',
+          'Preview this Mac’s Hermes conversations before preparing an upload to the selected bank.',
         )}
         actions={
           <Button
@@ -1524,14 +1524,14 @@ export function Hermes({ data, run, busy }: PageProps) {
       <div className="notice">
         <BookOpen size={17} />{' '}
         {t(
-          'Les conversations Codex et Claude Code passent par Agent Dump et le dossier mémoire.',
-          'Codex and Claude Code conversations go through Agent Dump and the memory folder.',
+          'Les conversations Codex et Claude Code passent par Agent Dump et le catalogue de sources. Cet import direct concerne Hermes.',
+          'Codex and Claude Code conversations go through Agent Dump and the source catalog. This direct import is for Hermes.',
         )}
       </div>
       <ErrorNotice message={data.error} />
       <section className="card">
         <CardHeader
-          title={t('Sessions disponibles', 'Available sessions')}
+          title={t('Conversations Hermes disponibles', 'Available Hermes conversations')}
           action={
             <Button
               icon={Check}

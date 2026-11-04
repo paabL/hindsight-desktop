@@ -52,7 +52,7 @@ export default function Operations({ data, run, busy, refresh }: PageProps) {
     <>
       <PageHeader
         eyebrow={t('Ce qui se passe en coulisses', 'Behind the scenes')}
-        title={t('Opérations', 'Operations')}
+        title={t('Traitements', 'Processing')}
         description={t(
           'Suivez les traitements et intervenez quand c’est utile.',
           'Follow processing and act when needed.',

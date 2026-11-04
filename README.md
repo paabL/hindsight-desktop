@@ -28,8 +28,12 @@ Do not disable macOS security protections.
 2. In **Settings**, enter the address of an existing Hindsight server
    (`http://127.0.0.1:8888` for a local server). Recent features target API 1.2.0;
    availability depends on your server.
-3. Choose a memory bank, or browse a local memory folder without a server.
-4. Review your sources and the preview, then confirm an upload to Hindsight.
+3. Choose a memory bank. **Overview** summarizes it; **Memory** shows its stored
+   facts, documents, timeline and graph. **Knowledge** contains knowledge pages.
+4. Open **Sources** to browse a local folder, even without a server. Review the
+   sources and upload preview, then confirm what to send into Hindsight.
+5. Use **Activity** for processing, usage and logs. Related views appear as tabs;
+   connection and bank configuration stay in **Settings**.
 
 The app **does not include the server or model weights**. Follow the
 [official server setup documentation](https://hindsight.vectorize.io).

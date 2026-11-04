@@ -39,7 +39,7 @@ widths.
 The settings catalog supports `hindsight` for decision, reranking, and embedding
 models. Dedicated keys may be left empty after `hindsight-admin cloud login`.
 Search → Filters applies prune/dedup choices only to the current request; persistent
-defaults belong in Memory structure → Search. Recall needs a configured decision
+defaults belong in Settings → Memory behavior → Search. Recall needs a configured decision
 model. Changing embedding models requires reindexing; changing rerankers does not.
 
 ## Native bridge and frontend
@@ -66,12 +66,23 @@ cd desktop
 npx playwright install chromium
 npm run test:ui
 npm run test:i18n
+node tests/navigation-ui.mjs
 ```
 
 Rendering tests use synthetic data. They visit views, open documents and summaries,
 search facts, filter sources, inspect the graph, exercise shortcuts, and check both
 themes. Language checks cover English and the optional French interface. Screenshots
 are written to `desktop/screenshots/`.
+
+The navigation regression checks the six primary groups and all seventeen hash
+routes, including existing links. It covers contextual tab selection, remembered
+tabs, browser back/forward, the command palette, `⌘1…6`, invalid numbered shortcuts,
+English/French labels, accent-insensitive group search and the minimum window
+width. Facts checks cover type/text filters, source reading, loaded-versus-total
+counts and explicit server search. The language check also
+checks the fixed native titlebar reserve while attempting sidebar scrolling in
+both themes at three widths. Public screenshots use an isolated fictional bank,
+not a user's server or local folder.
 
 Browser tests do not verify native Tauri dialogs or macOS permissions. Check those
 in the packaged app.
@@ -133,7 +144,7 @@ before updating this dependency. `HindsightAPI` and `HindsightCore` remain avail
 
 `AppUpdateTests` checks Tauri rebuilds in a separate destination, bundle identifier
 validation, replacement, rejection of local modifications, and repository changes
-after confirmation. In Settings → App updates, inspect the log and state without
+after confirmation. In Settings → Application → Application updates, inspect the log and state without
 confirming a real installation. Update status should remain responsive regardless
 of the Hindsight server connection.
 

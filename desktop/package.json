@@ -1,6 +1,6 @@
 {
   "name": "hindsight-desktop",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "description": "Independent macOS client for Hindsight",
   "type": "module",
@@ -19,6 +19,7 @@
     "web:dev": "vite --host 127.0.0.1",
     "test:i18n": "node tests/i18n-ui.mjs",
     "test:updates": "node tests/updates-ui.mjs",
+    "test:navigation": "node tests/navigation-ui.mjs",
     "release:package": "node scripts/package-release.mjs"
   },
   "dependencies": {

@@ -41,6 +41,7 @@ import {
   X,
 } from 'lucide-react';
 import type { PageProps, Row, Section, Snapshot } from './types';
+import { version as appVersion } from '../package.json';
 import { useI18n, translate as tr, type Language } from './i18n';
 import { localizeNativeSnapshot, nativeSystemMessage } from './native-messages';
 import { nativeRequest, host } from './transport';
@@ -67,6 +68,7 @@ const Audit = lazy(() => import('./pages/Explore').then((m) => ({ default: m.Aud
 const Dashboard = lazy(() => import('./pages/Explore').then((m) => ({ default: m.Dashboard })));
 const Graph = lazy(() => import('./pages/Graph'));
 const Timeline = lazy(() => import('./pages/Explore').then((m) => ({ default: m.Timeline })));
+const Facts = lazy(() => import('./pages/Explore').then((m) => ({ default: m.Facts })));
 import Operations from './pages/Operations';
 const Admin = lazy(() => import('./pages/Manage').then((m) => ({ default: m.Admin })));
 const Hermes = lazy(() => import('./pages/Manage').then((m) => ({ default: m.Hermes })));
@@ -78,57 +80,96 @@ const ServerSettings = lazy(() =>
 );
 
 const basePrimary = [
-  { id: 'sources', label: 'Mémoire', icon: Folder },
-  { id: 'models', label: 'Synthèses', icon: BookOpen },
+  { id: 'dashboard', label: 'Vue d’ensemble', english: 'Overview', icon: LayoutDashboard },
+  { id: 'facts', label: 'Mémoire', english: 'Memory', icon: Layers3 },
+  { id: 'models', label: 'Connaissances', english: 'Knowledge', icon: BookOpen },
   { id: 'search', label: 'Recherche', icon: Search },
-  { id: 'consumption', label: 'Consommation', icon: BarChart3 },
-] as const;
-const baseAdvanced = [
-  { id: 'documents', label: 'Lecteur de documents', icon: FileText },
-  { id: 'dashboard', label: 'Vue d’ensemble', icon: LayoutDashboard },
-  { id: 'memory', label: 'Structure de la mémoire', icon: Layers3 },
-  { id: 'operations', label: 'Opérations', icon: ListTodo },
-  { id: 'audit', label: 'Activité & lectures', icon: Activity },
-  { id: 'timeline', label: 'Chronologie', icon: GitBranch },
-  { id: 'graph', label: 'Graphe', icon: Network },
-  { id: 'hermes', label: 'Import Hermes', icon: ArrowRight },
-  { id: 'server', label: 'Serveur & modèles', icon: Server },
-  { id: 'admin', label: 'Administration', icon: Database },
+  { id: 'sources', label: 'Sources', english: 'Sources', icon: Folder },
+  { id: 'operations', label: 'Activité', english: 'Activity', icon: Activity },
 ] as const;
 const baseSections = [
-  ...basePrimary,
-  ...baseAdvanced,
-  { id: 'settings', label: 'Réglages', icon: Settings2 },
-  { id: 'coverage', label: 'Couverture des dossiers', icon: Folder },
+  { id: 'dashboard', label: 'Vue d’ensemble', icon: LayoutDashboard },
+  { id: 'facts', label: 'Faits', icon: Layers3 },
+  { id: 'models', label: 'Connaissances', icon: BookOpen },
+  { id: 'search', label: 'Recherche', icon: Search },
+  { id: 'sources', label: 'Catalogue', icon: Folder },
+  { id: 'documents', label: 'Documents', icon: FileText },
+  { id: 'operations', label: 'Traitements', icon: ListTodo },
+  { id: 'consumption', label: 'Consommation', icon: BarChart3 },
+  { id: 'audit', label: 'Journaux', icon: Activity },
+  { id: 'timeline', label: 'Chronologie', icon: GitBranch },
+  { id: 'graph', label: 'Graphe', icon: Network },
+  { id: 'hermes', label: 'Imports', icon: ArrowRight },
+  { id: 'server', label: 'Serveur & modèles', icon: Server },
+  { id: 'admin', label: 'Banque', icon: Database },
+  { id: 'memory', label: 'Comportement de la mémoire', icon: Layers3 },
+  { id: 'settings', label: 'Application', icon: Settings2 },
+  { id: 'coverage', label: 'Dossiers suivis', icon: Folder },
 ] as const;
 const englishLabels: Record<Section, string> = {
-  sources: 'Memory',
-  models: 'Summaries',
+  sources: 'Catalog',
+  facts: 'Facts',
+  models: 'Knowledge',
   search: 'Search',
   consumption: 'Usage',
-  documents: 'Document reader',
+  documents: 'Documents',
   dashboard: 'Overview',
-  memory: 'Memory structure',
-  operations: 'Operations',
-  audit: 'Activity & reads',
+  memory: 'Memory behavior',
+  operations: 'Processing',
+  audit: 'Logs',
   timeline: 'Timeline',
   graph: 'Graph',
-  hermes: 'Import Hermes',
+  hermes: 'Imports',
   server: 'Server & models',
-  admin: 'Administration',
-  settings: 'Settings',
-  coverage: 'Folder coverage',
+  admin: 'Memory bank',
+  settings: 'Application',
+  coverage: 'Tracked folders',
 };
+type NavigationGroup =
+  'overview' | 'memory' | 'knowledge' | 'search' | 'sources' | 'activity' | 'settings';
+const viewGroups: Partial<
+  Record<NavigationGroup, { label: string; english: string; views: readonly Section[] }>
+> = {
+  memory: {
+    label: 'Vues de la mémoire',
+    english: 'Memory views',
+    views: ['facts', 'documents', 'timeline', 'graph'],
+  },
+  sources: {
+    label: 'Vues des sources',
+    english: 'Source views',
+    views: ['sources', 'coverage', 'hermes'],
+  },
+  activity: {
+    label: 'Vues de l’activité',
+    english: 'Activity views',
+    views: ['operations', 'consumption', 'audit'],
+  },
+  settings: {
+    label: 'Vues des réglages',
+    english: 'Settings views',
+    views: ['settings', 'admin', 'memory', 'server'],
+  },
+};
+function groupFor(section: Section): NavigationGroup {
+  if (['facts', 'documents', 'timeline', 'graph'].includes(section)) return 'memory';
+  if (['sources', 'coverage', 'hermes'].includes(section)) return 'sources';
+  if (['operations', 'consumption', 'audit'].includes(section)) return 'activity';
+  if (['settings', 'admin', 'memory', 'server'].includes(section)) return 'settings';
+  if (section === 'models') return 'knowledge';
+  if (section === 'search') return 'search';
+  return 'overview';
+}
 const initial: Snapshot = {
   app: { connected: false, serverURL: 'http://127.0.0.1:8888', banks: [], bank: null },
-  section: 'sources',
+  section: 'dashboard',
   data: {},
   confirmations: [],
   messages: [],
 };
 function initialRoute(): Section {
   const id = location.hash.slice(1);
-  return baseSections.some((s) => s.id === id) ? (id as Section) : 'sources';
+  return baseSections.some((s) => s.id === id) ? (id as Section) : 'dashboard';
 }
 
 class PageBoundary extends Component<{ children: ReactNode }, { error: boolean }> {
@@ -154,12 +195,11 @@ class PageBoundary extends Component<{ children: ReactNode }, { error: boolean }
 
 export default function App() {
   const { t } = useI18n();
-  const localize = <T extends { id: Section; label: string }>(item: T) => ({
+  const localize = <T extends { id: Section; label: string; english?: string }>(item: T) => ({
     ...item,
-    label: t(item.label, englishLabels[item.id]),
+    label: t(item.label, item.english || englishLabels[item.id]),
   });
   const primary = basePrimary.map(localize);
-  const advancedItems = baseAdvanced.map(localize);
   const sections = baseSections.map(localize);
   const [route, setRoute] = useState<Section>(initialRoute);
   const routeRef = useRef(route);
@@ -171,7 +211,10 @@ export default function App() {
   demoRef.current = demo;
   const [ready, setReady] = useState(false);
   const [busyCount, setBusyCount] = useState(0);
-  const [advanced, setAdvanced] = useState(advancedItems.some((s) => s.id === route));
+  const [lastViews, setLastViews] = useState<Partial<Record<NavigationGroup, Section>>>(() => {
+    const section = initialRoute();
+    return { [groupFor(section)]: section };
+  });
   const [command, setCommand] = useState(false);
   const [commandQuery, setCommandQuery] = useState('');
   const [bankMenu, setBankMenu] = useState(false);
@@ -221,7 +264,7 @@ export default function App() {
     setRoute(section);
     location.hash = section;
     setSnapshot((old) => ({ ...old, section, data: {} }));
-    if (advancedItems.some((s) => s.id === section)) setAdvanced(true);
+    setLastViews((old) => ({ ...old, [groupFor(section)]: section }));
     setCommand(false);
     setBankMenu(false);
   }
@@ -327,6 +370,7 @@ export default function App() {
         routeRef.current = next;
         setRoute(next);
         setSnapshot((old) => ({ ...old, section: next, data: {} }));
+        setLastViews((old) => ({ ...old, [groupFor(next)]: next }));
       }
     };
     window.addEventListener('hashchange', changed);
@@ -338,6 +382,23 @@ export default function App() {
   const bankName =
     bank?.display_alias || bank?.name || bank?.bank_id || t('Votre espace', 'Your workspace');
   const title = sections.find((s) => s.id === route)?.label || 'Hindsight';
+  const currentGroup = groupFor(route);
+  const groupTitle =
+    currentGroup === 'settings'
+      ? t('Réglages', 'Settings')
+      : primary.find((item) => groupFor(item.id) === currentGroup)?.label || title;
+  const views = viewGroups[currentGroup];
+  function sectionName(section: { id: Section; label: string }) {
+    const group = groupFor(section.id);
+    if (!viewGroups[group]) return section.label;
+    const name =
+      group === 'settings'
+        ? t('Réglages', 'Settings')
+        : primary.find((item) => groupFor(item.id) === group)?.label;
+    return `${name} · ${section.label}`;
+  }
+  const searchText = (value: string) =>
+    value.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase();
   const confirmation = snapshot.confirmations[0];
   const needsBank = !['sources', 'settings', 'server', 'consumption'].includes(route);
   const disconnected =
@@ -380,21 +441,19 @@ export default function App() {
                   disabled={busy}
                   onClick={() => {
                     if (snapshot.app.connected) navigate('admin');
-                    else void run('connect');
+                    else navigate('settings');
                   }}
                 >
                   {snapshot.app.connected
                     ? t('Créer une banque', 'Create a memory bank')
-                    : t('Se reconnecter', 'Reconnect')}
+                    : t('Connecter mon serveur', 'Connect my server')}
                 </Button>
-                <Button onClick={() => navigate('settings')}>
-                  {t('Réglages du serveur', 'Server settings')}
+                <Button onClick={() => navigate('sources')}>
+                  {t('Parcourir les sources', 'Browse sources')}
                 </Button>
-                {host === 'Navigateur' && (
-                  <Button onClick={() => changeDemo(true)}>
-                    {t('Explorer un exemple', 'Explore an example')}
-                  </Button>
-                )}
+                <Button onClick={() => changeDemo(true)}>
+                  {t('Explorer un exemple', 'Explore an example')}
+                </Button>
               </div>
             }
           />
@@ -412,6 +471,8 @@ export default function App() {
         );
       case 'models':
         return <Models {...props} />;
+      case 'facts':
+        return <Facts {...props} />;
       case 'search':
         return <SearchPage {...props} />;
       case 'documents':
@@ -521,8 +582,12 @@ export default function App() {
                     </p>
                   )}
                   <button onClick={() => navigate('admin')}>
-                    <Plus size={15} />
-                    {t('Gérer les banques', 'Manage memory banks')}
+                    <Settings2 size={15} />
+                    {t('Réglages de la banque', 'Memory bank settings')}
+                  </button>
+                  <button onClick={() => navigate('memory')}>
+                    <Layers3 size={15} />
+                    {t('Comportement de la mémoire', 'Memory behavior')}
                   </button>
                 </div>
               </>
@@ -533,9 +598,9 @@ export default function App() {
             {primary.map(({ id, label, icon: Icon }, i) => (
               <button
                 key={id}
-                className={`nav-item ${route === id ? 'active' : ''}`}
-                onClick={() => navigate(id)}
-                aria-current={route === id ? 'page' : undefined}
+                className={`nav-item ${currentGroup === groupFor(id) ? 'active' : ''}`}
+                onClick={() => navigate(lastViews[groupFor(id)] || id)}
+                aria-current={currentGroup === groupFor(id) ? 'page' : undefined}
               >
                 <Icon size={18} strokeWidth={1.6} />
                 <span>{label}</span>
@@ -547,34 +612,10 @@ export default function App() {
               </button>
             ))}
           </nav>
-          <div className="advanced-nav">
-            <button
-              className="advanced-toggle"
-              aria-expanded={advanced}
-              onClick={() => setAdvanced(!advanced)}
-            >
-              <Settings2 size={16} />
-              <span>{t('Avancé', 'Advanced')}</span>
-              <ChevronRight size={14} className={advanced ? 'rotated' : ''} />
-            </button>
-            {advanced && (
-              <nav aria-label={t('Outils avancés', 'Advanced tools')}>
-                {advancedItems.map(({ id, label, icon: Icon }) => (
-                  <button
-                    key={id}
-                    className={`nav-item secondary-nav ${route === id ? 'active' : ''}`}
-                    onClick={() => navigate(id)}
-                  >
-                    <Icon size={16} strokeWidth={1.6} />
-                    <span>{label}</span>
-                  </button>
-                ))}
-              </nav>
-            )}
-          </div>
           <div className="sidebar-bottom">
             <button
-              className={`nav-item ${route === 'settings' ? 'active' : ''}`}
+              className={`nav-item ${currentGroup === 'settings' ? 'active' : ''}`}
+              aria-current={currentGroup === 'settings' ? 'page' : undefined}
               onClick={() => navigate('settings')}
             >
               <Settings2 size={17} />
@@ -614,6 +655,12 @@ export default function App() {
           <div className="breadcrumb">
             <span>{bankName}</span>
             <ChevronRight size={13} />
+            {views && (
+              <>
+                <span>{groupTitle}</span>
+                <ChevronRight size={13} />
+              </>
+            )}
             <strong>{title}</strong>
           </div>
           <div className="topbar-actions">
@@ -678,14 +725,58 @@ export default function App() {
         ) : null}
         <div className="page-scroll">
           <div className="page-content">
-            <PageBoundary key={`${route}-${snapshot.app.bank}-${demo}`}>
-              <Suspense fallback={<Loading />}>{page()}</Suspense>
-            </PageBoundary>
+            {views && (
+              <div
+                className="tabs workspace-tabs"
+                role="tablist"
+                aria-label={t(views.label, views.english)}
+              >
+                {views.views.map((id, index, items) => (
+                  <button
+                    key={id}
+                    id={`view-tab-${id}`}
+                    type="button"
+                    role="tab"
+                    aria-selected={route === id}
+                    aria-controls={`view-panel-${id}`}
+                    tabIndex={route === id ? 0 : -1}
+                    className={route === id ? 'active' : ''}
+                    onClick={() => navigate(id)}
+                    onKeyDown={(event) => {
+                      let next = index;
+                      if (event.key === 'ArrowRight') next = (index + 1) % items.length;
+                      else if (event.key === 'ArrowLeft')
+                        next = (index - 1 + items.length) % items.length;
+                      else if (event.key === 'Home') next = 0;
+                      else if (event.key === 'End') next = items.length - 1;
+                      else return;
+                      event.preventDefault();
+                      navigate(items[next]);
+                      requestAnimationFrame(() =>
+                        document.getElementById(`view-tab-${items[next]}`)?.focus(),
+                      );
+                    }}
+                  >
+                    {sections.find((section) => section.id === id)?.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div
+              id={`view-panel-${route}`}
+              role={views ? 'tabpanel' : undefined}
+              aria-labelledby={views ? `view-tab-${route}` : undefined}
+              tabIndex={views ? 0 : undefined}
+            >
+              <PageBoundary key={`${route}-${snapshot.app.bank}-${demo}`}>
+                <Suspense fallback={<Loading />}>{page()}</Suspense>
+              </PageBoundary>
+            </div>
             <footer className="page-brand-footer">
               <Logo small />
               <span>Hindsight Desktop</span>
               <span className="spacer" />
-              <span>Hindsight Desktop · 0.1.2</span>
+              <span>Hindsight Desktop · {appVersion}</span>
             </footer>
           </div>
         </div>
@@ -717,11 +808,11 @@ export default function App() {
           </div>
           <div className="command-list">
             {sections
-              .filter((s) => s.label.toLowerCase().includes(commandQuery.toLowerCase()))
+              .filter((s) => searchText(sectionName(s)).includes(searchText(commandQuery)))
               .map(({ id, icon: Icon, label }) => (
                 <button key={id} onClick={() => navigate(id)}>
                   <Icon size={18} />
-                  <span>{label}</span>
+                  <span>{sectionName({ id, label })}</span>
                   <ArrowRight size={15} />
                 </button>
               ))}
@@ -968,12 +1059,12 @@ function Settings({
           </div>
           <div>
             <span>{t('Parcourir les vues principales', 'Browse the main views')}</span>
-            <kbd>⌘ 1…4</kbd>
+            <kbd>⌘ 1…6</kbd>
           </div>
         </div>
       </section>
       <p className="page-footnote">
-        Hindsight Desktop 0.1.3 · {host} · HindsightCore ·{' '}
+        Hindsight Desktop {appVersion} · {host} · HindsightCore ·{' '}
         {t('macOS 15 et plus', 'macOS 15 or later')}
       </p>
       <p className="page-footnote">

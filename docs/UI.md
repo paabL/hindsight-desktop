@@ -17,19 +17,37 @@ errors, dialogs, and typography live in `desktop/src/ui.tsx`.
 
 ## Navigation and language
 
-Four primary views are available: Memory, Summaries, Search, and Usage. Advanced
-contains Document reader, Overview, Memory structure, Operations, Activity & reads,
-Timeline, Graph, Import Hermes, Server & models, and Administration. Folder coverage
-is available from the document library; Settings stays at the bottom of the sidebar.
+The sidebar has six primary groups: **Overview**, **Memory**, **Knowledge**,
+**Search**, **Sources**, and **Activity**. Overview is the initial view. Settings
+stays at the bottom of the sidebar. All views are visible through these groups;
+there is no Advanced navigation section.
+
+| Group | Views |
+| --- | --- |
+| Overview | Bank statistics, processing status and recent documents |
+| Memory | Facts, Documents, Timeline, Graph |
+| Knowledge | Knowledge pages and mental models |
+| Search | Recall, exact text and confirmed reflect |
+| Sources | Catalog, Tracked folders, Imports |
+| Activity | Processing, Usage, Logs |
+| Settings | Application, Memory bank, Memory behavior, Server & models |
+
+Groups with several views show a named tab bar above the page heading. A group
+click returns to its last selected tab. The Settings shortcut opens Application. Existing hash links remain valid; in
+particular, `#memory` still opens Memory behavior, while `#facts` opens the
+bank's facts. Browser back and forward update the view and active group together.
+The command palette lists every view and searches group and view names without
+requiring accents.
 
 The public interface defaults to English. French is an explicit choice in
-Settings → Language. Documents, source text, and content returned by the server
-keep their original language.
+Settings → Application → Language. Documents, source text, and content returned
+by the server keep their original language.
 
-Memory shows the local catalog before processing: projects, collectors, source
-families, filters, and a reader with provenance. The selected bank identifies
-knowledge stored by Hindsight. The local catalog is independent of that bank and
-remains readable offline.
+**Memory** presents knowledge stored in the selected Hindsight bank. **Sources**
+presents the local catalog before processing: projects, collectors, source
+families, filters, and a reader with provenance. The local catalog is independent
+of the selected bank and remains readable offline. Upload previews explain what
+will be sent from Sources into Hindsight.
 
 Documents open a reader with text, facts, history, and management controls.
 Attachments appear in the corresponding content blocks. Reader search highlights
@@ -56,7 +74,7 @@ empty lists explain how to start, and missing information is shown as unknown.
 - Named buttons and fields, keyboard navigation, and visible focus.
 - Focus stays inside dialogs; Escape closes the topmost dialog.
 - Reduced-motion preferences are respected.
-- `⌘K`: quick navigation; `⌘R`: refresh; `⌘,`: settings; `⌘1…4`: primary views.
+- `⌘K`: quick navigation; `⌘R`: refresh; `⌘,`: settings; `⌘1…6`: primary group defaults.
 
 Example mode is explicitly enabled and visibly marks its data as fictional. It
 does not replace error states from a real connection.

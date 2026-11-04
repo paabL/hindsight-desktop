@@ -1703,6 +1703,30 @@ tbody tr:hover {
   background: var(--neutral-light);
   color: var(--faint);
 }
+.workspace-tabs {
+  gap: 24px;
+  margin-bottom: 24px;
+  padding-top: 0;
+}
+.workspace-tabs button {
+  padding-top: 0;
+  padding-bottom: 12px;
+}
+.facts-filters {
+  padding: 20px 22px;
+  margin-bottom: 20px;
+}
+.facts-filters .list-toolbar {
+  padding: 0;
+  flex-wrap: wrap;
+}
+.facts-filters .list-toolbar > .input-with-icon {
+  flex: 1 1 220px;
+  min-width: 160px;
+}
+.facts-filters > p {
+  margin-top: 12px;
+}
 .search-workspace {
   padding: 0 24px;
 }
@@ -4006,6 +4030,7 @@ tbody tr:hover {
 .page-header {
   margin-bottom: 29px;
   align-items: center;
+  flex-wrap: wrap;
 }
 .page-header h1 {
   font-size: 28px;
@@ -4037,6 +4062,8 @@ tbody tr:hover {
 }
 .header-actions {
   padding-top: 0;
+  flex-wrap: wrap;
+  max-width: 100%;
 }
 .card {
   border-radius: 8px;

@@ -107,7 +107,7 @@ try {
   await page.getByRole('button', { name: 'Désélectionner le nœud', exact: true }).click();
   await page.getByRole('tab', { name: /Passerelles/ }).click();
   await expect(page.locator('.atlas-node-row')).toHaveCount(7);
-  await page.getByRole('tab', { name: 'Faits', exact: true }).click();
+  await page.locator('.page-header').getByRole('tab', { name: 'Faits', exact: true }).click();
   await expect(page.locator('.atlas-node')).toHaveCount(12);
   await page
     .getByRole('combobox', { name: 'Nature des liens', exact: true })

@@ -27,6 +27,7 @@ before(async () => {
     calls.push({
       method: request.method,
       path: url.pathname,
+      query: Object.fromEntries(url.searchParams),
       body: Buffer.concat(chunks).toString(),
     });
     let data = {};
@@ -80,7 +81,32 @@ before(async () => {
       data = { text: 'Réponse du faux serveur, sans appel de modèle.' };
     else if (url.pathname.endsWith('/recall'))
       data = { results: [{ id: 'fact-1', text: 'Un fait synthétique.', type: 'world' }] };
-    else data = { items: [], total: 0, limit: 100, offset: 0, operations: [] };
+    else if (url.pathname.endsWith('/memories/list')) {
+      const memories = [
+        {
+          id: 'retained-fact',
+          text: 'Un fait extrait de la source.',
+          fact_type: 'world',
+          document_id: 'source-document',
+          mentioned_at: '2026-11-04T14:30:00Z',
+          state: 'valid',
+        },
+        {
+          id: 'consolidated-observation',
+          text: 'Une observation consolidée à partir du fait.',
+          fact_type: 'observation',
+          source_memory_ids: ['retained-fact'],
+          state: 'valid',
+        },
+      ].filter(
+        (item) =>
+          (!url.searchParams.get('type') || item.fact_type === url.searchParams.get('type')) &&
+          item.text
+            .toLocaleLowerCase()
+            .includes((url.searchParams.get('q') || '').toLocaleLowerCase()),
+      );
+      data = { items: memories, total: memories.length, limit: 1000, offset: 0 };
+    } else data = { items: [], total: 0, limit: 100, offset: 0, operations: [] };
     response.writeHead(200, { 'Content-Type': 'application/json' });
     response.end(JSON.stringify(data));
   });
@@ -111,6 +137,44 @@ test('le précontrôle de mise à jour est une lecture sans appel au serveur', a
   const before = calls.length;
   assert.deepEqual(await bridge.request('updates.releaseReady'), { releaseUpdateReady: true });
   assert.equal(calls.length, before);
+});
+
+test('la mémoire affiche les faits et observations réels sans écriture ni génération', async () => {
+  const before = calls.length;
+  const result = await bridge.request('section', { section: 'facts' });
+  assert.equal(result.section, 'facts');
+  assert.equal(result.data.total, 2);
+  assert.equal(result.data.truncated, false);
+  assert.deepEqual(
+    result.data.facts.map((fact) => fact.type),
+    ['world', 'observation'],
+  );
+  assert.equal(result.data.facts[0].documentID, 'source-document');
+  assert.deepEqual(result.data.facts[1].sourceFactIDs, ['retained-fact']);
+  assert.equal(result.data.facts[1].documentID, null);
+  const searched = await bridge.request('section', {
+    section: 'facts',
+    query: 'consolidée',
+    type: 'observation',
+  });
+  assert.equal(searched.data.query, 'consolidée');
+  assert.equal(searched.data.type, 'observation');
+  assert.equal(searched.data.total, 1);
+  assert.equal(searched.data.facts.length, 1);
+  assert.equal(searched.data.facts[0].id, 'consolidated-observation');
+  const requests = calls.slice(before);
+  assert.ok(requests.length > 0);
+  assert.ok(
+    requests.every(
+      (request) => request.method === 'GET' && request.path.endsWith('/memories/list'),
+    ),
+  );
+  assert.equal(requests.at(-1).query.q, 'consolidée');
+  assert.equal(requests.at(-1).query.type, 'observation');
+  const timeline = await bridge.request('section', { section: 'timeline' });
+  assert.equal(timeline.data.facts.length, 2);
+  assert.equal(timeline.data.type, 'all');
+  assert.equal(calls.at(-1).query.type, undefined);
 });
 
 test('les quotas OAuth nécessitent une confirmation ponctuelle', async () => {
