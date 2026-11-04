@@ -45,8 +45,13 @@ may send uploaded content to its configured model providers. Read
 - [Report a bug](https://github.com/paabL/hindsight-desktop/issues) without private
   conversations, credentials or complete logs.
 - [Report a security vulnerability privately](SECURITY.md).
-- Install future app versions from [Releases](https://github.com/paabL/hindsight-desktop/releases).
-  Rebuilding from source in Settings is an advanced option for developers.
+- From version 0.1.3, open **Settings → Application updates → Check for updates**,
+  then choose **Update and restart**. The app verifies the signed download before
+  installing it. Checks and downloads start only when requested.
+- Version 0.1.2 and earlier need one manual installation from
+  [Releases](https://github.com/paabL/hindsight-desktop/releases) to enable in-app
+  updates. Manual downloads remain available. Rebuilding from source in Settings
+  is an advanced option for developers.
 
 ## Develop
 

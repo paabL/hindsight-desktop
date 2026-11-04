@@ -16,7 +16,9 @@ local toolchains and secrets from the export.
    **unnotarized beta**. An ad hoc signature does not verify publisher identity.
    Explain the per-app approval in System Settings. Never ask users to disable
    Gatekeeper or remove quarantine globally.
-5. Attach the DMG and its SHA-256 checksum to a GitHub prerelease. State the
+5. Attach the DMG, signed updater archive and signature, SHA-256 checksums,
+   release manifest and beta feed to a GitHub prerelease. Verify the public
+   downloads before publishing the feed used by installed apps. State the
    version, minimum macOS, supported architecture, required server, checks that
    actually passed and known limitations. Keep public documentation and release
    notes in English; French remains an option inside the app.
@@ -30,12 +32,45 @@ References: [Tauri macOS signing](https://v2.tauri.app/distribute/sign/macos/),
 [Apple notarization](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution),
 [Apple app-opening instructions](https://support.apple.com/102445).
 
-To build the free DMG after freezing the public sources:
+## Build and sign
+
+The free updater uses its own signing key, independent of Apple Developer ID.
+The app embeds only the public key and requires update signatures bound to the
+announced app version. Keep the private key out of source control and release
+assets. On the maintainer’s Mac, it is stored in macOS Keychain under service
+`io.github.paabL.hindsight-desktop.updater`, account `release-signing-key`.
+For another build environment, provide `TAURI_SIGNING_PRIVATE_KEY` and, if
+needed, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` securely through the environment.
+Retain a secure backup of the signing key; replacing it prevents existing
+installations from trusting future updates.
+
+To build after freezing the public sources:
 
 ```sh
 cd desktop
 HINDSIGHT_RELEASE_COMMIT=<full-public-commit> node scripts/package-release.mjs
 ```
 
-The package, checksum and manifest are written to `desktop/release/`.
-The script does not publish or install the app.
+The script applies the final ad hoc signatures before creating the updater
+archive, then signs that archive with its app version. It writes the DMG,
+`.app.tar.gz`, `.sig`, `SHA256SUMS.txt`, `release-manifest.json` and `beta.json`
+to `desktop/release/`. It does not publish or install the app.
+
+## Publish the beta feed last
+
+The updater reads
+`https://raw.githubusercontent.com/paabL/hindsight-desktop/main/updates/beta.json`.
+This dedicated feed supports prereleases; GitHub’s `/releases/latest/` endpoint
+does not serve this beta channel. The feed contains the version, exact release
+asset URL and archive signature for `darwin-aarch64`.
+
+1. Publish the release assets and verify unauthenticated downloads and checksums.
+2. Verify the archive signature, version binding and installation behavior.
+3. Copy the generated `beta.json` to `updates/beta.json` in the public repository
+   and publish that commit only after those assets are available.
+4. Check the public feed and the app’s **Check for updates** flow.
+
+Version 0.1.2 and earlier need one manual installation of the updater-enabled
+app. From version 0.1.3, users choose **Check for updates**, then **Update and
+restart**. There are no automatic checks or downloads. Keep **View releases**
+available as the manual fallback.
