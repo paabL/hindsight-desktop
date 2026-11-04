@@ -4,8 +4,9 @@ Hindsight Desktop uses independently licensed components. Its own code is
 licensed under [MIT](LICENSE). The complete component inventory, copyright
 notices, and license texts are in
 [THIRD_PARTY_NOTICES.txt](desktop/public/THIRD_PARTY_NOTICES.txt), also included
-in the built frontend. Versions are fixed by `desktop/package-lock.json` and
-`desktop/src-tauri/Cargo.lock`.
+in the built frontend. The [Rust standard library notices](desktop/public/RUST_STANDARD_LIBRARY_NOTICES.txt)
+are included alongside them. Versions are fixed by `desktop/package-lock.json`
+and `desktop/src-tauri/Cargo.lock`.
 
 - **Hindsight API specification and generated models** — Vectorize AI, Inc.;
   [upstream MIT license](https://github.com/vectorize-io/hindsight/blob/v1.2.0/LICENSE).

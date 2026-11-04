@@ -31,6 +31,7 @@ try {
       process.env.HINDSIGHT_BROWSER_EXECUTABLE || (existsSync(chrome) ? chrome : undefined),
   });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1100 }, locale: 'fr-CA' });
+  await page.addInitScript(() => localStorage.setItem('hindsight-desktop-language', 'fr'));
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto(url + '/?demo=1#graph');
   await expect(page.getByRole('heading', { name: 'Atlas de la mémoire' })).toBeVisible();
@@ -136,6 +137,7 @@ try {
   }
 
   const dense = await browser.newPage({ viewport: { width: 1440, height: 1200 }, locale: 'fr-CA' });
+  await dense.addInitScript(() => localStorage.setItem('hindsight-desktop-language', 'fr'));
   dense.on('pageerror', (e) => errors.push(e.message));
   const denseNodes = Array.from({ length: 100 }, (_, i) => ({
     id: `dense-${i}`,

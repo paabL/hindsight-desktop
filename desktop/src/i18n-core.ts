@@ -7,7 +7,7 @@ function preferredLanguage(): Language {
       typeof window === 'undefined' ? null : window.localStorage.getItem(languageStorageKey);
     if (saved === 'fr' || saved === 'en') return saved;
   } catch {}
-  return globalThis.navigator?.language?.toLowerCase().startsWith('fr') ? 'fr' : 'en';
+  return 'en';
 }
 
 let language = preferredLanguage();

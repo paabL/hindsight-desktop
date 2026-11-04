@@ -679,7 +679,7 @@ export default function App() {
               <Logo small />
               <span>Hindsight Desktop</span>
               <span className="spacer" />
-              <span>Hindsight Desktop · 0.1</span>
+              <span>Hindsight Desktop · 0.1.1</span>
             </footer>
           </div>
         </div>
@@ -967,7 +967,7 @@ function Settings({
         </div>
       </section>
       <p className="page-footnote">
-        Hindsight Desktop 0.1.0 · {host} · HindsightCore ·{' '}
+        Hindsight Desktop 0.1.1 · {host} · HindsightCore ·{' '}
         {t('macOS 15 et plus', 'macOS 15 or later')}
       </p>
       <p className="page-footnote">

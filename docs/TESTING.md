@@ -1,44 +1,50 @@
-# Vérifications de Hindsight Desktop
+# Testing Hindsight Desktop
 
-## Moteur et contrat API
+## Native core and API contract
 
-Depuis la racine :
+From the repository root:
 
 ```sh
 swift test
 ```
 
-XCTest vérifie le client, les ViewModels, les confirmations, les fichiers, les coûts et les
-règles de service. Les tests du client comparent les requêtes à `docs/openapi.json` et décodent les
-réponses minimales et complètes. Ne pas modifier les modèles générés à la main.
+XCTest covers the API client, ViewModels, confirmations, files, cost estimates, and
+service safeguards. Client tests compare requests with `docs/openapi.json` and decode
+both minimal and complete responses. Do not edit generated models by hand.
 
-Après un changement du contrat : actualiser `docs/openapi.json`, lancer
-`python3 scripts/generate_models.py`, puis rejouer les tests.
+After changing the contract, update `docs/openapi.json`, run
+`python3 scripts/generate_models.py`, then rerun the tests.
 
-### Serveurs 1.2 et antérieurs
+`TransportSecurityTests` uses two temporary loopback HTTP servers to check real
+redirects: a same-origin redirect preserves the request, while a cross-origin
+redirect receives neither credentials nor document content. These tests require
+permission to bind local ports. Other tests cover cancelled requests, restored
+server addresses, and rejection of misleading hostnames.
 
-`Server120Tests` et `desktop/tests/server120.test.mjs` vérifient le passage de `rerank`
-dans recall (hériter de la banque, activer, désactiver), son omission en 1.1, les réglages de
-banque après confirmation et les statistiques `split_by=model`. Les services spécialisés
-sont valorisés au tarif hébergé indicatif : ces statistiques ne donnent pas le fournisseur
-ni son URL, et ne prouvent donc pas qu'un appel a été facturé. Les appels locaux n'ont pas
-de coût par jeton. Un changement de serveur vide le relevé ; un échec reste visible et
-réessayable ; changer la grille tarifaire recalcule aussi le cache.
+### Server 1.2 and earlier versions
 
-`cd desktop && npm run test:models` vérifie les contrôles de recherche, les interrupteurs
-par banque, la valorisation indicative et la carte Modèles Hindsight avec des données
-fictives, à deux largeurs de fenêtre.
+`Server120Tests` and `desktop/tests/server120.test.mjs` cover recall's `rerank`
+options: inherit the bank setting, enable, disable, and omit them on server 1.1.
+They also check confirmed bank settings and `split_by=model` usage statistics.
 
-Le catalogue des réglages documente `hindsight` pour la décision, le reranker et les
-embeddings. Les clés dédiées peuvent rester vides après `hindsight-admin cloud login`.
-Dans Recherche → Filtres, les choix prune/dedup restent propres à la requête ; les défauts
-persistants se trouvent dans Structure de la mémoire → Recherche. Le serveur doit avoir
-un modèle de décision configuré pour recall. Changer d'embeddings exige une ré-indexation ;
-changer de reranker n'en exige pas.
+Specialized services use indicative hosted prices. Statistics do not identify
+the provider or endpoint, so they do not prove that a call was billed. Local
+inference has no per-token service charge. Changing servers clears the readings;
+failures remain visible and retryable; changing prices also revalues cached data.
 
-## Pont natif et interface
+From `desktop/`, `npm run test:models` checks search controls, bank switches,
+indicative costs, and Hindsight model choices with synthetic data at two window
+widths.
 
-Depuis `desktop/` :
+The settings catalog supports `hindsight` for decision, reranking, and embedding
+models. Dedicated keys may be left empty after `hindsight-admin cloud login`.
+Search → Filters applies prune/dedup choices only to the current request; persistent
+defaults belong in Memory structure → Search. Recall needs a configured decision
+model. Changing embedding models requires reindexing; changing rerankers does not.
+
+## Native bridge and frontend
+
+From `desktop/`:
 
 ```sh
 npm run bridge:build
@@ -46,61 +52,90 @@ npm test
 npm run build
 ```
 
-Les tests du pont emploient un faux serveur HTTP, des réglages en mémoire et un dossier temporaire.
-Ils vérifient l’absence d’écriture lors des lectures, la confirmation de reflect, le rejet d’un
-rejeu, le texte requis pour une suppression, l’invalidation lors d’un changement de banque,
-le confinement des chemins et liens symboliques, les URL et les commandes autorisées.
+Bridge tests use a fake HTTP server, in-memory settings, and temporary files. They
+check that reads do not write, reflect waits for confirmation, confirmations cannot
+be replayed, deletions require the expected text, changing banks invalidates pending
+requests, file reads stay within the selected folder after resolving symlinks, and
+unsupported URLs or commands are refused. Subscription quota checks require a
+separate confirmation and remain inactive when cancelled.
 
-## Test de rendu en navigateur
+## Browser rendering
 
 ```sh
 cd desktop
 npx playwright install chromium
 npm run test:ui
+npm run test:i18n
 ```
 
-Ce test utilise uniquement des données fictives. Il parcourt les vues, ouvre des documents et
-synthèses, recherche des faits, filtre les sources, inspecte le graphe, utilise les raccourcis et
-vérifie les deux thèmes. Les captures sont enregistrées dans `desktop/screenshots/`.
-Ce test ne prouve pas les dialogues et permissions du bundle Tauri : vérifier ceux-ci dans l’app.
+Rendering tests use synthetic data. They visit views, open documents and summaries,
+search facts, filter sources, inspect the graph, exercise shortcuts, and check both
+themes. Language checks cover English and the optional French interface. Screenshots
+are written to `desktop/screenshots/`.
 
-## Construire et vérifier Tauri
+Browser tests do not verify native Tauri dialogs or macOS permissions. Check those
+in the packaged app.
+
+## Build and check Tauri
 
 ```sh
 cd desktop
 npm run tauri:build -- --bundles app
 ```
 
-Ouvrir `desktop/src-tauri/target/release/bundle/macos/Hindsight Desktop.app`.
+Open `desktop/src-tauri/target/release/bundle/macos/Hindsight Desktop.app`.
 
-1. Vérifier que le catalogue local se charge sans le serveur, puis que la connexion charge les banques.
-2. Consulter une source et sa provenance, filtrer par projet et famille, puis vérifier les statuts des collecteurs.
-3. Lire une synthèse et un document avec pièces jointes ; vérifier l’historique et le surlignage dans le texte.
-4. Vérifier recall et texte ; pour reflect, inspecter l’estimation et la confirmation puis annuler.
-5. Préparer une écriture, un retraitement ou une suppression : inspecter les détails et le texte requis, puis annuler.
-6. Vérifier les quotas, leur date de relevé et la distinction entre frais à l’usage et jetons d’abonnement.
-7. Vérifier la sélection d’un dossier et le dialogue d’enregistrement d’un export dans un emplacement de test.
-8. Inspecter les modèles, le diff et les sauvegardes sans enregistrer ni redémarrer le serveur.
-9. Vérifier l’absence de secrets dans les champs affichés, les diff et les journaux.
-10. Vérifier les thèmes, le clavier, la navigation rapide, les fenêtres et la taille minimale de la fenêtre.
+1. Load a local catalog with the server offline, then connect and load banks.
+2. Inspect a source and its provenance, filter by project and source family, and
+   check collector status.
+3. Read a summary and a document with attachments; check history and text highlights.
+4. Check recall and exact text search. For reflect, inspect the estimate and
+   confirmation, then cancel.
+5. Prepare a write, reprocessing action, or deletion. Inspect its details and any
+   required confirmation text, then cancel.
+6. Inspect quota timestamps and the distinction between usage fees and subscription
+   tokens. Request an account quota check only when explicitly authorized.
+7. Test folder selection and the export save dialog using temporary files.
+8. Inspect models, diffs, and backups without saving or restarting the server.
+9. Check that displayed fields, diffs, and logs mask secrets.
+10. Check themes, keyboard navigation, quick navigation, language selection, windows,
+    and the minimum window size.
+11. Quit the exact tested app instance and verify that its private bridge exits.
+    When comparing installed and mounted copies, identify each by its full path.
 
-La collecte, l’extraction, la consolidation, les suppressions réelles, les connexions OAuth et les
-opérations du service exigent une autorisation explicite. Les tests de lecture n’en déclenchent pas.
+Real collection, extraction, consolidation, deletion, OAuth access, and service
+operations need explicit authorization. Read-only tests must not trigger them.
 
-## Migration de l’ancien frontend
+For distribution packaging, signing, architecture, notices, and checksums, follow
+[RELEASE.md](RELEASE.md).
 
-Les cibles `HindsightUI` et `HindsightMac`, les stubs SwiftUI et les anciens scripts d’installation
-ne font plus partie du dépôt. NOMAD Studio importe encore l’ancien module dans sa propre copie :
-son intégration devra être adaptée avant une mise à jour de cette dépendance.
+## Legacy frontend migration
 
-## Mises à jour intégrées
+`HindsightUI`, `HindsightMac`, the SwiftUI stubs, and the old installation scripts
+have been removed. Consumers of the old UI module must migrate their integration
+before updating this dependency. `HindsightAPI` and `HindsightCore` remain available.
 
-Les tests `AppUpdateTests` vérifient la reconstruction Tauri dans une destination séparée, la validation de l’identifiant du bundle, le remplacement, le refus des modifications locales et des changements de dépôt après confirmation. Dans l’app, vérifier Réglages → Mises à jour sans confirmer une installation réelle : le journal et les états restent actualisés indépendamment de la connexion au serveur Hindsight.
+## Source updates
 
-## Atlas interactif
+`AppUpdateTests` checks Tauri rebuilds in a separate destination, bundle identifier
+validation, replacement, rejection of local modifications, and repository changes
+after confirmation. In Settings → App updates, inspect the log and state without
+confirming a real installation. Update status should remain responsive regardless
+of the Hindsight server connection.
 
-`cd desktop && npm run test:graph` vérifie groupes, sélection stable, voisinage à deux degrés, recherche sans accents, chemin entre deux idées, inspection d’une étape sans perdre le parcours, rupture de chemin par un filtre, provenance, pan/zoom, clavier, thèmes et absence de débordement à trois largeurs. Le navigateur est isolé et les données entièrement fictives. Un Chromium Playwright installé est utilisé par défaut ; sur macOS, Chrome déjà installé peut servir au test, et `HINDSIGHT_BROWSER_EXECUTABLE` permet de choisir un exécutable.
+## Interactive memory graph
 
-Les tests du modèle de graphe vérifient la topologie, les doublons, les nœuds isolés, les filtres, la détermination des groupes et le placement de 1 000 nœuds. Le test de pont vérifie les totaux serveur, la conservation du mode et l’accès à la source d’un fait. `swift test --filter GraphTests` couvre le chargement des données sans simulation native inutile.
+From `desktop/`, `npm run test:graph` checks groups, stable selection, two-hop
+neighborhoods, accent-insensitive search, paths between ideas, inspecting a path step
+without losing the route, filters that break a path, provenance, pan/zoom, keyboard
+controls, themes, and overflow at three widths. The browser is isolated and all data
+is synthetic. Tests prefer an installed Playwright Chromium; on macOS they can use
+an existing Chrome installation. `HINDSIGHT_BROWSER_EXECUTABLE` selects an executable.
 
-Le test visuel de l’atlas inclut aussi une carte synthétique dense de 100 nœuds : agrégation par groupes, nombre exact de liaisons, accès à la liste des membres au clic et déploiement au zoom.
+Graph model tests cover topology, duplicates, isolated nodes, filters, deterministic
+groups, and layout for 1,000 nodes. The bridge test covers server totals, mode
+persistence, and access to a fact's source. `swift test --filter GraphTests` checks
+data loading without unnecessary native layout simulation.
+
+The visual test also includes a dense synthetic map of 100 nodes: group aggregation,
+exact connection counts, opening group members, and expanding nodes on zoom.

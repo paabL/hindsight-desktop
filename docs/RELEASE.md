@@ -1,39 +1,41 @@
-# Publier une bêta macOS
+# Release a macOS beta
 
-Destination publique : `paabL/hindsight-desktop`. Publier un export vérifié des
-sources, avec un nouvel historique ; conserver le dépôt de développement privé.
-Ne pas inclure `.git`, `.claude`, données personnelles, captures réelles, dossiers
-de compilation, `node_modules`, outils locaux ou secrets.
+Public repository: `paabL/hindsight-desktop`. Keep the development repository
+private and export only reviewed source files. Preserve the public history when
+publishing updates. Exclude `.git`,
+`.claude`, personal data, real-data screenshots, build folders, `node_modules`,
+local toolchains and secrets from the export.
 
-1. Vérifier les tests Swift, le pont, les tests frontend, le rendu et le build
-   TypeScript. Ouvrir le bundle sur un profil de test sans réglages personnels.
-2. Régénérer les notices après tout changement de dépendances ; inclure LICENSE,
-   NOTICE, confidentialité et les crédits complets dans la distribution.
-3. Construire pour l'architecture annoncée. Le pont Swift inclus doit avoir la
-   même architecture que l'app. Ne pas annoncer Intel sans bundle testé Intel.
-4. Sans compte Apple Developer : annoncer clairement **bêta non notariée**.
-   Une signature ad hoc ne vérifie pas l'identité de l'éditeur. Expliquer
-   l'autorisation ponctuelle dans Réglages Système ; ne jamais demander de
-   désactiver Gatekeeper ni de supprimer globalement la quarantaine.
-5. Joindre le DMG et son empreinte SHA-256 à une release GitHub marquée
-   prerelease. Indiquer version, macOS minimum, architecture, serveur nécessaire,
-   contrôles réellement passés et limites connues.
-6. Activer les signalements privés de vulnérabilités du dépôt public, vérifier
-   les liens de téléchargement puis contacter l'équipe upstream avec le
-   [message préparé](UPSTREAM.md). Aucune affiliation ne doit être suggérée.
+1. Verify Swift tests, the native bridge, frontend tests, rendering and the
+   TypeScript build. Open the bundle with test settings and no personal data.
+2. Regenerate notices after dependency changes. Include LICENSE, NOTICE,
+   Privacy and the complete third-party notices in the distribution.
+3. Build for the advertised architecture. The included Swift bridge must match
+   the app. Do not advertise Intel support without a tested Intel bundle.
+4. Without an Apple Developer account, clearly label the release an
+   **unnotarized beta**. An ad hoc signature does not verify publisher identity.
+   Explain the per-app approval in System Settings. Never ask users to disable
+   Gatekeeper or remove quarantine globally.
+5. Attach the DMG and its SHA-256 checksum to a GitHub prerelease. State the
+   version, minimum macOS, supported architecture, required server, checks that
+   actually passed and known limitations. Keep public documentation and release
+   notes in English; French remains an option inside the app.
+6. Enable private vulnerability reporting and verify the public download links.
+   Coordinate upstream announcements with the maintainer before posting. Use
+   the [official community channels](UPSTREAM.md) and do not imply affiliation.
 
-Une distribution vérifiée par Apple peut être ajoutée plus tard : Developer ID
-Application, signature du pont et de l'app, notarisation puis agrafage du ticket.
-Références : [Tauri macOS signing](https://v2.tauri.app/distribute/sign/macos/),
+Apple-verified distribution can be added later with a Developer ID Application
+certificate, signatures for the bridge and app, notarization and ticket stapling.
+References: [Tauri macOS signing](https://v2.tauri.app/distribute/sign/macos/),
 [Apple notarization](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution),
-[Apple — ouvrir une app](https://support.apple.com/102445).
+[Apple app-opening instructions](https://support.apple.com/102445).
 
-Pour construire le DMG gratuit après avoir figé les sources publiques :
+To build the free DMG after freezing the public sources:
 
 ```sh
 cd desktop
-HINDSIGHT_RELEASE_COMMIT=<commit-public-complet> node scripts/package-release.mjs
+HINDSIGHT_RELEASE_COMMIT=<full-public-commit> node scripts/package-release.mjs
 ```
 
-Le paquet, son empreinte et son manifeste sont créés dans `desktop/release/`.
-Le script ne publie rien et n'installe pas l'app.
+The package, checksum and manifest are written to `desktop/release/`.
+The script does not publish or install the app.
