@@ -193,3 +193,8 @@ inline failure and recovery, and the compact model editor at 1000 × 760, using 
 mock host. It never starts or stops a real service. Native service tests exercise
 redirected startup logs, exclusion of historical failures, credential validation,
 and the default LLM diagnostic environment with fake process runners.
+
+Service regression cases also cover upgrading an old launch agent without killing
+the process it just started, and waiting through `spawn scheduled` while ignoring
+a previous process's exit code. The final native restart/migration is qualified
+against a real local service before publishing the updater feed.

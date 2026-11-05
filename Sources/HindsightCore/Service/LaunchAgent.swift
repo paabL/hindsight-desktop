@@ -63,6 +63,7 @@ public struct LaunchJobStatus: Sendable, Hashable {
     public var running: Bool
     public var pid: Int?
     public var lastExitCode: Int?
+    public var pending: Bool = false
 
     public static let notLoaded = LaunchJobStatus(loaded: false, running: false, pid: nil, lastExitCode: nil)
 
@@ -77,7 +78,9 @@ public struct LaunchJobStatus: Sendable, Hashable {
             // Seule la première occurrence compte : des sous-sections reprennent parfois les mêmes clés.
             guard seen.insert(key).inserted else { continue }
             switch key {
-            case "state": s.running = value == "running"
+            case "state":
+                s.running = value == "running"
+                s.pending = ["spawn scheduled", "spawn requested", "waiting"].contains(String(value))
             case "pid": s.pid = Int(value)
             case "last exit code": s.lastExitCode = Int(value)
             default: break

@@ -109,7 +109,7 @@ public final class HindsightServiceViewModel {
     public var blockingIssues: [FileSafety.Issue] { issues.filter(\.isBlocking) }
     /// Le service installé exécute un autre script que celui de l'écran « Modèles & serveur ».
     public var pointsToOtherScript: Bool { installed.map { $0.scriptPath != scriptURL.path } ?? false }
-    public var canStart: Bool { isInstalled && !isBusy && !job.running && !apiReachable }
+    public var canStart: Bool { isInstalled && !isBusy && !job.running && !job.pending && !apiReachable }
     public var canStop: Bool { isInstalled && !isBusy && job.running }
 
     public func refresh() async {
@@ -124,6 +124,7 @@ public final class HindsightServiceViewModel {
     func computeStatus() -> Status {
         guard isInstalled else { return apiReachable ? .runningExternally : .notInstalled }
         if job.running { return apiReachable ? .running(pid: job.pid) : .starting }
+        if job.pending { return .starting }
         return apiReachable ? .runningExternally : .stopped(lastExitCode: job.lastExitCode)
     }
 
@@ -324,7 +325,7 @@ public final class HindsightServiceViewModel {
         }
         do {
             try prepareLog()
-            try await loadAgentForStart()
+            _ = try await loadAgentForStart()
             let r = try await runner.run(ProcessInvocation(Self.launchctl, ["kickstart", target], timeout: 20))
             guard r.succeeded else { throw ServiceError.launchctl("kickstart", r.combined) }
         } catch {
@@ -398,8 +399,9 @@ public final class HindsightServiceViewModel {
         defer { isBusy = false; status = computeStatus() }
         do {
             try prepareLog()
-            try await loadAgentForStart()
-            let r = try await runner.run(ProcessInvocation(Self.launchctl, ["kickstart", "-k", target], timeout: stopTimeout + 10))
+            let bootstrapped = try await loadAgentForStart()
+            let arguments = bootstrapped ? ["kickstart", target] : ["kickstart", "-k", target]
+            let r = try await runner.run(ProcessInvocation(Self.launchctl, arguments, timeout: stopTimeout + 10))
             guard r.succeeded else { throw ServiceError.launchctl("kickstart -k", r.combined) }
         } catch {
             fail("Redémarrage impossible : \(error)")
@@ -411,7 +413,7 @@ public final class HindsightServiceViewModel {
         return await waitUntilUp(action: "redémarré")
     }
 
-    private func loadAgentForStart() async throws {
+    private func loadAgentForStart() async throws -> Bool {
         if let spec = installed,
            let data = try? Data(contentsOf: paths.plist),
            let raw = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
@@ -426,7 +428,9 @@ public final class HindsightServiceViewModel {
         if !(await jobStatus().loaded) {
             let result = try await runner.run(ProcessInvocation(Self.launchctl, ["bootstrap", domain, paths.plist.path], timeout: 20))
             guard result.succeeded else { throw ServiceError.launchctl("bootstrap", result.combined) }
+            return true
         }
+        return false
     }
 
     // MARK: Geler la file
@@ -530,7 +534,7 @@ public final class HindsightServiceViewModel {
             }
             job = await jobStatus()
             sawRunning = sawRunning || job.running
-            if !job.running && job.lastExitCode != nil && (sawRunning || Date().timeIntervalSince(started) >= min(2, startTimeout / 2)) {
+            if !job.running && !job.pending && job.lastExitCode != nil && (sawRunning || Date().timeIntervalSince(started) >= min(2, startTimeout / 2)) {
                 break
             }
             try? await Task.sleep(for: pollInterval)

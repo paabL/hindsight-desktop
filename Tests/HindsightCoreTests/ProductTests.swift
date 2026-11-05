@@ -455,6 +455,61 @@ final class HindsightServiceTests: XCTestCase {
         XCTAssertFalse(e.vm.isBusy)
     }
 
+    func testMigratingAnOldAgentDoesNotKillTheNewRunAtLoadProcess() async throws {
+        let e = make()
+        await e.vm.refresh()
+        e.vm.requestInstall(startAtLogin: true)
+        await e.vm.confirmation!.perform()
+        var plist = try XCTUnwrap(PropertyListSerialization.propertyList(from: Data(contentsOf: e.paths.plist), format: nil) as? [String: Any])
+        var environment = plist["EnvironmentVariables"] as! [String: String]
+        environment["HINDSIGHT_API_ENABLE_BANK_LLM_HEALTH"] = nil
+        plist["EnvironmentVariables"] = environment
+        try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0).write(to: e.paths.plist)
+        let base = e.runner.handler
+        let fresh = Switch(false)
+        e.runner.handler = { invocation in
+            if invocation.arguments.first == "bootstrap" {
+                let result = base(invocation)
+                fresh.value = true
+                e.jobRunning.value = true
+                e.apiUp.value = true
+                return result
+            }
+            if invocation.arguments.starts(with: ["kickstart", "-k"]), fresh.value {
+                return ProcessOutput(status: 1, stderr: "Fresh startup was interrupted")
+            }
+            return base(invocation)
+        }
+        let success = await e.vm.restart()
+        XCTAssertTrue(success)
+        XCTAssertTrue(e.vm.apiReachable)
+        XCTAssertEqual(e.runner.args(of: HindsightServiceViewModel.launchctl).last(where: { $0.first == "kickstart" }), ["kickstart", "gui/\(FileSafety.currentUID)/local.hindsight.api"])
+    }
+
+    func testScheduledLaunchIgnoresThePreviousProcessExitCode() async throws {
+        let e = make()
+        await e.vm.refresh()
+        e.vm.requestInstall(startAtLogin: false)
+        await e.vm.confirmation!.perform()
+        await e.vm.stop()
+        let base = e.runner.handler
+        let began = Date()
+        e.runner.handler = { invocation in
+            if invocation.arguments.first == "kickstart" { return ProcessOutput(status: 0) }
+            if invocation.arguments.first == "print" {
+                if Date().timeIntervalSince(began) < 1.2 {
+                    return ProcessOutput(status: 0, stdout: "state = spawn scheduled\nlast exit code = 1\n")
+                }
+                e.apiUp.value = true
+                e.jobRunning.value = true
+            }
+            return base(invocation)
+        }
+        await e.vm.start()
+        XCTAssertTrue(e.vm.apiReachable)
+        XCTAssertNil(e.vm.failure)
+    }
+
     func testUninstallRemovesAgent() async throws {
         let e = make()
         await e.vm.refresh()
