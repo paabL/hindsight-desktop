@@ -35,6 +35,31 @@ private func operationPage(_ ids: [String], status: String = "completed", total:
 
 @MainActor
 final class OperationStateStressTests: XCTestCase {
+    func testLateCounterCannotOverwriteTheCurrentFiltersCounts() async {
+        let mock = MockTransport(); mock.installStandardRoutes()
+        mock.on("GET", bankPath + "/operations") { request in
+            let status = request.queryValue("status") ?? "completed"
+            let total = ["pending": 7, "processing": 2, "failed": 1, "completed": 1][status] ?? 0
+            return operationPage([status], status: status, total: total)
+        }
+        let gate = OperationReadGate(mock: mock, override: operationPage(["old"], status: "pending", total: 99)) {
+            let query = URLComponents(url: $0.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            return query.contains(URLQueryItem(name: "status", value: "pending"))
+                && query.contains(URLQueryItem(name: "limit", value: "1"))
+        }
+        let vm = OperationsViewModel(client: HindsightClient(transport: gate), bank: testBank)
+        vm.statusFilter = .failed
+        let old = Task { await vm.reload() }
+        await gate.wait()
+        vm.statusFilter = .completed
+        await vm.reload()
+        await gate.release(); await old.value
+        XCTAssertEqual(vm.rows.map(\.id), ["completed"])
+        XCTAssertEqual(vm.operationCounts?["pending"], 7)
+        XCTAssertEqual(vm.operationCounts?["failed"], 1)
+        XCTAssertFalse(vm.isRefreshing)
+    }
+
     func testOldFilterResponseCannotReplaceTheNewFilter() async {
         let mock = MockTransport(); mock.installStandardRoutes()
         mock.on("GET", bankPath + "/operations") { request in

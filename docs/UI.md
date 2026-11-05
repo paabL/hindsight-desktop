@@ -67,7 +67,11 @@ the `⌘` prefix to identify keyboard shortcuts.
 Processing keeps its selected status during automatic refreshes and preserves
 opened pages. Large lists render in groups of 100 with **Load more**; this does
 not impose a total-operation limit. Global status counts are distinguished from
-counts based only on loaded rows.
+counts based only on loaded rows. They use current operation-list totals rather
+than the server's cached bank statistics, so retrying failures updates the summary
+and filtered list together. Counter reads request at most one row per status;
+a completely loaded bank list needs no extra reads. If a counter read fails, the summary
+explicitly falls back to the loaded operations.
 
 ## Models and accounts
 

@@ -20,6 +20,8 @@ public final class OperationsViewModel {
     public private(set) var rows: [OperationRow] = []
     public private(set) var total = 0
     public private(set) var stats: BankStatsResponse?
+    /// Live bank-wide totals. `/stats` caches its operation counts alongside expensive memory aggregates.
+    public private(set) var operationCounts: [String: Int]?
     public private(set) var selectedDetail: LoadState<OperationStatusResponse> = .idle
     public private(set) var selectedID: String?
     public private(set) var isLoadingMore = false
@@ -43,7 +45,7 @@ public final class OperationsViewModel {
     private func invalidateList() {
         listRevision = UUID()
         moreRevision = nil
-        rows = []; total = 0; nextOffset = 0; exhausted = false
+        rows = []; total = 0; nextOffset = 0; exhausted = false; operationCounts = nil
         isLoadingMore = false; isRefreshing = false; state = .idle
     }
     private func uniqueRows(_ values: [OperationResponse]) -> [OperationRow] {
@@ -102,6 +104,7 @@ public final class OperationsViewModel {
             total = l.total
             exhausted = l.exhausted
             stats = statistics
+            operationCounts = l.counts
             state = .loaded(())
             if let id = selectedID { await refreshDetail(id, silently: true) }
         } catch is CancellationError {
@@ -131,6 +134,9 @@ public final class OperationsViewModel {
             nextOffset = offset + l.operations.count
             total = l.total
             exhausted = l.operations.isEmpty
+            if requested.type == nil, !requested.excludeParents, requested.status != .all {
+                operationCounts?[requested.status.rawValue] = l.total
+            }
         } catch is CancellationError {
         } catch {
             if revision == listRevision, requested == query { actionMessage = error.userMessage }
@@ -142,10 +148,38 @@ public final class OperationsViewModel {
         let total: Int
         let nextOffset: Int
         let exhausted: Bool
+        let counts: [String: Int]?
     }
     private struct WindowPage: Sendable {
         let offset: Int
         let page: OperationsListResponse
+    }
+    private struct StatusCount: Sendable {
+        let status: String
+        let total: Int
+    }
+    /// Read only one row per counter, and reuse the displayed page's total when its scope matches.
+    /// This avoids forcing `/stats` to rescan the bank's memories on every operation poll.
+    private func fetchOperationCounts(_ query: Query, first: OperationsListResponse) async throws -> [String: Int] {
+        let statuses: [StatusFilter] = [.pending, .processing, .failed]
+        let bankWide = query.type == nil && !query.excludeParents
+        var counts = Dictionary(uniqueKeysWithValues: statuses.map { ($0.rawValue, 0) })
+        if bankWide, query.status == .all, first.operations.count == first.total {
+            for row in first.operations { counts[row.status, default: 0] += 1 }
+            return counts
+        }
+        if bankWide, query.status != .all { counts[query.status.rawValue] = first.total }
+        let client = self.client, bank = self.bank
+        return try await withThrowingTaskGroup(of: StatusCount.self) { group in
+            for status in statuses where !(bankWide && query.status == status) {
+                group.addTask {
+                    let page = try await client.listOperations(bank, status: status.rawValue, limit: 1)
+                    return StatusCount(status: status.rawValue, total: page.total)
+                }
+            }
+            for try await result in group { counts[result.status] = result.total }
+            return counts
+        }
     }
     private func matches(_ row: OperationResponse, _ query: Query) -> Bool {
         query.status == .all || OperationStatusKind(row.status).rawValue == query.status.rawValue
@@ -155,6 +189,7 @@ public final class OperationsViewModel {
         let client = self.client, bank = self.bank
         let first = try await client.listOperations(bank, status: query.status.apiValue, type: query.type,
             limit: 100, offset: 0, excludeParents: query.excludeParents)
+        async let counts = fetchOperationCounts(query, first: first)
         var values = first.operations
         var end = values.count
         var exhausted = values.isEmpty
@@ -185,7 +220,7 @@ public final class OperationsViewModel {
                 if exhausted { break }
             }
         }
-        return Window(operations: values, total: first.total, nextOffset: end, exhausted: exhausted)
+        return Window(operations: values, total: first.total, nextOffset: end, exhausted: exhausted, counts: try? await counts)
     }
 
     /// Sélection depuis une liste : l'identifiant change tout de suite (la liste suit), le détail arrive ensuite.
@@ -347,6 +382,7 @@ public final class OperationsViewModel {
         }
         guard !ids.isEmpty else {
             actionMessage = "Aucune opération en échec à relancer."
+            await reload(silently: true)
             return
         }
         confirmation = ConfirmationRequest(
@@ -457,9 +493,10 @@ public final class OperationsViewModel {
         do {
             let msg = try await work(client, bank)
             actionMessage = msg.isEmpty ? fallback : msg
-            await reload(silently: true)
         } catch {
             actionMessage = "Échec : \(error.userMessage)"
         }
+        // A refusal can mean another client already completed or retried the operation.
+        await reload(silently: true)
     }
 }

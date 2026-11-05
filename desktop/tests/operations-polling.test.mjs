@@ -15,6 +15,7 @@ test(
         method: request.method,
         path: url.pathname,
         status: url.searchParams.get('status'),
+        limit: url.searchParams.get('limit'),
       });
       let data = {};
       if (url.pathname === '/version')
@@ -116,8 +117,14 @@ test(
       assert.equal(new Set(result.data.items.map((row) => row.id)).size, 225);
       assert.ok(
         calls
-          .filter((call) => call.path.endsWith('/operations'))
+          .filter((call) => call.path.endsWith('/operations') && call.limit !== '1')
           .every((call) => call.status === 'failed'),
+      );
+      assert.ok(
+        calls
+          .filter((call) => call.path.endsWith('/operations') && call.status !== 'failed')
+          .every((call) => call.limit === '1'),
+        'other statuses use lightweight global counter reads',
       );
       assert.ok(
         calls.every((call) => call.method === 'GET'),

@@ -59,6 +59,14 @@ requests, file reads stay within the selected folder after resolving symlinks, a
 unsupported URLs or commands are refused. Subscription quota checks require a
 separate confirmation and remain inactive when cancelled.
 
+`OperationCountTests` and `desktop/tests/operations-retry.test.mjs` keep `/stats`
+deliberately stale while retrying synthetic failures. They check that live counts
+match the selected list, including a failure that returns after retry, a refused
+retry, and no remaining failures. Counts use totals across all pages; type/parent
+filters do not narrow the summary. Counter reads fetch at most one row per status
+and never force expensive bank-stat recomputation. These tests use no real model
+calls or user-bank writes.
+
 ## Browser rendering
 
 ```sh

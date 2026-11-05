@@ -666,7 +666,7 @@ final class DesktopBridge {
         case "operations":
             return ["items": wire(s?.operations.rows.map(\.raw) ?? []), "total": s?.operations.total ?? 0,
                     "statusFilter": s?.operations.statusFilter.rawValue ?? "all", "refreshing": s?.operations.isRefreshing ?? false,
-                    "counts": wire(s?.operations.stats?.operationsByStatus), "loadingMore": s?.operations.isLoadingMore ?? false,
+                    "counts": wire(s?.operations.operationCounts), "loadingMore": s?.operations.isLoadingMore ?? false,
                     "canLoadMore": s?.operations.canLoadMore ?? false, "error": wire(s?.operations.state.errorMessage),
                     "consultationOnly": s?.operations.consultationOnly ?? false]
         case "consumption":

@@ -73,7 +73,8 @@ export default function Operations({ data, run, busy, refresh }: PageProps) {
     for (const item of allItems) result[item.status] = (result[item.status] || 0) + 1;
     return result;
   }, [allItems]);
-  const count = (status: string) => data.counts?.[status] ?? loadedCounts[status] ?? 0;
+  const count = (status: string) =>
+    data.counts ? (data.counts[status] ?? 0) : (loadedCounts[status] ?? 0);
   async function loadMore() {
     if (visibleLimit >= matching.length && data.canLoadMore) await run('operations.more');
     setVisibleLimit((value) => value + 100);
