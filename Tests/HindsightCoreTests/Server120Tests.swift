@@ -115,7 +115,7 @@ final class Server120Tests: XCTestCase {
         }
         var book = PriceBook.defaults
         let monitor = ConsumptionMonitor(settings: InMemorySettingsStore(), client: { makeClient(t) },
-            banks: { [testBank] }, ledger: nil, prices: { book }, codex: { nil })
+            banks: { [testBank] }, ledger: nil, prices: { book })
         await monitor.loadServices(serverIs120: false)
         XCTAssertTrue(t.requests.isEmpty, "pas de split_by sur un serveur 1.1")
         await monitor.loadServices(serverIs120: true)
@@ -135,7 +135,7 @@ final class Server120Tests: XCTestCase {
     func testServiceStatsFailuresAreVisibleAndRetryable() async {
         let t = MockTransport()
         let monitor = ConsumptionMonitor(settings: InMemorySettingsStore(), client: { makeClient(t) },
-            banks: { [testBank] }, ledger: nil, prices: { .defaults }, codex: { nil })
+            banks: { [testBank] }, ledger: nil, prices: { .defaults })
         await monitor.loadServices(serverIs120: true)
         XCTAssertNotNil(monitor.servicesError, "une erreur n'est pas une consommation nulle")
         await monitor.loadServices(serverIs120: true)
@@ -149,7 +149,7 @@ final class Server120Tests: XCTestCase {
         let t = MockTransport()
         t.delay = .milliseconds(30)
         let monitor = ConsumptionMonitor(settings: InMemorySettingsStore(), client: { makeClient(t) },
-            banks: { [testBank] }, ledger: nil, prices: { .defaults }, codex: { nil })
+            banks: { [testBank] }, ledger: nil, prices: { .defaults })
         let load = Task { await monitor.loadServices(serverIs120: true) }
         await Task.yield()
         monitor.reset()

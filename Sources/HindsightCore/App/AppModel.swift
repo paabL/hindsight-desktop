@@ -49,7 +49,7 @@ public final class AppModel {
     public private(set) var bankManagement: BankManagementViewModel!
     /// Mises à jour de l'app depuis son dépôt git.
     public private(set) var updates: AppUpdateViewModel!
-    /// Consommation LLM de toutes les banques, plafonds et quota Codex.
+    /// Consommation LLM de toutes les banques, plafonds de coût.
     public private(set) var consumption: ConsumptionMonitor!
     /// Pause des envois, gel et vidage de la file.
     public private(set) var pause: PauseController!

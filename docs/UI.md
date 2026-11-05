@@ -105,8 +105,7 @@ Node, or a shell. Documents render without executing raw HTML.
 Writes and costly actions display confirmations produced by the native core. The
 active confirmation ID and required text are checked again in native code. A
 confirmation is consumed before its action runs. Changing banks or servers
-invalidates pending requests. Account quota checks require an explicit, confirmed
-request and do not enable automatic OAuth access.
+invalidates pending requests. Claude/Codex subscription quota checks have been removed.
 
 Slow requests show activity and disable relevant controls without locking unrelated
 navigation. Errors remain readable,

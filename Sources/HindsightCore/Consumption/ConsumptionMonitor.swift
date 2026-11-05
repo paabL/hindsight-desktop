@@ -16,7 +16,7 @@ public struct ConsumptionAlert: Sendable, Hashable, Identifiable {
 
 /// Suivi de la consommation LLM de toutes les banques : lit les nouvelles traces du serveur à intervalle
 /// régulier (plus souvent quand un écran de suivi est visible), les verse dans l'historique local, calcule
-/// rythme, totaux et plafonds, relève le quota Codex et signale les dépassements.
+/// rythme, totaux et plafonds, et signale les dépassements.
 ///
 /// Les traces ne sont lues que depuis la dernière vue (avec un recouvrement de 10 min, une trace n'étant écrite
 /// qu'à la fin de son appel) : un suivi qui tourne coûte quelques requêtes par minute.
@@ -68,17 +68,11 @@ public final class ConsumptionMonitor {
     @ObservationIgnored private let ledger: UsageLedger?
     @ObservationIgnored private let pricesProvider: @MainActor () -> PriceBook
     @ObservationIgnored private let now: @Sendable () -> Date
-    @ObservationIgnored private let codexReader: @Sendable () -> CodexQuota?
 
     /// Traces activées sur le serveur (`/version`) ; nil si inconnu.
     @ObservationIgnored public var traceEnabled: (@MainActor () -> Bool?)?
     /// Notification d'un plafond approché ou dépassé (fournie par l'interface).
     @ObservationIgnored public var onAlert: (@MainActor (ConsumptionAlert) -> Void)?
-    /// Relevé en direct des quotas d'abonnement (Claude, ChatGPT) et cache local de Claude Code ; nil : pas de
-    /// relevé (tests). Fourni par `AppModel`.
-    /// Paramètre : demander le Trousseau (faux après un refus, pour ne pas redemander toutes les 5 min).
-    @ObservationIgnored public var usageReader: (@Sendable (Bool) async -> SubscriptionUsage.Reading)?
-    @ObservationIgnored public var claudeCacheReader: (@Sendable () -> CodexQuota?)?
     /// Plafond dépassé : action automatique (pause), décidée par `PauseController`.
     @ObservationIgnored public var onExceeded: (@MainActor ([BudgetGauge], ConsumptionBudgets.Action) async -> Void)?
 
@@ -86,12 +80,6 @@ public final class ConsumptionMonitor {
     public private(set) var events: [ConsumptionEvent] = []
     public private(set) var summary = Summary()
     public private(set) var gauges: [BudgetGauge] = []
-    /// Quota ChatGPT : relevé en direct, ou à défaut dernière session Codex (le plus récent des deux).
-    public private(set) var codexQuota: CodexQuota?
-    /// Quota Claude : relevé en direct, ou à défaut cache de Claude Code (le plus récent des deux).
-    public private(set) var claudeQuota: CodexQuota?
-    /// Pourquoi un relevé en direct manque (jeton expiré, réponse refusée…).
-    public private(set) var quotaProblems: [String] = []
     public private(set) var queues: [BankQueue] = []
     public private(set) var running: [RunningOperation] = []
     public private(set) var lastPoll: Date?
@@ -124,12 +112,6 @@ public final class ConsumptionMonitor {
     /// Écrans de suivi visibles, comptés : une vue recréée peut apparaître avant que l'ancienne disparaisse.
     @ObservationIgnored private var liveViewers: [String: Int] = [:]
     @ObservationIgnored private var lastLivePoll: Date?
-    @ObservationIgnored private var sessionCodex: CodexQuota?
-    @ObservationIgnored private var liveCodex: CodexQuota?
-    @ObservationIgnored private var liveClaude: CodexQuota?
-    @ObservationIgnored private var lastQuotaFetch: Date?
-    @ObservationIgnored private var quotaTask: Task<Void, Never>?
-    @ObservationIgnored private var keychainDenied = false
     /// Durée du plus long appel vu récemment : une trace n'est écrite qu'à la fin de son appel, datée de son
     /// début ; la relecture remonte d'autant (bornée).
     @ObservationIgnored private var longestCall: TimeInterval = 120
@@ -146,8 +128,7 @@ public final class ConsumptionMonitor {
 
     public init(
         settings: SettingsStore, client: @escaping @MainActor () -> HindsightClient, banks: @escaping @MainActor () -> [String],
-        ledger: UsageLedger?, prices: @escaping @MainActor () -> PriceBook, now: @escaping @Sendable () -> Date = Date.init,
-        codex: @escaping @Sendable () -> CodexQuota? = { CodexRateLimits.latest() }
+        ledger: UsageLedger?, prices: @escaping @MainActor () -> PriceBook, now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.settings = settings
         self.clientProvider = client
@@ -155,7 +136,6 @@ public final class ConsumptionMonitor {
         self.ledger = ledger
         self.pricesProvider = prices
         self.now = now
-        self.codexReader = codex
         self.budgets = ConsumptionBudgets.load(from: settings)
         self.alerted =
             settings.string(forKey: Self.alertedKey).flatMap { try? JSONDecoder().decode([String: Int].self, from: Data($0.utf8)) } ?? [:]
@@ -242,11 +222,6 @@ public final class ConsumptionMonitor {
             await pollQueues(banks: banks, client: client)
             lastLivePoll = now()
         }
-        // Une session Codex récente peut ne pas encore porter de relevé : garder le dernier connu.
-        let reader = codexReader
-        if let quota = await Task.detached(priority: .utility, operation: { reader() }).value { sessionCodex = quota }
-        codexQuota = Self.newest(liveCodex, sessionCodex)
-        refreshQuotas()
         await ledger?.flushIfDue(now: now())
         pollError = errors.isEmpty ? nil : "Traces illisibles pour " + errors.joined(separator: " ; ")
         lastPoll = now()
@@ -300,39 +275,6 @@ public final class ConsumptionMonitor {
     @ObservationIgnored private var serviceStats: [(kind: ModelCallKind, response: LLMRequestStatsResponse)] = []
     @ObservationIgnored private var servicesGeneration = UUID()
     @ObservationIgnored private var servicesLoadID: UUID?
-
-    /// Quotas d'abonnement : toutes les minutes pendant le suivi ou le travail du serveur, toutes les
-    /// 5 min sinon. Hors du relevé : une demande d'accès au Trousseau peut attendre.
-    func refreshQuotas() {
-        guard let usageReader, quotaTask == nil else { return }
-        if let last = lastQuotaFetch, now().timeIntervalSince(last) < (isLive ? 60 : 300) { return }
-        lastQuotaFetch = now()
-        let cacheReader = claudeCacheReader
-        let askKeychain = !keychainDenied
-        quotaTask = Task { [weak self] in
-            let reading = await usageReader(askKeychain)
-            let cached = await Task.detached(priority: .utility) { cacheReader?() }.value
-            guard let self else { return }
-            self.apply(reading, claudeCache: cached)
-            self.quotaTask = nil
-        }
-    }
-
-    public func apply(_ reading: SubscriptionUsage.Reading, claudeCache: CodexQuota?) {
-        if reading.keychainDenied { keychainDenied = true }
-        if let q = reading.codex { liveCodex = q }
-        if let q = reading.claude { liveClaude = q }
-        codexQuota = Self.newest(liveCodex, sessionCodex)
-        claudeQuota = Self.newest(liveClaude, claudeCache)
-        quotaProblems = [reading.claudeProblem, reading.codexProblem].compactMap { $0 }
-        recompute(evaluate: true)
-    }
-
-    nonisolated static func newest(_ a: CodexQuota?, _ b: CodexQuota?) -> CodexQuota? {
-        guard let a else { return b }
-        guard let b else { return a }
-        return a.observedAt >= b.observedAt ? a : b
-    }
 
     /// Historique local des 35 derniers jours (une fois).
     func loadHistory() async {
@@ -441,7 +383,7 @@ public final class ConsumptionMonitor {
         s.last5h = ConsumptionMath.totals(ConsumptionMath.since(events, t.addingTimeInterval(-5 * 3_600)), prices: p)
         s.week = ConsumptionMath.totals(ConsumptionMath.since(events, t.addingTimeInterval(-7 * 86_400)), prices: p)
         summary = s
-        gauges = ConsumptionMath.gauges(events, budgets: budgets, prices: p, codex: codexQuota, now: t)
+        gauges = ConsumptionMath.gauges(events, budgets: budgets, prices: p, now: t)
         if evaluate { evaluateGauges() }
     }
 
@@ -464,8 +406,7 @@ public final class ConsumptionMonitor {
                 changed = true
             }
         }
-        // Seul un plafond retiré réarme son alerte : une jauge absente faute de relevé (quota Codex pas encore
-        // écrit dans une nouvelle session) ne doit pas faire croire à un nouveau franchissement.
+        // Retiring a budget clears its old alert state.
         for id in alerted.keys where !configured.contains(id) {
             alerted[id] = nil
             changed = true
@@ -483,11 +424,6 @@ public final class ConsumptionMonitor {
     static func gaugeIDs(_ b: ConsumptionBudgets) -> Set<String> {
         var ids: Set<String> = []
         if b.dailyDollars != nil { ids.insert("dollars.day") }
-        for (p, sub) in b.subscriptions {
-            if sub.tokens5h != nil { ids.insert("sub.\(p).5h") }
-            if sub.tokensWeek != nil { ids.insert("sub.\(p).week") }
-        }
-        if b.codexQuotaPercent != nil { ids.formUnion(["codex.primary", "codex.secondary"]) }
         return ids
     }
 
@@ -559,14 +495,6 @@ public final class ConsumptionMonitor {
             if let d = cache.billing(e).dollars { dollars += d } else { unpriced += 1 }
         }
         return FileCoverageViewModel.Cost(calls: matching.count, tokens: tokens, dollars: dollars, unpriced: unpriced, documentsRead: ids.count)
-    }
-
-    /// Fournisseurs d'abonnement rencontrés ou connus (pour régler leurs plafonds).
-    public var subscriptionProviders: [String] {
-        let book = prices.subscriptionProviders
-        let seen = Set(events.map(\.provider)).filter { book.contains($0) }
-        let defaults = ["claude-code", "openai-codex", "chatgpt"].filter { book.contains($0) }
-        return Array(seen.union(defaults).union(budgets.subscriptions.keys)).sorted()
     }
 
     /// Niveau le plus haut parmi les jauges.

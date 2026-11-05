@@ -285,23 +285,11 @@ const data: Partial<Record<Section, Row>> = {
       rate: { tokensPerMinute: 4200 },
       lastHour: { calls: 12 },
     },
-    codexQuota: {
-      primary: { usedPercent: 36, windowMinutes: 300, resetsAt: '2026-10-29T23:30:00Z' },
-      secondary: { usedPercent: 58, windowMinutes: 10080, resetsAt: '2026-11-03T12:00:00Z' },
-      observedAt: timestamp,
-    },
-    claudeQuota: {
-      primary: { usedPercent: 18, windowMinutes: 300 },
-      secondary: { usedPercent: 42, windowMinutes: 10080 },
-      observedAt: timestamp,
-    },
     events,
     queues: [{ bank: 'horizon', pending: 1, processing: 1 }],
     budgets: {
       dailyDollars: 5,
-      codexQuotaPercent: 90,
       warnAt: 0.8,
-      subscriptions: {},
       action: 'alert',
       actionConfirmed: false,
     },

@@ -327,9 +327,7 @@ public enum HelpTopic: String, CaseIterable, Sendable, Identifiable {
                 L'app relit les **traces LLM** de chaque banque (toutes les minutes, toutes les 10 s quand cet écran \
                 ou la barre des menus est ouvert) et garde leurs compteurs, sans contenu, dans un historique local. \
                 **Rythme** : moyenne des 5 dernières minutes. **Coût par document** : appels d'extraction portant la \
-                métadonnée `document_id` ; la consolidation et reflect ne sont attribués à aucun document. \
-                **Quota Codex** : dernier relevé écrit par Codex dans ses sessions (`~/.codex/sessions`, lecture \
-                seule) ; Hindsight ne le met pas à jour, il peut donc avoir bougé depuis.
+                métadonnée `document_id` ; la consolidation et reflect ne sont attribués à aucun document.
                 """)
         case .pause:
             return (
@@ -350,9 +348,8 @@ public enum HelpTopic: String, CaseIterable, Sendable, Identifiable {
             return (
                 "Plafonds",
                 """
-                **Facturé par jour** (fournisseurs à l'usage, grille de Tarifs, depuis minuit), **jetons par \
-                abonnement** sur 5 h et 7 jours glissants (ce que Hindsight envoie à Claude Code ou Codex), **quota \
-                Codex relevé**. L'app prévient au seuil d'alerte, puis applique l'action choisie au dépassement, une \
+                **Facturé par jour** : fournisseurs à l'usage, grille de Tarifs, depuis minuit. L'app prévient \
+                au seuil d'alerte, puis applique l'action choisie au dépassement, une \
                 fois par franchissement : si vous reprenez à la main, elle ne remet pas en pause au relevé suivant. \
                 L'action automatique se confirme une fois ; sans confirmation, l'app ne fait qu'alerter.
                 """)

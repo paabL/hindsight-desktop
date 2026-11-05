@@ -70,7 +70,7 @@ variables. See Server & models in the app.
 
 LLM traces provide model names and token counts for input, output, cache, and
 reasoning. The app values them using an editable price book, treats subscription
-providers (`claude-code`, `openai-codex`) as quota rather than usage fees, and shows
+providers (`claude-code`, `openai-codex`) as subscription token usage rather than additional fees, and shows
 an equivalent usage-based value. A local ledger retains counters without prompt
 or response text beyond the server's trace retention period.
 

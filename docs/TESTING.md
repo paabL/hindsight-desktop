@@ -56,8 +56,8 @@ Bridge tests use a fake HTTP server, in-memory settings, and temporary files. Th
 check that reads do not write, reflect waits for confirmation, confirmations cannot
 be replayed, deletions require the expected text, changing banks invalidates pending
 requests, file reads stay within the selected folder after resolving symlinks, and
-unsupported URLs or commands are refused. Subscription quota checks require a
-separate confirmation and remain inactive when cancelled.
+unsupported URLs or commands are refused. Retired subscription-quota commands are refused without reading credentials or
+contacting subscription services.
 
 `OperationCountTests` and `desktop/tests/operations-retry.test.mjs` keep `/stats`
 deliberately stale while retrying synthetic failures. They check that live counts
@@ -75,6 +75,7 @@ npx playwright install chromium
 npm run test:ui
 npm run test:i18n
 node tests/navigation-ui.mjs
+node tests/consumption-ui.mjs
 ```
 
 Rendering tests use synthetic data. They visit views, open documents and summaries,
@@ -202,8 +203,8 @@ Open `desktop/src-tauri/target/release/bundle/macos/Hindsight Desktop.app`.
    confirmation, then cancel.
 5. Prepare a write, reprocessing action, or deletion. Inspect its details and any
    required confirmation text, then cancel.
-6. Inspect quota timestamps and the distinction between usage fees and subscription
-   tokens. Request an account quota check only when explicitly authorized.
+6. Inspect cost estimates, the daily cost budget, and the distinction between usage
+   fees and subscription tokens. Claude/Codex quota controls must be absent.
 7. Test folder selection and the export save dialog using temporary files.
 8. Inspect models, diffs, and backups without saving or restarting the server.
 9. Check that displayed fields, diffs, and logs mask secrets.

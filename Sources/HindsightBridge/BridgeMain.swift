@@ -298,23 +298,12 @@ final class DesktopBridge {
         case "pause.freeze": app.pause.requestFreeze()
         case "pause.unfreeze": app.pause.requestUnfreeze()
         case "pause.drain": await app.pause.requestDrain(bank: p["all"] as? Bool == true ? nil : try session().bank)
-        case "subscription.refresh":
-            ownConfirmation = ConfirmationRequest(
-                title: "Vérifier les quotas d'abonnement ?",
-                message: "Ce relevé ponctuel lit la session Codex dans ~/.codex/auth.json et, si vous l'autorisez, la session Claude Code dans le Trousseau. Les jetons servent uniquement à interroger chatgpt.com et api.anthropic.com ; ils ne sont ni enregistrés par l'app, ni envoyés au serveur Hindsight. Aucun appel à un modèle. Aucun relevé automatique n'est activé.",
-                confirmTitle: "Vérifier les quotas"
-            ) { [weak self] in
-                guard let self, !self.testing else { return }
-                let reading = await SubscriptionUsage.fetch()
-                self.app.consumption.apply(reading, claudeCache: SubscriptionUsage.claudeCache())
-            }
         case "budget.save":
             let budget = try decode(ConsumptionBudgets.self, p["budget"] ?? [:])
-            let amounts = [budget.dailyDollars, budget.codexQuotaPercent].compactMap { $0 }
+            let amounts = [budget.dailyDollars].compactMap { $0 }
             guard amounts.allSatisfy({ $0.isFinite && $0 > 0 && $0 <= ConsumptionBudgets.maxAmount }),
-                  (budget.codexQuotaPercent ?? 0) <= 100, budget.warnAt > 0, budget.warnAt <= 1,
-                  budget.subscriptions.values.allSatisfy({ [$0.tokens5h, $0.tokensWeek].compactMap { $0 }.allSatisfy { $0 > 0 && Double($0) <= ConsumptionBudgets.maxAmount } }) else { throw BridgeFailure("Les plafonds doivent être des montants positifs valides.") }
-            let description = "Budget quotidien : \(budget.dailyDollars.map { ConsumptionBudgets.amountText($0) + " USD" } ?? "sans plafond")\nQuota Codex : \(budget.codexQuotaPercent.map { ConsumptionBudgets.amountText($0) + " % consommés" } ?? "sans plafond")\n" + budget.subscriptions.sorted(by: { $0.key < $1.key }).map { "\($0.key) : \($0.value.tokens5h.map(String.init) ?? "—") jetons sur 5 h ; \($0.value.tokensWeek.map(String.init) ?? "—") sur 7 jours" }.joined(separator: "\n") + "\nAu dépassement : \(budget.effectiveAction.title)."
+                  budget.warnAt > 0, budget.warnAt <= 1 else { throw BridgeFailure("Les plafonds doivent être des montants positifs valides.") }
+            let description = "Budget quotidien : \(budget.dailyDollars.map { ConsumptionBudgets.amountText($0) + " USD" } ?? "sans plafond")\nAu dépassement : \(budget.effectiveAction.title)."
             ownConfirmation = ConfirmationRequest(title: "Enregistrer les plafonds ?", message: description, confirmTitle: "Enregistrer", severity: .normal) { [app] in app.consumption.budgets = budget }
         case "prices.save":
             let book = try decode(PriceBook.self, p["prices"] ?? [:])
@@ -671,9 +660,9 @@ final class DesktopBridge {
                     "consultationOnly": s?.operations.consultationOnly ?? false]
         case "consumption":
             let m = app.consumption!
-            return ["summary": wire(m.summary), "gauges": wire(m.gauges), "codexQuota": wire(m.codexQuota), "claudeQuota": wire(m.claudeQuota),
+            return ["summary": wire(m.summary), "gauges": wire(m.gauges),
                     "events": wire(Array(m.events.suffix(5000))), "queues": wire(m.queues), "budgets": wire(m.budgets),
-                    "prices": wire(app.services.estimator.priceBook), "lastPoll": wire(m.lastPoll), "error": wire(m.pollError), "quotaProblems": m.quotaProblems,
+                    "prices": wire(app.services.estimator.priceBook), "lastPoll": wire(m.lastPoll), "error": wire(m.pollError),
                     "services": wire(m.services), "servicesError": wire(m.servicesError)]
         case "facts", "timeline":
             // Liste limitée à 1 000 faits, chronologie à 20 000 : projeter seulement les champs affichés,

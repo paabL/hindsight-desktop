@@ -71,7 +71,7 @@ try {
     .getByRole('tablist', { name: 'Vues de l’activité' })
     .getByRole('tab', { name: 'Consommation', exact: true })
     .click();
-  await expect(page.locator('.quota-card')).toHaveCount(2);
+  await expect(page.locator('.quota-card')).toHaveCount(0);
   await expect(page.locator('.chart-bar')).not.toHaveCount(0);
   await page.screenshot({ path: path.join(root, 'screenshots/04-consommation.png') });
   await nav.getByRole('button', { name: /^Mémoire/ }).click();

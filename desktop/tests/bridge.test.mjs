@@ -177,18 +177,16 @@ test('la mémoire affiche les faits et observations réels sans écriture ni gé
   assert.equal(calls.at(-1).query.type, undefined);
 });
 
-test('les quotas OAuth nécessitent une confirmation ponctuelle', async () => {
+test('les anciens contrôles de quota sont refusés sans lecture ni confirmation', async () => {
   const before = calls.length;
-  const prepared = await bridge.request('subscription.refresh');
-  assert.equal(prepared.confirmations.length, 1);
-  assert.match(prepared.confirmations[0].message, /auth\.json/);
-  assert.match(prepared.confirmations[0].message, /api\.anthropic\.com/);
-  assert.match(prepared.confirmations[0].message, /Aucun relevé automatique/);
+  await assert.rejects(bridge.request('subscription.refresh'), /Action inconnue/);
   assert.equal(calls.length, before);
-  await bridge.request('cancel');
-  const result = await bridge.request('snapshot');
+  const result = await bridge.request('section', { section: 'consumption' });
   assert.equal(result.confirmations.length, 0);
-  assert.equal(calls.length, before);
+  assert.equal('codexQuota' in result.data, false);
+  assert.equal('claudeQuota' in result.data, false);
+  assert.equal('quotaProblems' in result.data, false);
+  assert.ok(calls.slice(before).every((call) => call.method === 'GET'));
 });
 
 test('reflect attend une confirmation et ne peut pas la rejouer', async () => {

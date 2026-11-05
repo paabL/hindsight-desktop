@@ -50,7 +50,7 @@ opens explicitly labeled fictional data. Native file and server access uses Taur
 | Memory → Documents | Stored text, facts, history, attachments, tags, scopes, reprocessing and deletion |
 | Sources → Tracked folders | File coverage, selection and confirmed uploads; automatic folder sync is suspended |
 | Activity → Processing | Queued and completed work, errors and confirmed processing controls |
-| Activity → Usage | Traces, costs, token rates, subscription quota checks, price lists, limits and processing controls |
+| Activity → Usage | Traces, costs, token rates, price lists, limits and processing controls |
 | Memory → Timeline | Event or mention dates, search and source documents, up to 20,000 facts |
 | Memory → Graph | Memory atlas, groups, bridges, two-hop neighborhoods, paths, filters and source facts |
 | Activity → Logs | Read history, model traces and access logs |
@@ -60,8 +60,7 @@ opens explicitly labeled fictional data. Native file and server access uses Taur
 
 Bank configuration changes use the server API. Model settings are edited in the
 local launch script. Features depend on server capabilities and separately
-configured local tools. Quota checks require an explicit confirmed request in
-Usage; the app does not enable automatic credential access for these checks.
+configured local tools. Usage shows server trace counts and an editable daily cost budget.
 
 ## Architecture and protections
 

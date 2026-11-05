@@ -2,7 +2,6 @@ import { translate as t, useI18n } from '../i18n';
 import { useMemo, useState } from 'react';
 import {
   Activity,
-  ArrowDownToLine,
   BarChart3,
   CircleDollarSign,
   Clock3,
@@ -17,7 +16,6 @@ import {
 } from 'lucide-react';
 import type { PageProps, Row } from '../types';
 import {
-  Badge,
   Button,
   CardHeader,
   Empty,
@@ -127,83 +125,19 @@ export function PauseTools({ run, busy }: Pick<PageProps, 'run' | 'busy'>) {
   );
 }
 
-function QuotaCard({ title, quota, tone }: { title: string; quota?: Row; tone: string }) {
-  useI18n();
-  return (
-    <article className="card quota-card">
-      <div className="quota-title">
-        <span className={`provider-monogram ${tone}`}>{title === 'Codex' ? 'O' : '✳'}</span>
-        <div>
-          <h3>{title === 'Codex' ? 'ChatGPT / Codex' : 'Claude Code'}</h3>
-          <p>{t('Quota de l’abonnement', 'Subscription quota')}</p>
-        </div>
-        {quota && <Badge tone="sage">{t('Relevé', 'Checked')}</Badge>}
-      </div>
-      {quota ? (
-        <>
-          <div className="quota-windows">
-            {[
-              { key: 'primary', title: t('Fenêtre courte', 'Short window') },
-              { key: 'secondary', title: t('Semaine', 'Week') },
-            ].map(({ key, title: label }) => {
-              const window = quota[key];
-              return (
-                <div key={key}>
-                  <div className="quota-label">
-                    <span>{label}</span>
-                    <strong>
-                      {window ? `${number(Math.max(0, 100 - window.usedPercent))} %` : '—'}{' '}
-                      <small>{t('restant', 'remaining')}</small>
-                    </strong>
-                  </div>
-                  <div className="progress-track">
-                    <span
-                      className={window?.usedPercent > 80 ? 'amber-fill' : tone}
-                      style={{ width: `${Math.max(0, Math.min(100, window?.usedPercent || 0))}%` }}
-                    />
-                  </div>
-                  <p>
-                    {window?.resetsAt
-                      ? `${t('Réinitialisation :', 'Resets:')} ${date(window.resetsAt, true)}`
-                      : t('Réinitialisation non disponible', 'Reset time unavailable')}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
-          <div className="quota-footnote">
-            <Clock3 size={12} />
-            {t('Observé le', 'Observed on')} {date(quota.observedAt, true)}
-          </div>
-        </>
-      ) : (
-        <Empty
-          icon={Gauge}
-          title={t('Quota non disponible', 'Quota unavailable')}
-          description={t(
-            'Connectez le compte avec son client officiel. Le dernier relevé disponible apparaîtra ici.',
-            'Sign in through the official client. The latest available reading will appear here.',
-          )}
-        />
-      )}
-    </article>
-  );
-}
-
-export default function Consumption({ data, run, busy, notify, demo }: PageProps) {
+export default function Consumption({ data, run, busy, notify }: PageProps) {
   const { language } = useI18n();
   const [period, setPeriod] = useState('day');
   const [budgets, setBudgets] = useState(false);
   const [prices, setPrices] = useState(false);
   const [priceText, setPriceText] = useState('');
   const [dollars, setDollars] = useState('');
-  const [quota, setQuota] = useState('');
   const [autoPause, setAutoPause] = useState(false);
   const [budgetAction, setBudgetAction] = useState('softPause');
-  const [subscriptionLimits, setSubscriptionLimits] = useState<Row>({});
   const summary = data.summary || {};
   const today = summary.today || {};
   const events: Row[] = data.events || [];
+  const gauges: Row[] = (data.gauges || []).filter((gauge: Row) => gauge.id === 'dollars.day');
   const chart = useMemo(() => {
     const groups = new Map<string, { tokens: number; calls: number; label: string }>();
     const latest = events.reduce((latest, e) => Math.max(latest, Date.parse(e.date) || 0), 0);
@@ -240,10 +174,8 @@ export default function Consumption({ data, run, busy, notify, demo }: PageProps
   const sum = distribution.reduce((n, [, v]) => n + v, 0) || 1;
   function editBudgets() {
     setDollars(String(data.budgets?.dailyDollars ?? ''));
-    setQuota(String(data.budgets?.codexQuotaPercent ?? ''));
     setAutoPause(data.budgets?.actionConfirmed || false);
     setBudgetAction(data.budgets?.action || 'softPause');
-    setSubscriptionLimits(structuredClone(data.budgets?.subscriptions || {}));
     setBudgets(true);
   }
 
@@ -283,7 +215,7 @@ export default function Consumption({ data, run, busy, notify, demo }: PageProps
         <Metric
           label={t('Jetons sur abonnement', 'Subscription tokens')}
           value={number(today.subscriptionTokens, true)}
-          note={t('Comptés dans le quota du fournisseur', 'Counted toward the provider quota')}
+          note={t('Jetons réellement utilisés sur abonnement', 'Actual subscription token usage')}
           icon={Zap}
           tone="lavender"
         />
@@ -300,35 +232,6 @@ export default function Consumption({ data, run, busy, notify, demo }: PageProps
           tone="blue"
         />
       </div>
-      <div className="action-row">
-        <Button
-          icon={Gauge}
-          disabled={busy || demo}
-          onClick={() => void run('subscription.refresh')}
-        >
-          {t('Vérifier les quotas d’abonnement', 'Check subscription quotas')}
-        </Button>
-        <span className="form-hint">
-          {t(
-            'Lecture ponctuelle des comptes officiels, après confirmation. Aucun accès automatique.',
-            'Check official accounts once, after confirmation. No automatic access.',
-          )}
-        </span>
-      </div>
-      <div className="two-columns quota-grid">
-        <QuotaCard title="Codex" quota={data.codexQuota} tone="sage" />
-        <QuotaCard title="Claude" quota={data.claudeQuota} tone="accent" />
-      </div>
-      {data.quotaProblems?.length > 0 && (
-        <details className="muted-details">
-          <summary>
-            {t('Pourquoi certains relevés manquent', 'Why some readings are missing')}
-          </summary>
-          {data.quotaProblems.map((p: string) => (
-            <p key={p}>{p}</p>
-          ))}
-        </details>
-      )}
       <div className="chart-layout">
         <section className="card chart-card">
           <CardHeader
@@ -498,7 +401,7 @@ export default function Consumption({ data, run, busy, notify, demo }: PageProps
           </p>
         </section>
       )}
-      {!!data.gauges?.length && (
+      {!!gauges.length && (
         <section className="card">
           <CardHeader
             title={t('Vos plafonds', 'Your limits')}
@@ -509,7 +412,7 @@ export default function Consumption({ data, run, busy, notify, demo }: PageProps
             }
           />
           <div className="budget-gauges">
-            {data.gauges.map((gauge: Row) => (
+            {gauges.map((gauge) => (
               <div key={gauge.id}>
                 <strong>{gauge.title}</strong>
                 <span>
@@ -546,15 +449,8 @@ export default function Consumption({ data, run, busy, notify, demo }: PageProps
             className="form-stack"
             onSubmit={(e) => {
               e.preventDefault();
-              const dailyDollars = dollars ? Number(dollars) : null,
-                codexQuotaPercent = quota ? Number(quota) : null;
-              if (
-                (dailyDollars != null && (!Number.isFinite(dailyDollars) || dailyDollars <= 0)) ||
-                (codexQuotaPercent != null &&
-                  (!Number.isFinite(codexQuotaPercent) ||
-                    codexQuotaPercent <= 0 ||
-                    codexQuotaPercent > 100))
-              ) {
+              const dailyDollars = dollars ? Number(dollars) : null;
+              if (dailyDollars != null && (!Number.isFinite(dailyDollars) || dailyDollars <= 0)) {
                 notify(t('Indiquez des plafonds valides.', 'Enter valid limits.'));
                 return;
               }
@@ -562,8 +458,8 @@ export default function Consumption({ data, run, busy, notify, demo }: PageProps
                 budget: {
                   ...data.budgets,
                   dailyDollars,
-                  codexQuotaPercent,
-                  subscriptions: subscriptionLimits,
+                  codexQuotaPercent: null,
+                  subscriptions: {},
                   action: autoPause ? budgetAction : 'alert',
                   actionConfirmed: autoPause,
                 },
@@ -581,59 +477,6 @@ export default function Consumption({ data, run, busy, notify, demo }: PageProps
                 placeholder={t('Sans plafond', 'No limit')}
               />
             </label>
-            <label>
-              {t(
-                'Alerte au pourcentage de quota Codex consommé',
-                'Alert at percentage of Codex quota used',
-              )}
-              <input
-                type="number"
-                min="1"
-                max="100"
-                value={quota}
-                onChange={(e) => setQuota(e.target.value)}
-                placeholder={t('Sans plafond', 'No limit')}
-              />
-            </label>
-            <fieldset className="subscription-limits">
-              <legend>
-                {t('Plafonds par abonnement (jetons)', 'Limits per subscription (tokens)')}
-              </legend>
-              {[
-                ['openai-codex', 'ChatGPT / Codex'],
-                ['claude-code', 'Claude Code'],
-              ].map(([provider, title]) => (
-                <div key={provider}>
-                  <strong>{title}</strong>
-                  <div className="two-fields">
-                    {[
-                      ['tokens5h', t('Sur 5 heures', 'Over 5 hours')],
-                      ['tokensWeek', t('Sur 7 jours', 'Over 7 days')],
-                    ].map(([key, label]) => (
-                      <label key={key}>
-                        {label}
-                        <input
-                          type="number"
-                          min="1"
-                          step="1"
-                          placeholder={t('Sans plafond', 'No limit')}
-                          value={subscriptionLimits[provider]?.[key] ?? ''}
-                          onChange={(e) =>
-                            setSubscriptionLimits((old) => ({
-                              ...old,
-                              [provider]: {
-                                ...old[provider],
-                                [key]: e.target.value ? Number(e.target.value) : null,
-                              },
-                            }))
-                          }
-                        />
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </fieldset>
             <label className="checkbox-label">
               <input
                 type="checkbox"

@@ -28,10 +28,6 @@ Hindsight server you configure and does not host your memories.
 - **Accounts.** Sign-in uses separately installed official clients. Hindsight
   Cloud stores its key in `~/.hindsight/cloud/credentials.json`. Local sign-out
   does not revoke that cloud key.
-- **Subscription quotas.** An explicitly confirmed check in **Usage** uses
-  existing Codex credentials and, when allowed, Claude Code credentials, only
-  with their own services. Quota checks are not run automatically. These
-  interfaces may change; no document or prompt is needed for the check.
 - **Updates and GitHub.** Choosing **Check for updates** contacts the public
   beta feed at
   `https://raw.githubusercontent.com/paabL/hindsight-desktop/main/updates/beta.json`.

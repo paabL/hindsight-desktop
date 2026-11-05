@@ -5,7 +5,7 @@ import XCTest
 
 @testable import HindsightCore
 
-/// Calculs, plafonds, quota Codex, relevés et pause.
+/// Calculs, plafonds en dollars, relevés et pause.
 @MainActor
 final class ConsumptionTests: XCTestCase {
     let t0 = Date(timeIntervalSince1970: 1_800_000_000)
@@ -67,64 +67,49 @@ final class ConsumptionTests: XCTestCase {
         XCTAssertEqual(ConsumptionMath.breakdown(events, by: .operation, prices: .defaults).first?.id, "retain")
     }
 
-    func testGaugesForDollarsSubscriptionsAndCodexQuota() async {
+    func testGaugesOnlyTrackDailyDollars() async throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "UTC")!
         let events = [
             event("y", minutesAgo: 60 * 30),  // hier
             event("a", minutesAgo: 30, input: 2_000_000),
             event("s1", minutesAgo: 60 * 4, provider: "openai-codex", model: "gpt-5", input: 70_000),
-            event("s2", minutesAgo: 60 * 6, provider: "openai-codex", model: "gpt-5", input: 50_000),
+            event("s2", minutesAgo: 60 * 6, provider: "claude-code", model: "claude-sonnet-4", input: 50_000),
         ].sorted { $0.date < $1.date }
-        let budgets = ConsumptionBudgets(
-            dailyDollars: 0.5, subscriptions: ["openai-codex": .init(tokens5h: 80_000, tokensWeek: 1_000_000)], codexQuotaPercent: 90)
-        let codex = CodexQuota(
-            primary: .init(usedPercent: 95, windowMinutes: 300, resetsAt: t0.addingTimeInterval(600)),
-            secondary: .init(usedPercent: 50, windowMinutes: 10_080, resetsAt: t0.addingTimeInterval(-60)), observedAt: t0)
-        let g = Dictionary(
-            uniqueKeysWithValues: ConsumptionMath.gauges(events, budgets: budgets, prices: .defaults, codex: codex, now: t0, calendar: calendar).map {
-                ($0.id, $0)
-            })
-        XCTAssertEqual(g["dollars.day"]?.used ?? 0, 0.6, accuracy: 1e-9, "seul l'appel d'aujourd'hui compte")
-        XCTAssertEqual(g["dollars.day"]?.level, .exceeded)
-        XCTAssertEqual(g["sub.openai-codex.5h"]?.used, 70_000, "fenêtre glissante de 5 h")
-        XCTAssertEqual(g["sub.openai-codex.5h"]?.level, .warning)
-        XCTAssertEqual(g["sub.openai-codex.week"]?.used, 120_000)
-        XCTAssertEqual(g["sub.openai-codex.week"]?.level, .ok)
-        XCTAssertEqual(g["codex.primary"]?.level, .exceeded)
-        XCTAssertEqual(g["codex.secondary"]?.used, 0, "fenêtre réinitialisée depuis le relevé")
+        let budgets = ConsumptionBudgets(dailyDollars: 0.5)
+        let gauges = ConsumptionMath.gauges(events, budgets: budgets, prices: .defaults, now: t0, calendar: calendar)
+        XCTAssertEqual(gauges.map(\.id), ["dollars.day"])
+        let gauge = try XCTUnwrap(gauges.first)
+        XCTAssertEqual(gauge.used, 0.6, accuracy: 1e-9, "seul l'appel facturé d'aujourd'hui compte")
+        XCTAssertEqual(gauge.level, .exceeded)
+        XCTAssertEqual(gauge.unit, .dollars)
+        XCTAssertEqual(gauge.resetsAt, calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: t0)))
+        XCTAssertTrue(ConsumptionMath.gauges(events, budgets: ConsumptionBudgets(), prices: .defaults, now: t0).isEmpty)
         XCTAssertEqual(ConsumptionBudgets().effectiveAction, .alert, "sans confirmation, l'app se contente d'alerter")
     }
 
-    func testMenuBarReadingPrefersClaudeFiveHourGauge() {
-        func gauge(_ id: String, _ used: Double, _ level: BudgetGauge.Level = .ok) -> BudgetGauge {
-            BudgetGauge(id: id, title: id, used: used, limit: 1_000_000, unit: .tokens, level: level, resetsAt: nil, note: nil)
-        }
+    func testMenuBarReadingUsesActualTokensAndActivity() {
         var busy = ConsumptionMath.Rate()
         busy.callsPerMinute = 2
         let idle = ConsumptionMath.Rate()
 
-        let none = MenuBarReading.make(gauges: [], subscriptionTokens5h: 1_234_567, rate: idle, processing: 0)
-        XCTAssertEqual(none.text, "1,2 M", "sans plafond 5 h : les jetons d'abonnement")
-        XCTAssertFalse(none.isWorking)
+        let reading = MenuBarReading.make(subscriptionTokens5h: 1_234_567, rate: idle, processing: 0)
+        XCTAssertEqual(reading.text, "1,2 M")
+        XCTAssertTrue(reading.spoken.contains("jetons d'abonnement sur 5 h"))
+        XCTAssertFalse(reading.isWorking)
+        XCTAssertEqual(reading.level, .ok)
 
-        let both = [gauge("sub.openai-codex.5h", 900_000), gauge("dollars.day", 1), gauge("sub.claude-code.5h", 234_000)]
-        let r = MenuBarReading.make(gauges: both, subscriptionTokens5h: 0, rate: busy, processing: 0)
-        XCTAssertEqual(r.text, "23 %", "la jauge Claude Code passe devant")
-        XCTAssertTrue(r.isWorking)
-        XCTAssertTrue(r.spoken.contains("23 %"))
-
-        let over = MenuBarReading.make(
-            gauges: [gauge("sub.claude-code.5h", 1_100_000, .exceeded)], subscriptionTokens5h: 0, rate: idle, processing: 3)
-        XCTAssertEqual(over.text, "⚠︎ 110 %")
-        XCTAssertEqual(over.level, .exceeded)
-        XCTAssertTrue(over.isWorking, "des opérations en cours suffisent")
+        let active = MenuBarReading.make(subscriptionTokens5h: 0, rate: busy, processing: 0)
+        XCTAssertTrue(active.isWorking)
+        XCTAssertTrue(active.spoken.contains("en cours"))
+        let processing = MenuBarReading.make(subscriptionTokens5h: 0, rate: idle, processing: 3)
+        XCTAssertTrue(processing.isWorking, "des opérations en cours suffisent")
+        XCTAssertEqual(processing.level, .ok)
     }
 
     func testBudgetsSurviveSavingAndOlderSettings() async {
         let store = InMemorySettingsStore()
-        var b = ConsumptionBudgets(dailyDollars: 2, action: .freezeQueue, actionConfirmed: true)
-        b.subscriptions["claude-code"] = .init(tokens5h: 100)
+        let b = ConsumptionBudgets(dailyDollars: 2, action: .freezeQueue, actionConfirmed: true)
         b.save(to: store)
         XCTAssertEqual(ConsumptionBudgets.load(from: store), b)
         store.set(#"{"dailyDollars":3}"#, forKey: "consumptionBudgets")
@@ -135,47 +120,23 @@ final class ConsumptionTests: XCTestCase {
         XCTAssertNil(store.string(forKey: "consumptionBudgets"))
     }
 
-    // MARK: Quota Codex
-
-    func testCodexRateLimitFormats() async throws {
-        let modern = #"{"timestamp":"2026-10-21T10:00:00.000Z","type":"event_msg","payload":{"type":"token_count","info":null,"rate_limits":{"primary":{"used_percent":42.5,"window_minutes":300,"resets_at":1792586400},"secondary":{"used_percent":12,"window_minutes":10080,"resets_in_seconds":3600}}}}"#
-        let q = try XCTUnwrap(CodexRateLimits.parse(line: modern))
-        XCTAssertEqual(q.primary?.usedPercent, 42.5)
-        XCTAssertEqual(q.primary?.title, "5 h")
-        XCTAssertEqual(q.primary?.resetsAt, Date(timeIntervalSince1970: 1_792_586_400))
-        XCTAssertEqual(q.secondary?.title, "semaine")
-        XCTAssertEqual(q.secondary?.resetsAt, HSDate.parse("2026-10-21T11:00:00Z"), "délai relatif au relevé")
-        XCTAssertEqual(q.observedAt, HSDate.parse("2026-10-21T10:00:00Z"))
-
-        let flat = #"{"type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary_used_percent":7,"secondary_used_percent":3,"primary_window_minutes":299}}}"#
-        let f = try XCTUnwrap(CodexRateLimits.parse(line: flat, fallbackDate: t0))
-        XCTAssertEqual(f.primary?.usedPercent, 7)
-        XCTAssertEqual(f.observedAt, t0)
-        XCTAssertNil(CodexRateLimits.parse(line: #"{"type":"event_msg","payload":{"type":"token_count","rate_limits":null}}"#))
-        XCTAssertNil(CodexRateLimits.parse(line: "pas du JSON"))
-    }
-
-    func testReadsLatestQuotaFromNewestSessionWithoutWriting() async throws {
-        let home = FileManager.default.temporaryDirectory.appendingPathComponent("codex-\(UUID().uuidString)")
-        addTeardownBlock { try? FileManager.default.removeItem(at: home) }
-        let old = home.appendingPathComponent("sessions/2026/10/19")
-        let new = home.appendingPathComponent("sessions/2026/10/21")
-        for d in [old, new] { try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true) }
-        func line(_ p: Double) -> String {
-            #"{"timestamp":"2026-10-21T09:00:00Z","type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":\#(p),"window_minutes":300}}}}"#
+    func testLegacyQuotaSettingsAreIgnoredAndOmittedWhenSaving() async throws {
+        let legacyValues = [
+            #""subscriptions":{"claude-code":{"tokens5h":100,"tokensWeek":200},"openai-codex":{"tokens5h":50}},"codexQuotaPercent":90"#,
+            #""subscriptions":"obsolete","codexQuotaPercent":{"obsolete":true}"#,
+        ]
+        for legacy in legacyValues {
+            let raw = #"{"dailyDollars":2,"warnAt":0.65,"action":"freezeQueue","actionConfirmed":true,\#(legacy)}"#
+            let store = InMemorySettingsStore(["consumptionBudgets": raw])
+            let budgets = ConsumptionBudgets.load(from: store)
+            XCTAssertEqual(budgets, ConsumptionBudgets(dailyDollars: 2, warnAt: 0.65, action: .freezeQueue, actionConfirmed: true))
+            XCTAssertFalse(budgets.isEmpty)
+            budgets.save(to: store)
+            let saved = try XCTUnwrap(store.string(forKey: "consumptionBudgets"))
+            let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(saved.utf8)) as? [String: Any])
+            XCTAssertEqual(Set(object.keys), ["dailyDollars", "warnAt", "action", "actionConfirmed"])
+            XCTAssertEqual(ConsumptionBudgets.load(from: store), budgets)
         }
-        let filler = String(repeating: #"{"type":"response_item","payload":{"text":"x"}}"# + "\n", count: 2_000)
-        try (line(10) + "\n").write(to: old.appendingPathComponent("rollout-a.jsonl"), atomically: true, encoding: .utf8)
-        let newest = new.appendingPathComponent("rollout-b.jsonl")
-        try (line(55) + "\n" + filler + line(61) + "\n" + filler).write(to: newest, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-86_400)], ofItemAtPath: old.appendingPathComponent("rollout-a.jsonl").path)
-        let before = try Data(contentsOf: newest)
-
-        XCTAssertEqual(CodexRateLimits.latestSessionFile(codexHome: home)?.lastPathComponent, "rollout-b.jsonl")
-        XCTAssertEqual(CodexRateLimits.latest(codexHome: home)?.primary?.usedPercent, 61, "le relevé le plus récent du fichier")
-        XCTAssertEqual(try Data(contentsOf: newest), before)
-        XCTAssertEqual(CodexRateLimits.codexHome(environment: ["CODEX_HOME": "/opt/cx"], home: "/h").path, "/opt/cx")
-        XCTAssertEqual(CodexRateLimits.codexHome(environment: [:], home: "/h").path, "/h/.codex")
     }
 
     // MARK: Relevés
@@ -199,7 +160,7 @@ final class ConsumptionTests: XCTestCase {
         let store = InMemorySettingsStore()
         let monitor = ConsumptionMonitor(
             settings: store, client: { makeClient(t) }, banks: { [testBank] }, ledger: UsageLedger(url: ledgerURL),
-            prices: { .defaults }, now: { now }, codex: { nil })
+            prices: { .defaults }, now: { now })
         var alerts: [ConsumptionAlert] = []
         var actions: [ConsumptionBudgets.Action] = []
         monitor.onAlert = { alerts.append($0) }
@@ -234,8 +195,7 @@ final class ConsumptionTests: XCTestCase {
 
         // Historique local : un nouveau suivi repart de ce qui a été vu.
         let again = ConsumptionMonitor(
-            settings: store, client: { makeClient(t) }, banks: { [] }, ledger: UsageLedger(url: ledgerURL), prices: { .defaults }, now: { now },
-            codex: { nil })
+            settings: store, client: { makeClient(t) }, banks: { [] }, ledger: UsageLedger(url: ledgerURL), prices: { .defaults }, now: { now })
         await again.poll()
         XCTAssertEqual(again.events.map(\.id), ["t1", "t2"])
         XCTAssertEqual(again.documentTotals("doc:r:a.md")?.calls, 1)
@@ -486,32 +446,44 @@ extension ConsumptionTests {
         XCTAssertEqual(ConsumptionBudgets.amountText(1e19), "", "une valeur aberrante déjà enregistrée ne fait pas planter la feuille")
     }
 
-    func testCodexQuotaIsKeptWhenTheNewestSessionHasNoReading() async throws {
-        let home = FileManager.default.temporaryDirectory.appendingPathComponent("codex-\(UUID().uuidString)")
-        addTeardownBlock { try? FileManager.default.removeItem(at: home) }
-        let day = home.appendingPathComponent("sessions/2026/10/21")
-        try FileManager.default.createDirectory(at: day, withIntermediateDirectories: true)
-        let older = day.appendingPathComponent("rollout-old.jsonl")
-        try (#"{"type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":33,"window_minutes":300}}}}"# + "\n").write(to: older, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-600)], ofItemAtPath: older.path)
-        try (#"{"type":"session_meta","payload":{"id":"x"}}"# + "\n").write(to: day.appendingPathComponent("rollout-new.jsonl"), atomically: true, encoding: .utf8)
-        XCTAssertEqual(CodexRateLimits.latest(codexHome: home)?.primary?.usedPercent, 33, "la session qui vient de commencer n'a pas encore de relevé")
-
-        let readings = Lock<[CodexQuota?]>([CodexQuota(primary: .init(usedPercent: 95, windowMinutes: 300), secondary: nil, observedAt: t0), nil])
-        let t = MockTransport()
-        t.on("GET", "\(bankPath)/llm-requests", json: #"{"bank_id":"b","total":0,"limit":200,"offset":0,"items":[]}"#)
+    func testLegacyQuotaBudgetsAndAlertsCannotPause() async throws {
+        let (pause, transport, store) = pauseFixture()
+        store.set(
+            #"{"subscriptions":{"claude-code":{"tokens5h":1,"tokensWeek":1},"openai-codex":{"tokens5h":1,"tokensWeek":1}},"codexQuotaPercent":1,"warnAt":0.8,"action":"softPause","actionConfirmed":true}"#,
+            forKey: "consumptionBudgets")
+        store.set(
+            #"{"sub.claude-code.5h":2,"sub.claude-code.week":2,"sub.openai-codex.5h":2,"sub.openai-codex.week":2,"codex.primary":2,"codex.secondary":2}"#,
+            forKey: "consumptionAlerted")
         let monitor = ConsumptionMonitor(
-            settings: InMemorySettingsStore(), client: { makeClient(t) }, banks: { [testBank] }, ledger: nil, prices: { .defaults }, now: { [t0] in t0 },
-            codex: { readings.value.isEmpty ? nil : readings.value.removeFirst() })
+            settings: store, client: { makeClient(transport) }, banks: { [testBank] }, ledger: nil, prices: { .defaults },
+            now: { [t0] in t0 })
         var alerts = 0
+        var actions: [ConsumptionBudgets.Action] = []
         monitor.onAlert = { _ in alerts += 1 }
-        monitor.budgets = ConsumptionBudgets(codexQuotaPercent: 90)
-        await monitor.poll()
-        XCTAssertEqual(alerts, 1)
-        await monitor.poll()
-        XCTAssertEqual(monitor.codexQuota?.primary?.usedPercent, 95, "le dernier relevé connu reste affiché")
-        await monitor.poll()
-        XCTAssertEqual(alerts, 1, "pas de nouvelle alerte faute de relevé")
+        monitor.onExceeded = { _, action in
+            actions.append(action)
+            await pause.apply(action, reason: "Plafond atteint")
+        }
+        monitor.ingestForTesting([
+            event("claude", minutesAgo: 2, provider: "claude-code", model: "claude-sonnet-4", input: 100_000),
+            event("codex", minutesAgo: 1, provider: "openai-codex", model: "gpt-5", input: 100_000),
+        ])
+        monitor.recompute(evaluate: true)
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertTrue(monitor.budgets.isEmpty, "les anciens quotas ne configurent plus aucun plafond")
+        XCTAssertTrue(monitor.gauges.isEmpty)
+        XCTAssertEqual(monitor.summary.last5h.subscriptionTokens, 200_000, "la consommation réelle reste comptée")
+        XCTAssertEqual(alerts, 0)
+        XCTAssertTrue(actions.isEmpty)
+        XCTAssertNil(monitor.latestAlert)
+        XCTAssertFalse(pause.anyPause)
+        XCTAssertTrue(transport.requests.isEmpty, "aucune action serveur issue des anciens quotas")
+        let alerted = try XCTUnwrap(store.string(forKey: "consumptionAlerted"))
+        XCTAssertEqual(try JSONDecoder().decode([String: Int].self, from: Data(alerted.utf8)), [:])
+        monitor.budgets.save(to: store)
+        let saved = try XCTUnwrap(store.string(forKey: "consumptionBudgets"))
+        XCTAssertFalse(saved.contains("subscriptions"))
+        XCTAssertFalse(saved.contains("codexQuotaPercent"))
     }
 
     func testDayBucketsFollowTheCalendarAcrossDaylightSaving() async {
@@ -532,7 +504,7 @@ extension ConsumptionTests {
     func testDocumentCostStaysWithinItsBank() async {
         let monitor = ConsumptionMonitor(
             settings: InMemorySettingsStore(), client: { makeClient(MockTransport()) }, banks: { [] }, ledger: nil, prices: { .defaults },
-            now: { [t0] in t0 }, codex: { nil })
+            now: { [t0] in t0 })
         let doc = "doc:r:a.md"
         let items = [event("1", minutesAgo: 3, bank: "a", doc: doc), event("2", minutesAgo: 2, bank: "b", doc: doc), event("3", minutesAgo: 1, bank: "b", doc: doc)]
         monitor.ingestForTesting(items)
@@ -563,7 +535,7 @@ extension ConsumptionTests {
         let ledger = UsageLedger(url: ledgerURL)
         let monitor = ConsumptionMonitor(
             settings: InMemorySettingsStore(), client: { makeClient(t) }, banks: { [testBank] }, ledger: ledger, prices: { .defaults },
-            now: { now }, codex: { nil })
+            now: { now })
         await monitor.poll()
         XCTAssertEqual(monitor.events.map(\.id), ["llm"], "seul l'appel LLM compte")
         XCTAssertEqual(monitor.summary.last5h.subscriptionTokens, 5_100)

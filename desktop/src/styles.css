@@ -2026,71 +2026,6 @@ tbody tr:hover {
   grid-template-columns: 1fr 1fr;
   gap: 22px;
 }
-.quota-card {
-  padding: 22px 24px;
-}
-.quota-title {
-  display: flex;
-  gap: 13px;
-  align-items: center;
-  margin-bottom: 26px;
-}
-.provider-monogram {
-  display: grid;
-  place-items: center;
-  width: 37px;
-  height: 37px;
-  border-radius: 10px;
-  font-size: 24px;
-  font-weight: 500;
-  background: var(--neutral-light);
-}
-.provider-monogram.sage {
-  background: var(--sage-light);
-  color: var(--sage-ink);
-  font-size: 22px;
-}
-.provider-monogram.accent {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.quota-title > div {
-  flex: 1;
-}
-.quota-title h3 {
-  font-size: 13px;
-  font-weight: 550;
-}
-.quota-title p {
-  font-size: 9px;
-  color: var(--faint);
-  margin-top: 4px;
-}
-.quota-windows {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 23px;
-}
-.quota-label {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-  gap: 10px;
-  font-size: 9px;
-  color: var(--secondary);
-}
-.quota-label strong {
-  font-size: 12px;
-  color: var(--ink);
-  font-weight: 550;
-  white-space: nowrap;
-}
-.quota-label small {
-  font-size: 8px;
-  color: var(--faint);
-  font-weight: 400;
-}
 .progress-track {
   height: 5px;
   background: var(--neutral-light);
@@ -2109,37 +2044,6 @@ tbody tr:hover {
 }
 .progress-track > span.accent {
   background: var(--accent);
-}
-.progress-track > span.amber-fill {
-  background: var(--amber);
-}
-.quota-windows p {
-  font-size: 8px;
-  margin-top: 9px;
-  color: var(--faint);
-}
-.quota-footnote {
-  font-size: 8px;
-  color: var(--faint);
-  margin-top: 22px;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-.quota-card .empty-state {
-  min-height: 140px;
-  padding: 8px;
-}
-.quota-card .empty-state .empty-icon {
-  width: 38px;
-  height: 38px;
-  border-radius: 12px;
-}
-.quota-card .empty-state h3 {
-  font-size: 12px;
-}
-.quota-card .empty-state p {
-  font-size: 10px;
 }
 .chart-layout {
   display: grid;
@@ -3662,20 +3566,6 @@ tbody tr:hover {
   .chart-layout {
     grid-template-columns: minmax(0, 1fr) 230px;
   }
-  .quota-card {
-    padding: 21px 20px;
-  }
-  .quota-windows {
-    gap: 15px;
-  }
-  .quota-label {
-    font-size: 8px;
-    flex-wrap: wrap;
-    gap: 5px;
-  }
-  .quota-label strong {
-    font-size: 11px;
-  }
   .graph-layout {
     grid-template-columns: minmax(0, 1fr) 215px;
   }
@@ -3824,12 +3714,6 @@ tbody tr:hover {
   }
   .two-columns {
     gap: 15px;
-  }
-  .quota-card {
-    padding: 18px;
-  }
-  .quota-title h3 {
-    font-size: 12px;
   }
   .timeline-group {
     grid-template-columns: 125px 1fr;
@@ -4083,8 +3967,7 @@ tbody tr:hover {
 .model-glyph,
 .color-0,
 .file-icon,
-.metric-icon,
-.provider-monogram.accent {
+.metric-icon {
   background: var(--accent-soft);
   color: var(--accent-strong);
   border-radius: 6px;
@@ -4093,7 +3976,6 @@ tbody tr:hover {
 .color-1,
 .file-icon.git,
 .metric-icon.sage,
-.provider-monogram.sage,
 .service-symbol {
   background: var(--sage-light);
   color: var(--sage-ink);
@@ -4501,22 +4383,6 @@ tbody tr:hover {
   background: var(--accent-soft);
   color: var(--accent-strong);
 }
-.quota-card {
-  border-radius: 8px;
-}
-.quota-title p {
-  font-size: 10px;
-}
-.quota-label {
-  font-size: 11px;
-}
-.quota-label small {
-  font-size: 9px;
-}
-.quota-windows p,
-.quota-footnote {
-  font-size: 9px;
-}
 .progress-track > span {
   background: var(--chart);
 }
@@ -4561,10 +4427,6 @@ tbody tr:hover {
 }
 .distribution-note p {
   font-size: 10px;
-}
-.quota-card .provider-monogram {
-  font-size: 21px;
-  border-radius: 6px;
 }
 .distribution-card > .text-button {
   font-size: 10px;
@@ -4738,9 +4600,6 @@ td {
   }
   .metric > p {
     font-size: 9px;
-  }
-  .quota-label {
-    font-size: 10px;
   }
   .source-list .subtle-label {
     font-size: 9px;
@@ -4936,30 +4795,6 @@ td {
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-}
-.subscription-limits {
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 15px 18px 18px;
-  margin: 0;
-}
-.subscription-limits legend {
-  color: var(--secondary);
-  font-size: 11px;
-  padding: 0 7px;
-}
-.subscription-limits > div + div {
-  margin-top: 20px;
-}
-.subscription-limits strong {
-  display: block;
-  font-size: 12px;
-  font-weight: 500;
-  margin-bottom: 12px;
-}
-.subscription-limits label {
-  font-size: 10px;
-  color: var(--secondary);
 }
 /* Modèles Hindsight : une ligne par modèle, choix exclusifs. */
 .hindsight-models > .notice {
