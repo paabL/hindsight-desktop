@@ -30,7 +30,7 @@ there is no Advanced navigation section.
 | Knowledge | Knowledge pages and mental models |
 | Search | Recall, exact text and confirmed reflect |
 | Models | Quick model selection and explanatory workflows; management stays in Settings |
-| Sources | Catalog, Tracked folders, Imports |
+| Sources | Catalog, Tracked folders |
 | Activity | Processing, Usage, Logs |
 | Settings | Application, Memory bank, Memory behavior, Server & models |
 
@@ -57,6 +57,17 @@ list visible on return. Collection also runs in the background with progress and
 output available. **Refresh folder** collects; the top-bar refresh only rechecks
 the catalog and memory. A reader stays open when inclusion changes, and late text
 responses cannot replace the newly selected source.
+
+Tracked folders are saved per bank, separately from the local catalog. If the
+catalog folder is not tracked for the current bank, this view shows its path and
+an explicit **Track this folder** action. It never registers or uploads it on
+navigation. Loading is shown before the folder list arrives. Sidebar numbers use
+the `⌘` prefix to identify keyboard shortcuts.
+
+Processing keeps its selected status during automatic refreshes and preserves
+opened pages. Large lists render in groups of 100 with **Load more**; this does
+not impose a total-operation limit. Global status counts are distinguished from
+counts based only on loaded rows.
 
 ## Models and accounts
 

@@ -222,8 +222,9 @@ final class FileCoverageTests: XCTestCase {
         XCTAssertEqual(c.facts, 7)
         XCTAssertEqual(c.file.repo, "Conversations Codex")
         XCTAssertTrue(c.file.path.hasPrefix("NOMAD-RC5-minimal · Optimise le MPC"))
-        XCTAssertFalse(c.canSend, "une conversation s'envoie par « Importer »")
+        XCTAssertFalse(c.canSend, "les conversations sont collectées dans le dossier commun")
         XCTAssertEqual(r.entries.first { $0.session?.meta?.id == "s2" }?.documents.map(\.id), ["conversation-x"])
+        XCTAssertEqual(r.entries.first { $0.session?.meta?.id == "s2" }?.file.repo, "Conversations Claude Code")
         XCTAssertEqual(r.unfiled, 1, "session inconnue : document sans source analysée")
     }
 }

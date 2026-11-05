@@ -1,6 +1,16 @@
 import type { Row } from './types';
 
 export type ModelOption = { id: string; title: string };
+export const localDecisionURL = 'http://127.0.0.1:8766';
+export function decisionProviderValue(role: Row, draft: Row): string {
+  const provider = fieldValue(role, 'HINDSIGHT_API_DECISION_MODEL_PROVIDER', draft);
+  if (provider !== 'hindsight') return provider;
+  const url = fieldValue(role, 'HINDSIGHT_API_DECISION_MODEL_BASE_URL', draft);
+  if (url === localDecisionURL) return '__hindsight_local__';
+  return url && url !== 'https://inference.hindsight.vectorize.io'
+    ? '__hindsight_custom__'
+    : provider;
+}
 export function isBooleanField(field: Row): boolean {
   return /_(ENABLED|PRUNE|DEDUP)$|_USE_DECISION_MODEL$/.test(field.name);
 }

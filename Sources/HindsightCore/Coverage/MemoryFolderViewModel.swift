@@ -92,11 +92,15 @@ public final class MemoryFolderViewModel {
         guard issues.isEmpty else { error = issues.map(\.description).joined(separator: "\n"); return }
         guard let data = try? Data(contentsOf: script) else { error = "Collecteur illisible."; return }
         let hash = SHA256.hex(data)
+        var consumed = false
         confirmation = ConfirmationRequest(
             title: "Collecter les sources ?",
             message: "Le collecteur de ce dossier sera exécuté avec vos droits. Il relit les conversations, GitHub, W&B et les rapports selon la configuration du projet, puis actualise les archives locales. Aucun envoi ni traitement Hindsight.\n\nDossier : \(root.path)",
             confirmTitle: "Collecter", severity: .normal
-        ) { [weak self] in await self?.collect(root: root, expectedHash: hash) }
+        ) { [weak self] in
+            guard !consumed else { return }; consumed = true
+            await self?.collect(root: root, expectedHash: hash)
+        }
     }
 
     /// Explicit file selection archives locally; it never runs the provider collectors or Hindsight.
@@ -109,6 +113,7 @@ public final class MemoryFolderViewModel {
             return
         }
         do {
+            var versions: [String: FileVersion] = [:]
             for path in paths {
                 let url = URL(fileURLWithPath: path)
                 let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
@@ -117,19 +122,34 @@ public final class MemoryFolderViewModel {
                     error = "Choisissez uniquement des fichiers .md, .tex ou .pdf ordinaires."
                     return
                 }
+                versions[path] = try FileVersion(url)
             }
             let script = root.appendingPathComponent("collect.py")
             let issues = FileSafety.inspect(script, requireExecutable: false).filter(\.isBlocking)
             guard issues.isEmpty else { error = issues.map(\.description).joined(separator: "\n"); return }
             let hash = SHA256.hex(try Data(contentsOf: script))
             let names = paths.map { URL(fileURLWithPath: $0).lastPathComponent }.joined(separator: "\n")
+            let expectedVersions = versions
+            var consumed = false
             confirmation = ConfirmationRequest(
                 title: "Ajouter \(paths.count) document(s) ?",
                 message: "Projet : \(project)\nDestination : \(root.path)/documents/\(project)/\n\n\(names)\n\nLe collecteur de ce dossier copie les originaux et actualise uniquement le catalogue local. Aucun envoi ni traitement Hindsight ; les quatre collecteurs externes ne sont pas lancés.",
                 confirmTitle: "Ajouter", severity: .normal
             ) { [weak self] in
+                guard let self, !consumed else { return }; consumed = true
+                do {
+                    for path in paths {
+                        let url = URL(fileURLWithPath: path)
+                        let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+                        guard values.isRegularFile == true, values.isSymbolicLink != true,
+                              try FileVersion(url) == expectedVersions[path] else {
+                            self.error = "Un fichier a changé depuis la confirmation. Relancez la demande."
+                            return
+                        }
+                    }
+                } catch { self.error = "Fichier inaccessible : \(error.localizedDescription)"; return }
                 let args = ["--project", project] + paths.flatMap { ["--import-file", $0] }
-                await self?.collect(root: root, expectedHash: hash, arguments: args, importing: true)
+                await self.collect(root: root, expectedHash: hash, arguments: args, importing: true)
             }
         } catch { self.error = "Fichier inaccessible : \(error.localizedDescription)" }
     }
@@ -145,6 +165,7 @@ public final class MemoryFolderViewModel {
 
     private func collect(root: URL, expectedHash: String, arguments: [String] = [], importing isImport: Bool = false) async {
         guard !collecting else { return }
+        guard repository == root else { error = "Le dossier a changé depuis la confirmation. Relancez la demande."; return }
         let script = root.appendingPathComponent("collect.py")
         guard let data = try? Data(contentsOf: script), SHA256.hex(data) == expectedHash else {
             error = "Le collecteur a changé depuis la confirmation. Relancez la demande."

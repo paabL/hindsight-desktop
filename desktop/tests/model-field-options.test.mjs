@@ -7,6 +7,8 @@ import {
   visibleRoleFields,
   serviceModelField,
   isBooleanField,
+  decisionProviderValue,
+  localDecisionURL,
 } from '../src/model-field-options.ts';
 
 const role = (id, provider, model, fallback) => ({
@@ -31,6 +33,37 @@ test('Google embeddings use the Gemini fields, without filtering generic model r
   assert.deepEqual(visibleRoleFields(reflect, {}), reflect.fields);
 });
 const choice = (id) => ({ id, title: id });
+
+test('decision menus distinguish local, Cloud and custom endpoints using the staged URL', () => {
+  const decision = {
+    fields: [
+      { name: 'HINDSIGHT_API_DECISION_MODEL_PROVIDER', value: 'hindsight' },
+      { name: 'HINDSIGHT_API_DECISION_MODEL_BASE_URL', value: localDecisionURL },
+    ],
+  };
+  assert.equal(decisionProviderValue(decision, {}), '__hindsight_local__');
+  assert.equal(
+    decisionProviderValue(decision, { HINDSIGHT_API_DECISION_MODEL_BASE_URL: '' }),
+    'hindsight',
+  );
+  assert.equal(
+    decisionProviderValue(decision, {
+      HINDSIGHT_API_DECISION_MODEL_BASE_URL: 'https://inference.hindsight.vectorize.io',
+    }),
+    'hindsight',
+  );
+  assert.equal(
+    decisionProviderValue(decision, {
+      HINDSIGHT_API_DECISION_MODEL_BASE_URL: 'https://decision.fixture.invalid',
+    }),
+    '__hindsight_custom__',
+  );
+  assert.equal(
+    decisionProviderValue(decision, { HINDSIGHT_API_DECISION_MODEL_PROVIDER: 'none' }),
+    'none',
+  );
+  assert.equal(decision.fields[1].value, localDecisionURL, 'the source snapshot is immutable');
+});
 
 test('decision toggles are booleans even though their variable name ends in MODEL', () => {
   for (const name of [

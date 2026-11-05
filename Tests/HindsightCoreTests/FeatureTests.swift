@@ -369,41 +369,6 @@ final class UsageTests: XCTestCase {
     }
 }
 
-// MARK: - Claude Code et Hermes
-
-final class ConversationSourcesTests: XCTestCase {
-    func testHermesRowsBecomeConversation() async {
-        let session: [String: JSONValue] = ["id": "20261001_abc", "source": "cli", "model": "anthropic/claude-sonnet-4.6", "title": "Refonte", "started_at": 1_790_000_000.5]
-        let image = "\u{0}json:" + #"[{"type":"text","text":"Regarde ça"},{"type":"image_url","image_url":{"url":"data:image/png;base64,iVBORw0KGgo="}}]"#
-        let rows: [[String: JSONValue]] = [
-            ["id": 1, "role": "system", "content": "Tu es Hermes.", "timestamp": 1_790_000_000.6],
-            ["id": 2, "role": "user", "content": .string(image), "timestamp": 1_790_000_001, "active": 0, "compacted": 1],
-            ["id": 3, "role": "assistant", "content": "Je lance la recherche.", "timestamp": 1_790_000_002,
-             "tool_calls": #"[{"id":"c1","type":"function","function":{"name":"web_search","arguments":"{\"q\":\"x\"}"}}]"#],
-            ["id": 4, "role": "tool", "content": "3 résultats", "tool_call_id": "c1", "timestamp": 1_790_000_003],
-            ["id": 5, "role": "user", "content": "Résumé de la conversation…", "timestamp": 1_790_000_004, "_compressed_summary": 1],
-            ["id": 6, "role": "user", "content": .string(image), "timestamp": 1_790_000_001, "active": 1, "compacted": 0],
-            ["id": 7, "role": "user", "content": "message de groupe", "timestamp": 1_790_000_005, "observed": 1],
-        ]
-        let conv = HermesReader.conversation(session: session, messages: rows)
-        XCTAssertEqual(conv.meta.source, .hermes)
-        XCTAssertEqual(conv.meta.title, "Refonte")
-        XCTAssertTrue(conv.meta.isUserConversation)
-        let users = conv.events.compactMap { e -> [CodexBlock]? in if case .user(_, _, let b) = e { return b } else { return nil } }
-        XCTAssertEqual(users.count, 1, "doublon de compaction, résumé et message observé écartés")
-        XCTAssertEqual(users[0].count, 2)
-        XCTAssertTrue(conv.events.contains { if case .toolCall(_, _, "web_search", _, "c1") = $0 { return true } else { return false } })
-        XCTAssertTrue(conv.events.contains { if case .toolOutput(_, _, "c1", "3 résultats") = $0 { return true } else { return false } })
-        XCTAssertEqual(conv.skipped["system"], 1)
-        XCTAssertEqual(CodexTranscript.tasks(conv).first?.documentID, "hermes-20261001_abc-task-001")
-
-        let sub = HermesReader.meta(["id": "s2", "source": "subagent"])
-        XCTAssertFalse(sub.isUserConversation)
-        XCTAssertEqual(HermesReader.quoted("abc_1"), "'abc_1'")
-        XCTAssertNil(HermesReader.quoted("x'; DROP TABLE messages; --"), "identifiant refusé dans une requête")
-    }
-}
-
 // MARK: - Tableau de bord
 
 final class DashboardAuditOverrideTests: XCTestCase {

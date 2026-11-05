@@ -31,6 +31,7 @@ import {
   kindLabels,
   sourceKind,
   sourceTextPath,
+  sourceReaderKey,
 } from '../catalog';
 import {
   Badge,
@@ -96,7 +97,8 @@ export default function Sources({
   navigate,
   serverConnected,
   onExploreExample,
-}: PageProps & { serverConnected: boolean; onExploreExample: () => void }) {
+  contextKey,
+}: PageProps & { serverConnected: boolean; onExploreExample: () => void; contextKey?: string }) {
   useI18n();
 
   const [query, setQuery] = useState('');
@@ -109,6 +111,7 @@ export default function Sources({
   const [asideLimit, setAsideLimit] = useState(30);
   const [limit, setLimit] = useState(30);
   const [selection, setSelected] = useState<Row | null>(null);
+  const [selectionContext, setSelectionContext] = useState('');
   const [text, setText] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
   const [readError, setReadError] = useState<string | null>(null);
@@ -129,9 +132,14 @@ export default function Sources({
     setAsideLimit(30);
     setAsideOpen(false);
     setSelected(null);
+    setText(null);
+    setReadError(null);
+    setReading(false);
     setImportFiles([]);
+    setImportProject('');
     setImportError(null);
-  }, [data.folder]);
+    setCollectorsOpen(false);
+  }, [data.folder, contextKey]);
   useEffect(
     () => () => {
       readRequest.current++;
@@ -141,12 +149,28 @@ export default function Sources({
   const searchQuery = useDeferredValue(query);
   const allRecords = useMemo(() => catalogRecords(data.catalog), [data.catalog]);
   const byID = useMemo(() => new Map(allRecords.map((r) => [r.id, r])), [allRecords]);
-  const selected = selection && (byID.get(selection.id) || selection);
+  const readerContext = JSON.stringify([data.folder, contextKey]);
+  const currentSelection = selection ? byID.get(selection.id) : null;
+  const selected =
+    selection &&
+    currentSelection &&
+    selectionContext === readerContext &&
+    sourceReaderKey(selection) === sourceReaderKey(currentSelection)
+      ? currentSelection
+      : null;
+  useEffect(() => {
+    if (selection && !selected) closeSource();
+  }, [selection, selected]);
   const records = useMemo(() => allRecords.filter((r) => !isAsideRecord(r)), [allRecords]);
   const archives = useMemo(() => allRecords.filter(isAsideRecord), [allRecords]);
   const filteredArchives = useMemo(
-    () => (asideOpen ? filterRecords(archives, searchQuery, kind, project, repository) : []),
-    [archives, searchQuery, kind, project, repository, asideOpen],
+    () =>
+      asideOpen
+        ? filterRecords(archives, searchQuery, kind, project, repository).filter(
+            (r) => memoryFilter === 'all' || r.memory?.state === memoryFilter,
+          )
+        : [],
+    [archives, searchQuery, kind, project, repository, memoryFilter, asideOpen],
   );
   const filtered = useMemo(
     () =>
@@ -228,11 +252,14 @@ export default function Sources({
     readRequest.current++;
     setSelected(null);
     setText(null);
+    setReadError(null);
     setReading(false);
+    setLinkSource('');
   }
   async function open(record: Row, stored = false) {
     const request = ++readRequest.current;
     setSelected(record);
+    setSelectionContext(readerContext);
     setText(null);
     setReadError(null);
     setReading(false);
@@ -245,6 +272,8 @@ export default function Sources({
           setText(result.text || null);
           setReadError(result.error || null);
         }
+      } catch (e) {
+        if (request === readRequest.current) setReadError((e as Error).message);
       } finally {
         if (request === readRequest.current) setReading(false);
       }
@@ -384,6 +413,19 @@ export default function Sources({
             >
               {t('Préparer l’envoi à Hindsight', 'Prepare upload to Hindsight')}
             </Button>
+            <IconButton
+              icon={RefreshCw}
+              label={t('Vérifier l’état dans Hindsight', 'Check Hindsight status')}
+              disabled={
+                busy ||
+                data.collecting ||
+                data.refreshing ||
+                !serverConnected ||
+                !data.catalog ||
+                demo
+              }
+              onClick={() => void run('section', { section: 'sources' })}
+            />
           </>
         }
       />
@@ -698,8 +740,8 @@ export default function Sources({
             </div>
             <p>
               {t(
-                'Actualiser le dossier collecte les sources et met à jour le catalogue, sans traitement Hindsight. Préparer l’envoi compare les fichiers déjà collectés à la mémoire, sans relancer la collecte. Vous validez les ajouts et changements des sources activées avant tout envoi. Retirer conserve le fichier et exclut les envois futurs.',
-                'Refresh folder collects sources and updates the catalog without Hindsight processing. Prepare upload compares collected files with memory without collecting again. You approve additions and changes to enabled sources before any upload. Removing a source keeps the file and excludes future uploads.',
+                'Actualiser le dossier collecte les sources et met à jour le catalogue, sans traitement Hindsight. Vérifier l’état dans Hindsight relit la banque sans collecter ni envoyer. Préparer l’envoi compare les fichiers déjà collectés à la mémoire, sans relancer la collecte. Vous validez les ajouts et changements des sources activées avant tout envoi. Retirer conserve le fichier et exclut les envois futurs.',
+                'Refresh folder collects sources and updates the catalog without Hindsight processing. Check Hindsight status rereads the bank without collecting or uploading. Prepare upload compares collected files with memory without collecting again. You approve additions and changes to enabled sources before any upload. Removing a source keeps the file and excludes future uploads.',
               )}
             </p>
           </section>

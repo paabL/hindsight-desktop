@@ -111,15 +111,6 @@ final class MemoryFolderTests: XCTestCase {
         XCTAssertEqual(MemoryFolderViewModel.discover(home: home)?.path, root.path)
     }
 
-    func testRawCodexAndClaudeImportsAreRetired() async throws {
-        let home = URL(fileURLWithPath: "/example")
-        XCTAssertTrue(ConversationSource.codex.defaultRoots(home: home).isEmpty)
-        XCTAssertTrue(ConversationSource.claudeCode.defaultRoots(home: home).isEmpty)
-        let file = CodexFile(url: home.appendingPathComponent(".codex/sessions/session.jsonl"))
-        XCTAssertThrowsError(try ConversationReader.parse(file, zstd: nil))
-        let sessions = await CodexIndex(cacheURL: nil).scan(roots: [home], zstd: nil)
-        XCTAssertTrue(sessions.isEmpty)
-    }
     func testManualImportUsesOnlySelectedFilesAndWaitsForConfirmation() async throws {
         let root = try fixture()
         defer { try? FileManager.default.removeItem(at: root) }

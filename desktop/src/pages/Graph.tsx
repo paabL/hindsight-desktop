@@ -83,6 +83,7 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
   const [overviewLimit, setOverviewLimit] = useState(24);
   const [factsLimit, setFactsLimit] = useState(10);
   const [loadingDetails, setLoadingDetails] = useState(false);
+  const [selectionDetails, setSelectionDetails] = useState<Row | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [reader, setReader] = useState<Row | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
@@ -92,13 +93,14 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
   const surface = useRef<HTMLDivElement>(null);
   const svg = useRef<SVGSVGElement>(null);
   const selectionRequest = useRef(0);
+  const sourceRequest = useRef(0);
   const drag = useRef<{ x: number; y: number; camera: Camera } | null>(null);
   const id = useId().replaceAll(':', '');
   // Les réponses d'inspection ne doivent ni recalculer ni déplacer la carte. La clé (près d'un mégaoctet
   // de texte) n'est recalculée qu'à l'arrivée d'une réponse, pas à chaque image de zoom ou de survol.
   const graphKey = useMemo(
-    () => JSON.stringify([data.nodes || [], data.edges || []]),
-    [data.nodes, data.edges],
+    () => JSON.stringify([data.mode, data.nodes || [], data.edges || []]),
+    [data.mode, data.nodes, data.edges],
   );
   const source = useMemo(() => cleanGraph(data.nodes || [], data.edges || []), [graphKey]);
   const kinds = useMemo(() => [...new Set(source.edges.map((e) => e.kind))].sort(), [source]);
@@ -197,8 +199,11 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
   const cameraRef = useRef({ view, span, aspect });
   cameraRef.current = { view, span, aspect };
   const miniFrame = useMemo(() => framePoints([...layout.positions.values()], 70), [layout]);
-  const detailsReady = data.selectedNodeID === selected;
-  const facts: Row[] = detailsReady ? data.nodeFacts || [] : [];
+  // Conserver la réponse de la dernière sélection acceptée : une ancienne inspection peut encore
+  // arriver dans le snapshot global après celle-ci, sans avoir le droit d'effacer ses faits.
+  const detailData = selectionDetails || data;
+  const detailsReady = detailData.selectedNodeID === selected;
+  const facts: Row[] = detailsReady ? detailData.nodeFacts || [] : [];
   // Couleur du premier groupe portant l'identifiant, comme une recherche dans la liste, sans la parcourir.
   const communityColors = useMemo(() => {
     const byID = new Map<string, number>();
@@ -218,7 +223,15 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
     setPathTarget(null);
     setScope('map');
     setDetailError(null);
+    setSelectionDetails(null);
+    setLoadingDetails(false);
+    setReader(null);
     selectionRequest.current++;
+    sourceRequest.current++;
+    return () => {
+      selectionRequest.current++;
+      sourceRequest.current++;
+    };
   }, [graphKey]);
   useEffect(() => {
     setCamera(null);
@@ -265,6 +278,9 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
     setSelected(nodeID);
     setFactsLimit(10);
     setDetailError(null);
+    setSelectionDetails(null);
+    setReader(null);
+    sourceRequest.current++;
     setLoadingDetails(true);
     setQuery('');
     if (recenter) {
@@ -272,19 +288,41 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
       setCamera({ ...point, zoom: Math.max(1.4, view.zoom) });
     }
     const request = ++selectionRequest.current;
-    const result = await run('graph.select', { id: nodeID });
-    if (selectionRequest.current === request) {
-      setLoadingDetails(false);
-      if (result?.error) setDetailError(result.error);
+    try {
+      const result = await run('graph.select', { id: nodeID });
+      if (selectionRequest.current === request) {
+        if (result?.error) setDetailError(result.error);
+        else if (result?.data?.selectedNodeID === nodeID) setSelectionDetails(result.data);
+      }
+    } catch (error) {
+      if (selectionRequest.current === request)
+        setDetailError(error instanceof Error ? error.message : String(error));
+    } finally {
+      if (selectionRequest.current === request) setLoadingDetails(false);
     }
   }
   function resetSelection() {
     selectionRequest.current++;
+    sourceRequest.current++;
     setSelected(null);
+    setSelectionDetails(null);
+    setLoadingDetails(false);
+    setDetailError(null);
+    setReader(null);
     setAnchor(null);
     setPathTarget(null);
     setScope('map');
     setCamera(null);
+  }
+  async function openSource(documentID: string) {
+    const request = ++sourceRequest.current;
+    try {
+      const value = await run('document.open', { id: documentID });
+      if (sourceRequest.current === request && !value?.error) setReader(value);
+    } catch (error) {
+      if (sourceRequest.current === request)
+        setDetailError(error instanceof Error ? error.message : String(error));
+    }
   }
   function switchMode(value: string) {
     setRequestedMode(value);
@@ -1288,7 +1326,9 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
                       )}
                     </p>
                   )}
-                  <ErrorNotice message={detailError || (detailsReady ? data.detailError : null)} />
+                  <ErrorNotice
+                    message={detailError || (detailsReady ? detailData.detailError : null)}
+                  />
                   {facts.slice(0, factsLimit).map((fact) => (
                     <article className="atlas-fact" key={fact.id}>
                       <div>
@@ -1301,13 +1341,7 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
                       {(fact.documentID || fact.document_id) && (
                         <button
                           className="atlas-source-link"
-                          onClick={() =>
-                            void run('document.open', {
-                              id: fact.documentID || fact.document_id,
-                            }).then((value) => {
-                              if (!value?.error) setReader(value);
-                            })
-                          }
+                          onClick={() => void openSource(fact.documentID || fact.document_id)}
                         >
                           <FileText size={14} />
                           <span>{t('Consulter la source', 'View source')}</span>

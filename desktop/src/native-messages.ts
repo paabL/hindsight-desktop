@@ -6,6 +6,8 @@ import type { Confirmation, Row, Snapshot } from './types';
 // Seuls les champs système du pont sont localisés. Le contenu des documents, les noms,
 // les requêtes, les identifiants et le texte à retaper restent intacts.
 const exact: Record<string, string> = {
+  "Le moteur Hindsight s'est interrompu. Vérifiez les opérations avant de réessayer, puis reconnectez le serveur.":
+    'The Hindsight engine stopped. Check operations before trying again, then reconnect the server.',
   'Actualisez la liste des sources.': 'Refresh the source list.',
   'Catalogue de sources incomplet ; actualisez la liste.':
     'The source catalog is incomplete. Refresh the list.',

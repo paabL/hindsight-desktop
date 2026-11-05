@@ -57,6 +57,30 @@ final class Switch: @unchecked Sendable {
     }
 }
 
+/// Captures a real fake-runner response, then releases it on demand to exercise stale completions.
+actor LifecycleGateRunner: ProcessRunning {
+    let base: any ProcessRunning
+    private var verb: String?
+    private var continuation: CheckedContinuation<Void, Never>?
+    private(set) var blocked = false
+
+    init(_ base: any ProcessRunning) { self.base = base }
+    func holdNext(_ verb: String) { self.verb = verb; blocked = false }
+    func run(_ invocation: ProcessInvocation, onOutput: (@Sendable (String) -> Void)?) async throws -> ProcessOutput {
+        let shouldHold = invocation.arguments.first == verb && verb != nil
+        if shouldHold { verb = nil }
+        let output = try await base.run(invocation, onOutput: onOutput)
+        if shouldHold {
+            await withCheckedContinuation { continuation in
+                self.continuation = continuation
+                blocked = true
+            }
+        }
+        return output
+    }
+    func release() { continuation?.resume(); continuation = nil; blocked = false }
+}
+
 func permissions(_ path: String) -> Int {
     ((try? FileManager.default.attributesOfItem(atPath: path))?[.posixPermissions] as? NSNumber)?.intValue ?? -1
 }
@@ -262,7 +286,7 @@ final class HindsightServiceTests: XCTestCase {
         let script = dir.appendingPathComponent("start-api.sh")
         try! Data(Fixture.string("start-api", ext: "sh").utf8).write(to: script)
         setPermissions(script.path, scriptMode)
-        let apiUp = Switch(apiInitiallyUp), jobRunning = Switch(false), loaded = Switch(false)
+        let apiUp = Switch(apiInitiallyUp), jobRunning = Switch(false), loaded = Switch(false), restarted = Switch(false)
         let t = MockTransport()
         t.on("GET", "/version") { _ in
             apiUp.value ? .json(Fixture.string("version")) : .json(#"{"detail":"down"}"#, status: 503)
@@ -272,7 +296,7 @@ final class HindsightServiceTests: XCTestCase {
             switch inv.arguments.first {
             case "print":
                 guard loaded.value else { return ProcessOutput(status: 113, stderr: "Could not find service") }
-                return ProcessOutput(status: 0, stdout: jobRunning.value ? "\tstate = running\n\tpid = 42\n" : "\tstate = not running\n\tlast exit code = 0\n")
+                return ProcessOutput(status: 0, stdout: jobRunning.value ? "\tstate = running\n\tpid = \(restarted.value ? 43 : 42)\n" : "\tstate = not running\n\tlast exit code = 0\n")
             case "bootstrap":
                 loaded.value = true
                 return ProcessOutput(status: 0)
@@ -282,6 +306,7 @@ final class HindsightServiceTests: XCTestCase {
                 apiUp.value = false
                 return ProcessOutput(status: 0)
             case "kickstart":
+                if inv.arguments.contains("-k") { restarted.value = !restarted.value }
                 jobRunning.value = true
                 apiUp.value = true
                 return ProcessOutput(status: 0)
@@ -434,6 +459,7 @@ final class HindsightServiceTests: XCTestCase {
         try Data("ValueError: obsolete failure\n".utf8).write(to: redirected)
         let original = try String(contentsOf: e.script, encoding: .utf8)
         try (original + "\nexec server >> \"\(redirected.path)\" 2>&1\n").write(to: e.script, atomically: true, encoding: .utf8)
+        e.vm.approveCurrentScript()
         let base = e.runner.handler
         e.runner.handler = { invocation in
             if invocation.arguments.first == "kickstart" {
@@ -494,9 +520,10 @@ final class HindsightServiceTests: XCTestCase {
         await e.vm.stop()
         let base = e.runner.handler
         let began = Date()
+        let scheduled = Switch(false)
         e.runner.handler = { invocation in
-            if invocation.arguments.first == "kickstart" { return ProcessOutput(status: 0) }
-            if invocation.arguments.first == "print" {
+            if invocation.arguments.first == "kickstart" { scheduled.value = true; return ProcessOutput(status: 0) }
+            if invocation.arguments.first == "print", scheduled.value {
                 if Date().timeIntervalSince(began) < 1.2 {
                     return ProcessOutput(status: 0, stdout: "state = spawn scheduled\nlast exit code = 1\n")
                 }
@@ -583,9 +610,244 @@ final class HindsightServiceTests: XCTestCase {
         let ok = await e.vm.setWorkerPaused(true)
         XCTAssertTrue(ok)
         let verbs = e.runner.args(of: HindsightServiceViewModel.launchctl).dropFirst(before).map { $0.first ?? "" }.filter { $0 != "print" }
-        XCTAssertEqual(verbs, ["bootout"], "déchargé pour relire l'environnement au prochain démarrage, jamais relancé")
+        XCTAssertEqual(verbs, [], "l'arrêt a déjà déchargé l'agent ; le gel ne le recharge et ne le relance pas")
         XCTAssertFalse(e.jobRunning.value)
         XCTAssertTrue(e.vm.isWorkerPaused)
+    }
+
+    private func clone(_ e: Env, runner: any ProcessRunning) -> HindsightServiceViewModel {
+        let transport = MockTransport()
+        transport.on("GET", "/version") { _ in
+            e.apiUp.value ? .json(Fixture.string("version")) : .json("{}", status: 503)
+        }
+        let client = makeClient(transport)
+        return HindsightServiceViewModel(settings: e.store, runner: runner, paths: e.paths,
+            client: { client }, scriptPath: { e.script.path }, startTimeout: 0.2, stopTimeout: 0.2, pollInterval: .milliseconds(2))
+    }
+
+    func testInstallRejectsScriptChangedAfterConfirmation() async throws {
+        let e = make()
+        await e.vm.refresh()
+        e.vm.requestInstall(startAtLogin: false)
+        let confirmation = try XCTUnwrap(e.vm.confirmation)
+        try Data("#!/bin/sh\nexec unreviewed\n".utf8).write(to: e.script)
+        await confirmation.perform()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: e.paths.plist.path))
+        XCTAssertNil(e.store.string(forKey: SettingsKey.serviceScriptHash))
+        XCTAssertTrue(e.runner.calls.isEmpty)
+        XCTAssertTrue(e.vm.message?.contains("changé") == true)
+    }
+
+    func testReapprovalCannotApproveALaterVersionOfTheScript() async throws {
+        let e = make()
+        e.vm.requestInstall(startAtLogin: false)
+        await e.vm.confirmation!.perform()
+        await e.vm.stop()
+        let approved = e.store.string(forKey: SettingsKey.serviceScriptHash)
+        try Data("#!/bin/sh\nexec reviewed\n".utf8).write(to: e.script)
+        e.vm.requestStart()
+        let confirmation = try XCTUnwrap(e.vm.confirmation)
+        let before = e.runner.calls.count
+        try Data("#!/bin/sh\nexec unreviewed\n".utf8).write(to: e.script)
+        await confirmation.perform()
+        XCTAssertEqual(e.store.string(forKey: SettingsKey.serviceScriptHash), approved)
+        XCTAssertEqual(e.runner.calls.count, before)
+        XCTAssertFalse(e.vm.isBusy)
+    }
+
+    func testBootoutFailurePreservesInstallationAndReportsFailureEvenWithReachableAPI() async throws {
+        let e = make()
+        e.vm.requestInstall(startAtLogin: false)
+        await e.vm.confirmation!.perform()
+        let plist = try Data(contentsOf: e.paths.plist)
+        let base = e.runner.handler
+        e.runner.handler = { invocation in
+            invocation.arguments.first == "bootout" ? ProcessOutput(status: 1, stderr: "Permission denied") : base(invocation)
+        }
+        await e.vm.stop()
+        XCTAssertEqual(e.vm.phase, "failed")
+        XCTAssertTrue(e.vm.job.running)
+        await e.vm.refresh()
+        XCTAssertEqual(e.vm.phase, "failed", "a healthy API cannot erase a failed stop")
+        await e.vm.uninstall()
+        XCTAssertEqual(e.vm.phase, "failed")
+        XCTAssertEqual(try Data(contentsOf: e.paths.plist), plist)
+        XCTAssertTrue(e.vm.isInstalled)
+        XCTAssertFalse(e.vm.isBusy)
+    }
+
+    func testUnreadableJobStatusIsNotTreatedAsAnAbsentServiceDuringUninstall() async throws {
+        let e = make()
+        e.vm.requestInstall(startAtLogin: false)
+        await e.vm.confirmation!.perform()
+        let plist = try Data(contentsOf: e.paths.plist)
+        let base = e.runner.handler
+        e.runner.handler = { invocation in
+            invocation.arguments.first == "print"
+                ? ProcessOutput(status: 1, stderr: "Permission denied hsk_abcdefghijklmnopqrstuvwxyz") : base(invocation)
+        }
+        let before = e.runner.calls.count
+        await e.vm.uninstall()
+        XCTAssertEqual(try Data(contentsOf: e.paths.plist), plist)
+        XCTAssertTrue(e.vm.isInstalled)
+        XCTAssertEqual(e.vm.phase, "failed")
+        XCTAssertTrue(e.vm.message?.contains("launchctl print") == true)
+        XCTAssertFalse(e.vm.message?.contains("abcdefghijklmnopqrstuvwxyz") == true)
+        XCTAssertTrue(e.runner.calls.dropFirst(before).allSatisfy { $0.arguments.first == "print" })
+    }
+
+    func testPauseReservesServiceBeforeAwaitAndIgnoresRapidRepeatedControls() async throws {
+        let e = make()
+        e.vm.requestInstall(startAtLogin: false)
+        await e.vm.confirmation!.perform()
+        let gate = LifecycleGateRunner(e.runner)
+        let vm = clone(e, runner: gate)
+        await vm.refresh()
+        await gate.holdNext("print")
+        let pause = Task { await vm.setWorkerPaused(true) }
+        for _ in 0..<1000 { if await gate.blocked { break }; await Task.yield() }
+        XCTAssertTrue(vm.isBusy)
+        let before = e.runner.calls.count
+        for _ in 0..<100 {
+            vm.requestStart(); vm.requestStop(); vm.requestRestart(); vm.setStartAtLogin(true)
+        }
+        await vm.stop()
+        let restarted = await vm.restart()
+        XCTAssertFalse(restarted)
+        XCTAssertEqual(e.runner.calls.count, before)
+        XCTAssertNil(vm.confirmation)
+        await gate.release()
+        let paused = await pause.value
+        XCTAssertTrue(paused)
+        XCTAssertTrue(vm.isWorkerPaused)
+        XCTAssertFalse(vm.isBusy)
+        XCTAssertEqual(LaunchAgentSpec.parse(try Data(contentsOf: e.paths.plist))?.runAtLoad, false)
+    }
+
+    func testOlderRefreshCannotOverwriteANewerStoppedState() async throws {
+        let e = make()
+        e.vm.requestInstall(startAtLogin: false)
+        await e.vm.confirmation!.perform()
+        let gate = LifecycleGateRunner(e.runner)
+        let vm = clone(e, runner: gate)
+        await vm.refresh()
+        await gate.holdNext("print")
+        let older = Task { await vm.refresh() }
+        for _ in 0..<1000 { if await gate.blocked { break }; await Task.yield() }
+        e.jobRunning.value = false
+        e.apiUp.value = false
+        await vm.refresh()
+        XCTAssertEqual(vm.status, .stopped(lastExitCode: 0))
+        await gate.release()
+        await older.value
+        XCTAssertEqual(vm.status, .stopped(lastExitCode: 0))
+        XCTAssertFalse(vm.job.running)
+    }
+
+    func testStopCancelsScheduledSpawn() async throws {
+        let e = make()
+        e.vm.requestInstall(startAtLogin: false)
+        await e.vm.confirmation!.perform()
+        let pending = Switch(true)
+        let base = e.runner.handler
+        e.apiUp.value = false
+        e.jobRunning.value = false
+        e.runner.handler = { invocation in
+            if invocation.arguments.first == "print", pending.value {
+                return ProcessOutput(status: 0, stdout: "state = spawn scheduled\nlast exit code = 1\n")
+            }
+            if invocation.arguments.first == "bootout" { pending.value = false }
+            return base(invocation)
+        }
+        await e.vm.refresh()
+        XCTAssertTrue(e.vm.canStop)
+        await e.vm.stop()
+        XCTAssertEqual(e.vm.message, "Serveur arrêté.")
+        XCTAssertFalse(e.vm.job.loaded)
+        XCTAssertFalse(e.vm.job.pending)
+    }
+
+    func testExternalAPIIsNotProofThatTheManagedRestartSucceeded() async throws {
+        let e = make()
+        e.vm.requestInstall(startAtLogin: false)
+        await e.vm.confirmation!.perform()
+        e.jobRunning.value = false
+        let base = e.runner.handler
+        e.runner.handler = { invocation in
+            invocation.arguments.first == "kickstart" ? ProcessOutput(status: 0) : base(invocation)
+        }
+        let vm = clone(e, runner: e.runner)
+        await vm.refresh()
+        var callbacks = 0
+        vm.onServerStarted = { callbacks += 1 }
+        let success = await vm.restart()
+        XCTAssertFalse(success)
+        XCTAssertEqual(callbacks, 0)
+        XCTAssertNil(vm.startedScriptHash)
+        XCTAssertTrue(vm.apiReachable)
+        XCTAssertEqual(vm.status, .runningExternally)
+        XCTAssertEqual(vm.phase, "failed")
+    }
+
+    func testRemoteAPIIsNeverUsedToProveLocalServiceReadinessOrAuthorizeQueueChanges() async throws {
+        let e = make()
+        e.vm.requestInstall(startAtLogin: false)
+        await e.vm.confirmation!.perform()
+        let transport = MockTransport()
+        transport.installStandardRoutes()
+        let client = HindsightClient(baseURL: URL(string: "https://remote.invalid")!, transport: transport)
+        let vm = HindsightServiceViewModel(settings: e.store, runner: e.runner, paths: e.paths,
+            client: { client }, scriptPath: { e.script.path })
+        await vm.refresh()
+        XCTAssertFalse(vm.apiReachable)
+        XCTAssertTrue(transport.requests.isEmpty)
+        let before = e.runner.calls.count
+        let restarted = await vm.restart()
+        let paused = await vm.setWorkerPaused(true)
+        vm.requestStart()
+        vm.requestInstall(startAtLogin: true)
+        XCTAssertFalse(restarted)
+        XCTAssertFalse(paused)
+        XCTAssertNil(vm.confirmation)
+        XCTAssertEqual(e.runner.calls.count, before)
+        XCTAssertTrue(vm.message?.contains("adresse locale") == true)
+        XCTAssertTrue(e.jobRunning.value)
+    }
+
+    func testRestartWaitsForReplacementPIDBeforeAcknowledgingTheNewScript() async throws {
+        let e = make()
+        e.vm.requestInstall(startAtLogin: false)
+        await e.vm.confirmation!.perform()
+        let restarting = Switch(), oldPIDSeen = Switch()
+        let base = e.runner.handler
+        e.runner.handler = { invocation in
+            if invocation.arguments.starts(with: ["kickstart", "-k"]) { restarting.value = true; return ProcessOutput(status: 0) }
+            if invocation.arguments.first == "print", restarting.value {
+                let pid = oldPIDSeen.value ? 43 : 42
+                oldPIDSeen.value = true
+                return ProcessOutput(status: 0, stdout: "state = running\npid = \(pid)\n")
+            }
+            return base(invocation)
+        }
+        let success = await e.vm.restart()
+        XCTAssertTrue(success)
+        XCTAssertEqual(e.vm.job.pid, 43, "the old process can still answer briefly after kickstart")
+    }
+
+    func testFastRunAtLoadDuringInstallIsRecognizedAsOurOwnStartup() async throws {
+        let e = make()
+        let base = e.runner.handler
+        e.runner.handler = { invocation in
+            let output = base(invocation)
+            if invocation.arguments.first == "bootstrap" { e.apiUp.value = true; e.jobRunning.value = true }
+            return output
+        }
+        e.vm.requestInstall(startAtLogin: true)
+        await e.vm.confirmation!.perform()
+        XCTAssertEqual(e.vm.status, .running(pid: 42))
+        XCTAssertNil(e.vm.failure)
+        XCTAssertNotNil(e.vm.startedScriptHash)
+        XCTAssertTrue(e.vm.message?.contains("API répond") == true)
     }
 }
 

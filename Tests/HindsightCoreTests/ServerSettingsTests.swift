@@ -472,6 +472,231 @@ final class ServerSettingsViewModelTests: XCTestCase {
         XCTAssertTrue(vm.actionMessage!.contains(".bak-"))
     }
 
+    func testSaveConfirmationCannotOverwriteANewlySelectedScript() async throws {
+        let (vm, first, _) = make()
+        await vm.load()
+        let firstText = try String(contentsOf: first, encoding: .utf8)
+        vm.setValue("HINDSIGHT_API_LLM_MODEL", "reviewed-model")
+        vm.requestSave()
+        let confirmation = try XCTUnwrap(vm.confirmation)
+        let second = dir.appendingPathComponent("another.sh")
+        let secondText = "#!/bin/sh\nexport HINDSIGHT_API_LLM_MODEL=another\n"
+        try Data(secondText.utf8).write(to: second)
+        vm.scriptPath = second.path
+        await vm.load()
+        await confirmation.perform()
+        XCTAssertEqual(try String(contentsOf: first, encoding: .utf8), firstText)
+        XCTAssertEqual(try String(contentsOf: second, encoding: .utf8), secondText)
+        XCTAssertTrue(vm.backups.isEmpty)
+        XCTAssertFalse(vm.needsRestart)
+    }
+
+    func testReloadCannotAuthorizeAnOldSaveOverNewerExternalChanges() async throws {
+        let (vm, file, _) = make()
+        await vm.load()
+        vm.setValue("HINDSIGHT_API_LLM_MODEL", "reviewed-model")
+        vm.requestSave()
+        let confirmation = try XCTUnwrap(vm.confirmation)
+        let newer = "#!/bin/sh\nexport HINDSIGHT_API_LLM_MODEL=newer-external\n"
+        try Data(newer.utf8).write(to: file)
+        await vm.load()
+        await confirmation.perform()
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), newer)
+        XCTAssertTrue(vm.backups.isEmpty)
+    }
+
+    func testRestoreUsesCloudValidationAndCannotOverwriteConcurrentEdits() async throws {
+        let (vm, file, _) = make()
+        await vm.load()
+        let initial = try String(contentsOf: file, encoding: .utf8)
+        let backupURL = dir.appendingPathComponent("start-api.sh.bak-fixture")
+        let cloud = initial + "\nexport HINDSIGHT_API_RERANKER_PROVIDER=hindsight\n"
+        try Data(cloud.utf8).write(to: backupURL)
+        let backup = LaunchScriptStore.Backup(url: backupURL, date: Date())
+        vm.requestRestore(backup)
+        XCTAssertNil(vm.confirmation)
+        XCTAssertTrue(vm.actionMessage?.contains("Hindsight Cloud") == true)
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), initial)
+
+        try Data((initial + "\n# safe backup\n").utf8).write(to: backupURL)
+        vm.requestRestore(backup)
+        let confirmation = try XCTUnwrap(vm.confirmation)
+        let concurrent = initial + "\n# concurrent external change\n"
+        try Data(concurrent.utf8).write(to: file)
+        await confirmation.perform()
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), concurrent)
+        XCTAssertFalse(vm.needsRestart)
+        XCTAssertTrue(vm.actionMessage?.contains("modifié sur le disque") == true)
+    }
+
+    func testRestoreExecutesOnlyTheBackupSnapshotShownForConfirmation() async throws {
+        let (vm, file, _) = make()
+        await vm.load()
+        let backupURL = dir.appendingPathComponent("start-api.sh.bak-fixture")
+        let reviewed = "#!/bin/sh\nexport HINDSIGHT_API_LLM_MODEL=reviewed\n"
+        try Data(reviewed.utf8).write(to: backupURL)
+        vm.requestRestore(.init(url: backupURL, date: Date()))
+        let confirmation = try XCTUnwrap(vm.confirmation)
+        try Data("#!/bin/sh\nexec unreviewed\n".utf8).write(to: backupURL)
+        await confirmation.perform()
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), reviewed)
+        XCTAssertTrue(vm.needsRestart)
+    }
+
+    func testSavingAnotherScriptDoesNotApproveTheManagedServicesChangedScript() async throws {
+        let (vm, _, settings) = make()
+        await vm.load()
+        let managed = dir.appendingPathComponent("managed.sh")
+        try Data("#!/bin/sh\nexec reviewed\n".utf8).write(to: managed)
+        let client = makeClient(MockTransport())
+        let service = HindsightServiceViewModel(settings: settings, runner: FakeProcessRunner(),
+            paths: .init(launchAgents: dir.appendingPathComponent("agents"), logs: dir.appendingPathComponent("logs")),
+            client: { client }, scriptPath: { managed.path })
+        service.approveCurrentScript()
+        let approved = settings.string(forKey: SettingsKey.serviceScriptHash)
+        try Data("#!/bin/sh\nexec unreviewed\n".utf8).write(to: managed)
+        vm.service = service
+        vm.setValue("HINDSIGHT_API_LLM_MODEL", "separate-file-model")
+        vm.requestSave()
+        try await XCTUnwrap(vm.confirmation).perform()
+        XCTAssertEqual(settings.string(forKey: SettingsKey.serviceScriptHash), approved)
+        service.inspectScript()
+        XCTAssertTrue(service.scriptChangedSinceApproval)
+    }
+
+    func testLocalPresetsLeaveGeminiEmbeddingsUnchangedWithoutACloudAccount() async throws {
+        let (vm, _, _) = make()
+        await vm.load()
+        vm.setValue("HINDSIGHT_API_EMBEDDINGS_PROVIDER", "google")
+        vm.setValue("HINDSIGHT_API_EMBEDDINGS_GEMINI_MODEL", "fixture-gemini-embedding")
+        vm.setValue("HINDSIGHT_API_EMBEDDINGS_GEMINI_API_KEY", "fixture-gemini-key")
+        vm.setValue("HINDSIGHT_API_EMBEDDINGS_GEMINI_OUTPUT_DIMENSIONALITY", "1536")
+        let before = vm.draft!.assignments.filter { $0.name.hasPrefix("HINDSIGHT_API_EMBEDDINGS_") }.map { [$0.name, $0.value] }
+        vm.useLocalDecisionModel(apiKey: String(repeating: "a", count: 64))
+        vm.useLocalHindsightReranker()
+        let after = vm.draft!.assignments.filter { $0.name.hasPrefix("HINDSIGHT_API_EMBEDDINGS_") }.map { [$0.name, $0.value] }
+        XCTAssertEqual(after, before)
+        XCTAssertEqual(vm.decisionModelSource, .local)
+        XCTAssertEqual(vm.rerankerSource, .local)
+        XCTAssertTrue(vm.configurationProblems.isEmpty)
+    }
+
+    func testCloudDecisionOverrideCannotInheritTheLocalServersCredential() async throws {
+        let (vm, file, _) = make()
+        await vm.load()
+        let before = try Data(contentsOf: file)
+        vm.useLocalDecisionModel(apiKey: String(repeating: "a", count: 64))
+        vm.setValue("HINDSIGHT_API_REFLECT_DECISION_MODEL_BASE_URL", HindsightInference.url)
+        XCTAssertTrue(vm.configurationProblems.contains { $0.contains("clé du modèle local") })
+        vm.requestSave()
+        XCTAssertNil(vm.confirmation)
+        XCTAssertEqual(try Data(contentsOf: file), before)
+        vm.setValue("HINDSIGHT_API_REFLECT_DECISION_MODEL_API_KEY", "fixture-cloud-key")
+        XCTAssertTrue(vm.configurationProblems.isEmpty)
+    }
+
+    func testNewPerOperationCloudDecisionNeedsItsOwnOrInheritedCloudCredentials() async throws {
+        let (vm, _, _) = make()
+        await vm.load()
+        vm.setValue("HINDSIGHT_API_REFLECT_DECISION_MODEL_PROVIDER", "hindsight")
+        XCTAssertFalse(vm.configurationProblems.isEmpty)
+        vm.requestSave()
+        XCTAssertNil(vm.confirmation)
+        vm.setValue("HINDSIGHT_API_REFLECT_DECISION_MODEL_API_KEY", "fixture-cloud-key")
+        XCTAssertTrue(vm.configurationProblems.isEmpty)
+    }
+
+    func testMacDecisionPresetCannotPointARemoteServerAtItsOwnLoopbackAddress() async {
+        let (_, _, settings) = make()
+        let client = HindsightClient(baseURL: URL(string: "https://remote.invalid")!, transport: MockTransport())
+        let vm = ServerSettingsViewModel(settings: settings, client: { client }, bank: { testBank })
+        await vm.load()
+        let before = vm.draft
+        vm.useLocalDecisionModel(apiKey: String(repeating: "a", count: 64))
+        XCTAssertEqual(vm.draft, before)
+        XCTAssertTrue(vm.actionMessage?.contains("serveur Hindsight local") == true)
+    }
+
+    func testUnavailableLLMDiagnosticsCannotReportRestartSuccess() async {
+        let transport = MockTransport()
+        transport.installStandardRoutes()
+        transport.on("POST", "\(bankPath)/health/llm", json: "{\"detail\":\"disabled\"}", status: 403)
+        let (vm, _, _) = make(transport)
+        await vm.load()
+        await vm.restart("fake-restart")
+        guard case .failed(let message) = vm.restartState else { return XCTFail("failed diagnostic was presented as success") }
+        XCTAssertTrue(message.contains("vérification des LLM"))
+        XCTAssertNil(vm.llmHealth)
+    }
+
+    func testEmptyLLMDiagnosticsDoNotClaimEveryModelResponded() async {
+        let transport = MockTransport()
+        transport.installStandardRoutes()
+        transport.on("POST", "\(bankPath)/health/llm", json: "{\"bank_id\":\"fixture\",\"operations\":[]}")
+        let (vm, _, _) = make(transport)
+        await vm.restart("fake-restart")
+        guard case .failed(let message) = vm.restartState else { return XCTFail("empty diagnostic was presented as success") }
+        XCTAssertTrue(message.contains("aucun résultat"))
+    }
+
+    func testRepeatedRestartsAreSerializedAndANewerSaveKeepsItsRestartNotice() async throws {
+        let transport = MockTransport()
+        transport.installStandardRoutes()
+        let (_, file, settings) = make(transport)
+        let runner = SuspendedSettingsRunner()
+        let client = makeClient(transport)
+        let vm = ServerSettingsViewModel(settings: settings, runner: runner, client: { client }, bank: { nil })
+        await vm.load()
+        let restart = Task { await vm.restart("fake-restart") }
+        for _ in 0..<1000 { if await runner.started { break }; await Task.yield() }
+        for _ in 0..<100 { await vm.restart("must-not-run") }
+        let calls = await runner.calls
+        XCTAssertEqual(calls, ["fake-restart"])
+        vm.setValue("HINDSIGHT_API_LLM_MODEL", "saved-during-restart")
+        vm.requestSave()
+        try await XCTUnwrap(vm.confirmation).perform()
+        XCTAssertTrue(vm.needsRestart)
+        await runner.release()
+        await restart.value
+        XCTAssertEqual(vm.restartState, .succeeded("Serveur redémarré."))
+        XCTAssertTrue(vm.needsRestart, "the completed restart did not apply the script saved while its command was in flight")
+        XCTAssertTrue(try String(contentsOf: file, encoding: .utf8).contains("saved-during-restart"))
+    }
+
+    func testBankChangeInvalidatesPendingRestartConfirmation() async throws {
+        let (_, _, settings) = make()
+        let runner = FakeRunner()
+        let client = makeClient(MockTransport())
+        var bank: String? = testBank
+        let vm = ServerSettingsViewModel(settings: settings, runner: runner, client: { client }, bank: { bank })
+        vm.restartCommand = "fake-restart"
+        vm.requestRestart()
+        let confirmation = try XCTUnwrap(vm.confirmation)
+        bank = "another-bank"
+        await confirmation.perform()
+        XCTAssertTrue(runner.commands.isEmpty)
+        XCTAssertTrue(vm.actionMessage?.contains("changé") == true)
+    }
+
+    func testLateLLMHealthForPreviousBankIsDiscarded() async throws {
+        let base = MockTransport()
+        base.installStandardRoutes()
+        base.on("POST", "\(bankPath)/health/llm", json: "{\"bank_id\":\"fixture\",\"operations\":[{\"operation\":\"retain\",\"ok\":true,\"status\":\"connected\"}]}")
+        let transport = SettingsGateTransport(base, path: "\(bankPath)/health/llm")
+        let (_, _, settings) = make()
+        let client = HindsightClient(transport: transport)
+        var bank: String? = testBank
+        let vm = ServerSettingsViewModel(settings: settings, runner: FakeRunner(), client: { client }, bank: { bank })
+        let restart = Task { await vm.restart("fake-restart") }
+        for _ in 0..<1000 { if await transport.blocked { break }; await Task.yield() }
+        bank = "another-bank"
+        await transport.release()
+        await restart.value
+        XCTAssertNil(vm.llmHealth)
+        guard case .failed = vm.restartState else { return XCTFail("old bank diagnostic published in the new context") }
+        XCTAssertEqual(base.requests.filter { $0.path.hasSuffix("/health/llm") }.map(\.path), ["\(bankPath)/health/llm"])
+    }
+
     func testAddVariableValidatesName() async {
         let (vm, _, _) = make()
         await vm.load()
@@ -536,6 +761,36 @@ final class ServerSettingsViewModelTests: XCTestCase {
         XCTAssertTrue(r.output.contains("bonjour"))
         XCTAssertTrue(r.output.contains("erreur"))
     }
+}
+
+private actor SuspendedSettingsRunner: CommandRunner {
+    private(set) var calls: [String] = []
+    private(set) var started = false
+    private var continuation: CheckedContinuation<CommandResult, Never>?
+    func run(_ command: String, timeout: TimeInterval) async throws -> CommandResult {
+        calls.append(command)
+        return await withCheckedContinuation { continuation in
+            self.continuation = continuation
+            started = true
+        }
+    }
+    func release() { continuation?.resume(returning: .init(status: 0, output: "fixture command completed")); continuation = nil }
+}
+
+private actor SettingsGateTransport: HTTPTransport {
+    let base: MockTransport
+    let path: String
+    private(set) var blocked = false
+    private var continuation: CheckedContinuation<Void, Never>?
+    init(_ base: MockTransport, path: String) { self.base = base; self.path = path }
+    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let response = try await base.send(request)
+        if request.url?.path == path {
+            await withCheckedContinuation { continuation in self.continuation = continuation; blocked = true }
+        }
+        return response
+    }
+    func release() { continuation?.resume(); continuation = nil }
 }
 
 /// Serveur 1.1.0 : fournisseur chatgpt (abonnement) et modèle de décision.

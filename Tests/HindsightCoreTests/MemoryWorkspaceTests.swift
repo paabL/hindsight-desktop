@@ -3,6 +3,24 @@ import XCTest
 import HindsightAPI
 import HindsightTestSupport
 @testable import HindsightCore
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
+private actor QueueReadMeasurement: HTTPTransport {
+    let mock: MockTransport
+    private var inFlight = 0
+    private(set) var peak = 0
+    init(_ mock: MockTransport) { self.mock = mock }
+    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        guard request.url?.path.contains("/operations/") == true else { return try await mock.send(request) }
+        inFlight += 1
+        peak = max(peak, inFlight)
+        defer { inFlight -= 1 }
+        try await Task.sleep(for: .milliseconds(10))
+        return try await mock.send(request)
+    }
+}
 
 @MainActor
 final class MemoryWorkspaceTests: XCTestCase {
@@ -375,5 +393,349 @@ final class MemoryWorkspaceTests: XCTestCase {
         XCTAssertEqual(state(s.vm)["state"] as? String, "error")
         XCTAssertTrue(state(s.vm)["locked"] as? Bool == true)
         XCTAssertFalse(s.transport.requests.contains { $0.method == "POST" })
+    }
+
+    private func saveTracking(_ s: Setup, _ state: [String: Any]) throws {
+        try JSONSerialization.data(withJSONObject: [testBank: state])
+            .write(to: s.root.appendingPathComponent("collection/.memory-workspace.json"))
+    }
+
+    func testHistoricalQueueRowsDoNotBlockWhenTheirActualOperationsHaveCompleted() async throws {
+        let s = try setup()
+        s.transport.on("GET", "\(bankPath)/operations", json: #"{"bank_id":"b","total":1,"limit":100,"offset":0,"operations":[{"id":"old-task","operation_id":"finished","task_type":"retain","items_count":1,"status":"processing","created_at":""}]}"#)
+        s.transport.on("GET", "\(bankPath)/operations/finished", json: #"{"operation_id":"finished","status":"processing","operation_type":"retain"}"#)
+        await s.vm.prepareSend()
+        XCTAssertNil(s.vm.confirmation)
+        XCTAssertTrue(s.vm.error?.contains("encore en cours") == true)
+        s.transport.on("GET", "\(bankPath)/operations/finished", json: #"{"operation_id":"finished","status":"completed","operation_type":"retain","error_message":"Old transient failure"}"#)
+        await s.vm.prepareSend()
+        XCTAssertNil(s.vm.error)
+        XCTAssertNotNil(s.vm.confirmation)
+        XCTAssertTrue(s.transport.requests.allSatisfy { $0.method == "GET" })
+    }
+
+    func testQueueVerificationPaginatesPastHistoricalRowsAndStillBlocksRealWork() async throws {
+        let s = try setup()
+        let rows = (0..<101).map { OperationResponse(id: "op-\($0)", taskType: "retain", itemsCount: 1, createdAt: "", status: "processing") }
+        s.transport.on("GET", "\(bankPath)/operations") { request in
+            let offset = Int(request.queryValue("offset") ?? "0") ?? 0
+            let page = OperationsListResponse(bankId: testBank, total: rows.count, limit: 100, offset: offset, operations: Array(rows.dropFirst(offset).prefix(100)))
+            return .json(String(decoding: try! JSONEncoder().encode(page), as: UTF8.self))
+        }
+        s.transport.on("GET", "\(bankPath)/operations/*") { request in
+            let id = (request.path as NSString).lastPathComponent
+            return .json(#"{"operation_id":"\#(id)","operation_type":"retain","status":"\#(id == "op-100" ? "pending" : "completed")"}"#)
+        }
+        await s.vm.prepareSend()
+        XCTAssertNil(s.vm.confirmation)
+        XCTAssertTrue(s.vm.error?.contains("encore en cours") == true)
+        XCTAssertTrue(s.transport.requests.contains { $0.queryValue("offset") == "100" })
+        XCTAssertFalse(s.transport.requests.contains { $0.method == "POST" })
+    }
+
+    func testHistoricalTasksSharingAParentAreNotAnIncompleteQueue() async throws {
+        let s = try setup()
+        s.transport.on("GET", "\(bankPath)/operations", json: #"{"bank_id":"b","total":2,"limit":100,"offset":0,"operations":[{"id":"task-one","operation_id":"parent","task_type":"retain","items_count":1,"status":"processing","created_at":""},{"id":"task-two","operation_id":"parent","task_type":"retain","items_count":1,"status":"processing","created_at":""}]}"#)
+        s.transport.on("GET", "\(bankPath)/operations/parent", json: #"{"operation_id":"parent","operation_type":"batch_retain","status":"completed"}"#)
+        await s.vm.prepareSend()
+        XCTAssertNil(s.vm.error)
+        XCTAssertNotNil(s.vm.confirmation)
+        XCTAssertEqual(s.transport.requests.filter { $0.path.hasSuffix("/operations/parent") }.count, 1)
+        XCTAssertTrue(s.transport.requests.allSatisfy { $0.method == "GET" })
+    }
+
+    func testHistoricalQueueVerificationUsesBoundedConcurrentReads() async throws {
+        let s = try setup()
+        let rows = (0..<12).map { OperationResponse(id: "historical-\($0)", taskType: "retain", itemsCount: 1, createdAt: "", status: "processing") }
+        s.transport.on("GET", "\(bankPath)/operations") { _ in
+            .json(String(decoding: try! JSONEncoder().encode(OperationsListResponse(bankId: testBank, total: rows.count, limit: 100, offset: 0, operations: rows)), as: UTF8.self))
+        }
+        s.transport.on("GET", "\(bankPath)/operations/*") { request in
+            .json(#"{"operation_id":"\#((request.path as NSString).lastPathComponent)","operation_type":"retain","status":"completed"}"#)
+        }
+        let measured = QueueReadMeasurement(s.transport)
+        let client = HindsightClient(transport: measured)
+        let vm = MemoryWorkspace(folder: s.folder, client: { client }, bank: { testBank })
+        await vm.prepareSend()
+        XCTAssertNil(vm.error)
+        XCTAssertNotNil(vm.confirmation)
+        let peak = await measured.peak
+        XCTAssertGreaterThan(peak, 1)
+        XCTAssertLessThanOrEqual(peak, 4)
+        XCTAssertEqual(s.transport.requests.filter { $0.path.contains("/operations/") }.count, 12)
+    }
+
+    func testUnreadableOrIncompleteQueueRemainsFailClosed() async throws {
+        let s = try setup()
+        s.transport.on("GET", "\(bankPath)/operations", json: #"{"bank_id":"b","total":1,"limit":100,"offset":0,"operations":[]}"#)
+        await s.vm.prepareSend()
+        XCTAssertNil(s.vm.confirmation)
+        XCTAssertNotNil(s.vm.error)
+        s.transport.on("GET", "\(bankPath)/operations", json: #"{"bank_id":"b","total":1,"limit":100,"offset":0,"operations":[{"id":"unknown","task_type":"retain","items_count":1,"status":"pending","created_at":""}]}"#)
+        await s.vm.prepareSend()
+        XCTAssertNil(s.vm.confirmation)
+        XCTAssertNotNil(s.vm.error)
+        XCTAssertFalse(s.transport.requests.contains { $0.method == "POST" })
+    }
+
+    func testCompletedParentDoesNotStayQueuedBecauseOfHistoricalTaskRows() async throws {
+        let s = try setup(); let id = try await submitAndParent(s)
+        s.transport.on("GET", "\(bankPath)/operations", json: #"{"bank_id":"b","total":1,"limit":100,"offset":0,"operations":[{"id":"\#(id)","task_type":"batch_retain","items_count":1,"status":"processing","created_at":""}]}"#)
+        await s.vm.refresh()
+        XCTAssertEqual(state(s.vm)["state"] as? String, "error", "A drained queue without the expected saved text needs fresh approval, not an endless queued state")
+        XCTAssertEqual(s.transport.requests.filter { $0.method == "POST" }.count, 1)
+    }
+
+    func testRefreshClearsMessagesFromACompletedSubmission() async throws {
+        let s = try setup(); _ = try await submitAndParent(s)
+        XCTAssertNotNil(s.vm.message)
+        installDocument(s, id: "source:project:repo:note", text: try String(contentsOf: s.text, encoding: .utf8))
+        await s.vm.refresh()
+        XCTAssertEqual(state(s.vm)["state"] as? String, "current")
+        XCTAssertNil(s.vm.message)
+        XCTAssertNil(s.vm.error)
+    }
+
+    func testMalformedTrackingCannotSilentlyDropPendingAndResend() async throws {
+        let s = try setup()
+        try saveTracking(s, ["pending": ["source:project:repo:note": 42], "operations": [:]])
+        await s.vm.prepareSend()
+        XCTAssertNil(s.vm.confirmation)
+        XCTAssertNotNil(s.vm.error)
+        XCTAssertFalse(s.transport.requests.contains { $0.method == "POST" })
+    }
+
+    func testIncompleteOrForeignServerTrackingCannotBeReplayedIntoTheCurrentBank() async throws {
+        let s = try setup()
+        let cases: [[String: Any]] = [
+            ["pending": [:], "operations": ["source:project:repo:note": UUID().uuidString]],
+            ["server_url": "https://another-fixture.invalid", "pending": [:], "operations": [:]],
+        ]
+        for tracking in cases {
+            try saveTracking(s, tracking)
+            await s.vm.prepareSend()
+            XCTAssertNil(s.vm.confirmation)
+            XCTAssertNotNil(s.vm.error)
+        }
+        XCTAssertFalse(s.transport.requests.contains { $0.method == "POST" })
+    }
+
+    func testDuplicateCatalogIDsCannotCrashPreviewOrSendDuplicateDocuments() async throws {
+        let s = try setup(); let path = s.root.appendingPathComponent("collection/catalog.json")
+        var catalog = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any])
+        let row = try XCTUnwrap((catalog["records"] as? [[String: Any]])?.first)
+        catalog["records"] = [row, row]
+        try JSONSerialization.data(withJSONObject: catalog).write(to: path)
+        await s.vm.prepareSend()
+        XCTAssertNil(s.vm.confirmation)
+        XCTAssertTrue(s.vm.error?.contains("dupliqués") == true)
+        XCTAssertTrue(s.vm.records.isEmpty)
+        XCTAssertFalse(s.transport.requests.contains { $0.method == "POST" })
+    }
+
+    func testUploadApprovalIsBoundToTheOriginalServerAndCannotBePerformedTwice() async throws {
+        let s = try setup(); var activeClient = makeClient(s.transport)
+        let vm = MemoryWorkspace(folder: s.folder, client: { activeClient }, bank: { testBank })
+        await vm.prepareSend(); let approval = try XCTUnwrap(vm.confirmation)
+        activeClient = HindsightClient(baseURL: URL(string: "http://localhost:9999")!, transport: s.transport)
+        await approval.perform()
+        XCTAssertFalse(s.transport.requests.contains { $0.method == "POST" })
+        XCTAssertTrue(vm.error?.contains("contexte") == true)
+        activeClient = makeClient(s.transport)
+        await approval.perform()
+        XCTAssertFalse(s.transport.requests.contains { $0.method == "POST" }, "An old confirmation is consumed even when validation refuses it")
+        await vm.prepareSend(); let current = try XCTUnwrap(vm.confirmation)
+        await current.perform(); await current.perform()
+        XCTAssertEqual(s.transport.requests.filter { $0.method == "POST" }.count, 1)
+    }
+
+    func testRetryApprovalCannotReplayAReconciledOrForeignServerBatch() async throws {
+        let s = try setup(); var activeClient = makeClient(s.transport)
+        let vm = MemoryWorkspace(folder: s.folder, client: { activeClient }, bank: { testBank })
+        await vm.prepareSend(); await (try XCTUnwrap(vm.confirmation)).perform()
+        vm.requestRetry("project:repo:note"); let retry = try XCTUnwrap(vm.confirmation)
+        try saveTracking(s, ["tracking_version": 2, "pending": [:], "operations": [:]])
+        await retry.perform()
+        XCTAssertEqual(s.transport.requests.filter { $0.method == "POST" }.count, 1)
+        XCTAssertNotNil(vm.error)
+        activeClient = HindsightClient(baseURL: URL(string: "http://localhost:9999")!, transport: s.transport)
+        vm.requestRetry("project:repo:note")
+        XCTAssertNil(vm.confirmation)
+        XCTAssertEqual(s.transport.requests.filter { $0.method == "POST" }.count, 1)
+    }
+
+    func testRemovalRechecksPendingTrackingAfterTheConfirmationWasShown() async throws {
+        let s = try setup(); let text = try String(contentsOf: s.text, encoding: .utf8)
+        let target = "source:project:repo:note"
+        installDocument(s, id: target, text: text)
+        await s.vm.refresh(); s.vm.requestRemove("project:repo:note")
+        let approval = try XCTUnwrap(s.vm.confirmation)
+        try saveTracking(s, ["tracking_version": 2, "pending": [target: SHA256.hex(Data(text.utf8))], "operations": [target: UUID().uuidString]])
+        await approval.perform()
+        XCTAssertFalse(s.transport.requests.contains { $0.method == "DELETE" })
+        XCTAssertTrue(s.vm.error?.contains("fin du traitement") == true)
+    }
+
+    func testRemovalApprovalDoesNotDeleteFromANewServer() async throws {
+        let s = try setup(); var activeClient = makeClient(s.transport)
+        installDocument(s, id: "source:project:repo:note", text: try String(contentsOf: s.text, encoding: .utf8))
+        let vm = MemoryWorkspace(folder: s.folder, client: { activeClient }, bank: { testBank })
+        await vm.refresh(); vm.requestRemove("project:repo:note")
+        let approval = try XCTUnwrap(vm.confirmation)
+        activeClient = HindsightClient(baseURL: URL(string: "http://localhost:9999")!, transport: s.transport)
+        await approval.perform()
+        XCTAssertFalse(s.transport.requests.contains { $0.method == "DELETE" })
+        XCTAssertFalse(FileManager.default.fileExists(atPath: s.root.appendingPathComponent("archives").path))
+    }
+
+    func testImportRechecksSelectedFilesAndFolderAndConsumesApproval() async throws {
+        let s = try setup()
+        s.folder.requestImport(paths: [s.text.path], project: "fixture")
+        let changed = try XCTUnwrap(s.folder.confirmation)
+        try Data("# Changed after the preview".utf8).write(to: s.text)
+        await changed.perform()
+        XCTAssertTrue(s.runner.calls.isEmpty)
+        XCTAssertTrue(s.folder.error?.contains("changé") == true)
+        s.folder.requestImport(paths: [s.text.path], project: "fixture")
+        let moved = try XCTUnwrap(s.folder.confirmation)
+        let other = try setup()
+        s.folder.choose(other.root)
+        await moved.perform()
+        XCTAssertTrue(s.runner.calls.isEmpty)
+        s.folder.choose(s.root)
+        s.folder.requestImport(paths: [s.text.path], project: "fixture")
+        let valid = try XCTUnwrap(s.folder.confirmation)
+        await valid.perform(); await valid.perform()
+        XCTAssertEqual(s.runner.calls.count, 1)
+    }
+
+    func testImportCannotFollowASymlinkSubstitutedAfterPreview() async throws {
+        let s = try setup()
+        s.folder.requestImport(paths: [s.text.path], project: "fixture")
+        let approval = try XCTUnwrap(s.folder.confirmation)
+        let other = s.root.appendingPathComponent("other.md")
+        try Data("# Not selected".utf8).write(to: other)
+        try FileManager.default.removeItem(at: s.text)
+        try FileManager.default.createSymbolicLink(at: s.text, withDestinationURL: other)
+        await approval.perform()
+        XCTAssertTrue(s.runner.calls.isEmpty)
+        XCTAssertNotNil(s.folder.error)
+    }
+
+    private actor RequestGate: HTTPTransport {
+        let transport: MockTransport
+        private var path: String?
+        private var releaseRequest: CheckedContinuation<Void, Never>?
+        private var entered: CheckedContinuation<Void, Never>?
+        init(_ transport: MockTransport) { self.transport = transport }
+        func holdNext(_ path: String) { self.path = path }
+        func waitUntilHeld() async {
+            if releaseRequest != nil { return }
+            await withCheckedContinuation { entered = $0 }
+        }
+        func release() { releaseRequest?.resume(); releaseRequest = nil }
+        func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+            if request.url?.path == path {
+                path = nil
+                await withCheckedContinuation { continuation in
+                    releaseRequest = continuation
+                    entered?.resume(); entered = nil
+                }
+            }
+            return try await transport.send(request)
+        }
+    }
+
+    func testServerChangeDuringQueueVerificationCannotRedirectAnApprovedUpload() async throws {
+        let s = try setup(); let gate = RequestGate(s.transport)
+        var activeClient = HindsightClient(baseURL: makeClient(s.transport).baseURL, transport: gate)
+        let vm = MemoryWorkspace(folder: s.folder, client: { activeClient }, bank: { testBank })
+        await vm.prepareSend(); let approval = try XCTUnwrap(vm.confirmation)
+        await gate.holdNext("\(bankPath)/operations")
+        let task = Task { await approval.perform() }
+        await gate.waitUntilHeld()
+        activeClient = HindsightClient(baseURL: URL(string: "http://localhost:9999")!, transport: s.transport)
+        await gate.release(); await task.value
+        XCTAssertFalse(s.transport.requests.contains { $0.method == "POST" })
+    }
+
+    func testRapidConfirmationsOfTwoPreviewsCannotSubmitTheSameSourceTwice() async throws {
+        let s = try setup(); let gate = RequestGate(s.transport)
+        let api = HindsightClient(baseURL: makeClient(s.transport).baseURL, transport: gate)
+        let vm = MemoryWorkspace(folder: s.folder, client: { api }, bank: { testBank })
+        await vm.prepareSend(); let first = try XCTUnwrap(vm.confirmation)
+        await vm.prepareSend(); let second = try XCTUnwrap(vm.confirmation)
+        await gate.holdNext("\(bankPath)/operations")
+        let running = Task { await first.perform() }
+        await gate.waitUntilHeld()
+        await second.perform()
+        XCTAssertFalse(s.transport.requests.contains { $0.method == "POST" })
+        await gate.release(); await running.value
+        XCTAssertEqual(s.transport.requests.filter { $0.method == "POST" }.count, 1)
+    }
+
+    func testRetryApprovalCannotBypassAPolicyChangedAfterItsPreview() async throws {
+        let s = try setup()
+        await s.vm.prepareSend(); await (try XCTUnwrap(s.vm.confirmation)).perform()
+        s.vm.requestRetry("project:repo:note"); let retry = try XCTUnwrap(s.vm.confirmation)
+        let url = s.root.appendingPathComponent("memory-policy.json")
+        var policy = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        policy["deferred_document_ids"] = ["source:project:repo:note": ["reason": "Needs review"]]
+        try JSONSerialization.data(withJSONObject: policy).write(to: url)
+        await retry.perform()
+        XCTAssertEqual(s.transport.requests.filter { $0.method == "POST" }.count, 1)
+        XCTAssertTrue(s.vm.error?.contains("politique") == true)
+    }
+
+    func testLateStoredTextIsDiscardedAfterABankChange() async throws {
+        let s = try setup(); let target = "source:project:repo:note"
+        installDocument(s, id: target, text: try String(contentsOf: s.text, encoding: .utf8))
+        let gate = RequestGate(s.transport)
+        let api = HindsightClient(baseURL: makeClient(s.transport).baseURL, transport: gate)
+        var selectedBank: String? = testBank
+        let vm = MemoryWorkspace(folder: s.folder, client: { api }, bank: { selectedBank })
+        await vm.refresh()
+        await gate.holdNext("\(bankPath)/documents/\(target)")
+        let task = Task { try await vm.storedText("project:repo:note") }
+        await gate.waitUntilHeld(); selectedBank = "another"
+        await gate.release()
+        do { _ = try await task.value; XCTFail("A late private document must not escape into the new context") }
+        catch { XCTAssertTrue(error.localizedDescription.contains("contexte")) }
+    }
+
+    func testOutOfOrderFolderRefreshCannotReplaceTheNewFoldersCatalog() async throws {
+        let s = try setup(), other = try setup(); let gate = RequestGate(s.transport)
+        let api = HindsightClient(baseURL: makeClient(s.transport).baseURL, transport: gate)
+        let vm = MemoryWorkspace(folder: s.folder, client: { api }, bank: { testBank })
+        await gate.holdNext("\(bankPath)/documents")
+        let slow = Task { await vm.refresh() }
+        await gate.waitUntilHeld()
+        try Data("# Second folder source".utf8).write(to: other.text)
+        s.folder.choose(other.root)
+        await vm.refresh()
+        let current = state(vm)["hash"] as? String
+        await gate.release(); await slow.value
+        XCTAssertEqual(state(vm)["hash"] as? String, current)
+        XCTAssertEqual(current, SHA256.hex(Data("# Second folder source".utf8)))
+        XCTAssertTrue(s.transport.requests.allSatisfy { $0.method == "GET" })
+    }
+
+    func testLateTrackingRecoveryCannotRestorePendingIntoANewerRefresh() async throws {
+        let s = try setup(); let operation = try await submitAndParent(s)
+        let target = "source:project:repo:note"
+        try saveTracking(s, ["tracking_version": 1, "pending": [:], "operations": [:], "failures": [target: "Old false failure"]])
+        let gate = RequestGate(s.transport)
+        let api = HindsightClient(baseURL: makeClient(s.transport).baseURL, transport: gate)
+        let vm = MemoryWorkspace(folder: s.folder, client: { api }, bank: { testBank })
+        await gate.holdNext("\(bankPath)/operations/\(operation)")
+        let old = Task { await vm.refresh() }
+        await gate.waitUntilHeld()
+        try saveTracking(s, ["tracking_version": 2, "enabled": ["project:repo:note": false], "pending": [:], "operations": [:], "failures": [:]])
+        await vm.refresh()
+        await gate.release(); await old.value
+        XCTAssertEqual(state(vm)["state"] as? String, "excluded")
+        vm.requestRemove("project:repo:note")
+        XCTAssertNotNil(vm.confirmation, "A superseded recovery must not resurrect an old pending blocker")
+        XCTAssertEqual(s.transport.requests.filter { $0.method == "POST" }.count, 1)
     }
 }

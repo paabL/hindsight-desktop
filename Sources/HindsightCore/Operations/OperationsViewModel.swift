@@ -24,9 +24,32 @@ public final class OperationsViewModel {
     public private(set) var selectedID: String?
     public private(set) var isLoadingMore = false
 
-    public var statusFilter: StatusFilter = .all
-    public var typeFilter: String?
-    public var excludeParents = false
+    public var statusFilter: StatusFilter = .all { didSet { if oldValue != statusFilter { invalidateList() } } }
+    public var typeFilter: String? { didSet { if oldValue != typeFilter { invalidateList() } } }
+    public var excludeParents = false { didSet { if oldValue != excludeParents { invalidateList() } } }
+    public private(set) var isRefreshing = false
+    @ObservationIgnored private var listRevision = UUID()
+    @ObservationIgnored private var moreRevision: UUID?
+    @ObservationIgnored private var detailRevision = UUID()
+    @ObservationIgnored private var nextOffset = 0
+    @ObservationIgnored private var exhausted = false
+
+    private struct Query: Equatable, Sendable {
+        let status: StatusFilter
+        let type: String?
+        let excludeParents: Bool
+    }
+    private var query: Query { Query(status: statusFilter, type: typeFilter, excludeParents: excludeParents) }
+    private func invalidateList() {
+        listRevision = UUID()
+        moreRevision = nil
+        rows = []; total = 0; nextOffset = 0; exhausted = false
+        isLoadingMore = false; isRefreshing = false; state = .idle
+    }
+    private func uniqueRows(_ values: [OperationResponse]) -> [OperationRow] {
+        var seen = Set<String>()
+        return values.filter { seen.insert($0.id).inserted }.map(OperationRow.init)
+    }
 
     /// Dernier résultat d'action (« 3 opérations relancées »), à afficher puis effacer.
     public var actionMessage: String?
@@ -58,53 +81,128 @@ public final class OperationsViewModel {
 
     public func reload(silently: Bool = false) async {
         guard !Task.isCancelled else { return }
+        let revision = UUID(), requested = query
+        listRevision = revision
+        moreRevision = nil; isLoadingMore = false; isRefreshing = true
+        defer { if listRevision == revision { isRefreshing = false } }
         if !silently { state = .loading }
         do {
-            async let list = client.listOperations(
-                bank, status: statusFilter.apiValue, type: typeFilter, limit: 100, offset: 0, excludeParents: excludeParents)
-            async let st = client.bankStats(bank)
+            let visibleCount = silently ? max(100, nextOffset) : 100
+            async let list = fetchWindow(requested, visibleCount: visibleCount)
+            async let st = try? client.bankStats(bank)
             async let mode = try? client.isConsultationOnly()
-            let (l, s) = try await (list, st)
-            let isConsultation = await mode ?? false
+            let l = try await list
+            let statistics = await st
+            let isConsultation = await mode
             try Task.checkCancellation()
-            consultationOnly = isConsultation
-            rows = l.operations.map(OperationRow.init)
+            guard revision == listRevision, requested == query else { return }
+            consultationOnly = isConsultation ?? consultationOnly
+            rows = uniqueRows(l.operations.filter { matches($0, requested) })
+            nextOffset = l.nextOffset
             total = l.total
-            stats = s
+            exhausted = l.exhausted
+            stats = statistics
             state = .loaded(())
             if let id = selectedID { await refreshDetail(id, silently: true) }
         } catch is CancellationError {
+            if revision == listRevision, state.isLoading { state = .idle }
         } catch {
-            if !silently || state.value == nil { state = .failed(error.userMessage) }
+            guard revision == listRevision, requested == query else { return }
+            state = .failed(error.userMessage)
         }
     }
 
-    public var canLoadMore: Bool { rows.count < total }
+    public var canLoadMore: Bool { !exhausted && nextOffset < total }
 
     public func loadMore() async {
-        guard canLoadMore, !isLoadingMore else { return }
+        guard canLoadMore, !isLoadingMore, !isRefreshing else { return }
+        let token = UUID(), revision = listRevision, requested = query, offset = nextOffset
+        moreRevision = token
         isLoadingMore = true
-        defer { isLoadingMore = false }
+        defer { if moreRevision == token { isLoadingMore = false; moreRevision = nil } }
         do {
             let l = try await client.listOperations(
-                bank, status: statusFilter.apiValue, type: typeFilter, limit: 100, offset: rows.count,
-                excludeParents: excludeParents)
-            rows += l.operations.map(OperationRow.init)
+                bank, status: requested.status.apiValue, type: requested.type, limit: 100, offset: offset,
+                excludeParents: requested.excludeParents)
+            try Task.checkCancellation()
+            guard revision == listRevision, moreRevision == token, requested == query else { return }
+            var seen = Set(rows.map(\.id))
+            rows += l.operations.filter { matches($0, requested) && seen.insert($0.id).inserted }.map(OperationRow.init)
+            nextOffset = offset + l.operations.count
             total = l.total
+            exhausted = l.operations.isEmpty
         } catch is CancellationError {
         } catch {
-            actionMessage = error.userMessage
+            if revision == listRevision, requested == query { actionMessage = error.userMessage }
         }
+    }
+
+    private struct Window: Sendable {
+        let operations: [OperationResponse]
+        let total: Int
+        let nextOffset: Int
+        let exhausted: Bool
+    }
+    private struct WindowPage: Sendable {
+        let offset: Int
+        let page: OperationsListResponse
+    }
+    private func matches(_ row: OperationResponse, _ query: Query) -> Bool {
+        query.status == .all || OperationStatusKind(row.status).rawValue == query.status.rawValue
+    }
+    /// A quiet refresh preserves the already opened pages. Keep at most four HTTP reads in flight.
+    private func fetchWindow(_ query: Query, visibleCount: Int) async throws -> Window {
+        let client = self.client, bank = self.bank
+        let first = try await client.listOperations(bank, status: query.status.apiValue, type: query.type,
+            limit: 100, offset: 0, excludeParents: query.excludeParents)
+        var values = first.operations
+        var end = values.count
+        var exhausted = values.isEmpty
+        let target = min(visibleCount, first.total)
+        if !exhausted, target > end {
+            let step = min(100, max(1, first.limit))
+            let offsets = Array(stride(from: end, to: target, by: step))
+            for start in stride(from: 0, to: offsets.count, by: 4) {
+                try Task.checkCancellation()
+                let batch = Array(offsets[start..<min(start + 4, offsets.count)])
+                let pages = try await withThrowingTaskGroup(of: WindowPage.self) { group in
+                    for offset in batch {
+                        group.addTask {
+                            let page = try await client.listOperations(bank, status: query.status.apiValue, type: query.type,
+                                limit: step, offset: offset, excludeParents: query.excludeParents)
+                            return WindowPage(offset: offset, page: page)
+                        }
+                    }
+                    var results: [WindowPage] = []
+                    for try await result in group { results.append(result) }
+                    return results.sorted { $0.offset < $1.offset }
+                }
+                for result in pages {
+                    if result.page.operations.isEmpty { exhausted = true; break }
+                    values += result.page.operations
+                    end = result.offset + result.page.operations.count
+                }
+                if exhausted { break }
+            }
+        }
+        return Window(operations: values, total: first.total, nextOffset: end, exhausted: exhausted)
     }
 
     /// Sélection depuis une liste : l'identifiant change tout de suite (la liste suit), le détail arrive ensuite.
     public func choose(_ id: String?) {
         selectedID = id
-        Task { await select(id) }
+        detailRevision = UUID()
+        let revision = detailRevision
+        selectedDetail = id == nil ? .idle : .loading
+        Task { [weak self] in
+            guard let self, self.detailRevision == revision, let id else { return }
+            await self.refreshDetail(id, silently: false)
+        }
     }
 
     public func select(_ id: String?) async {
         selectedID = id
+        detailRevision = UUID()
         guard let id else {
             selectedDetail = .idle
             return
@@ -113,14 +211,16 @@ public final class OperationsViewModel {
     }
 
     private func refreshDetail(_ id: String, silently: Bool) async {
+        let revision = UUID()
+        detailRevision = revision
         if !silently { selectedDetail = .loading }
         do {
             let d = try await client.operation(bank, id: id)
             try Task.checkCancellation()
-            if selectedID == id { selectedDetail = .loaded(d) }
+            if selectedID == id, detailRevision == revision { selectedDetail = .loaded(d) }
         } catch is CancellationError {
         } catch {
-            if selectedID == id, !silently { selectedDetail = .failed(error.userMessage) }
+            if selectedID == id, detailRevision == revision, !silently { selectedDetail = .failed(error.userMessage) }
         }
     }
 
@@ -286,6 +386,7 @@ public final class OperationsViewModel {
         ) { [weak self] in
             await self?.run("Opération annulée") { c, b in
                 let r = try await c.cancelOperation(b, id: row.id)
+                guard r.success else { throw HindsightError.refused(r.message) }
                 return r.message
             }
         }
@@ -299,6 +400,7 @@ public final class OperationsViewModel {
         ) { [weak self] in
             await self?.run("Entrée supprimée") { c, b in
                 let r = try await c.deleteOperation(b, id: row.id)
+                guard r.success else { throw HindsightError.refused(r.message) }
                 return r.message
             }
         }

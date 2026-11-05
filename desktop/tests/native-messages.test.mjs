@@ -18,6 +18,18 @@ const confirmation = (extra = {}) => ({
   ...extra,
 });
 
+test('une interruption du moteur explique la récupération dans la langue choisie', () => {
+  const message =
+    "Le moteur Hindsight s'est interrompu. Vérifiez les opérations avant de réessayer, puis reconnectez le serveur.";
+  setLanguage('en');
+  assert.equal(
+    nativeSystemMessage(message),
+    'The Hindsight engine stopped. Check operations before trying again, then reconnect the server.',
+  );
+  setLanguage('fr');
+  assert.equal(nativeSystemMessage(message), message);
+});
+
 test('une suppression explique ses conséquences en anglais sans changer le texte de validation', () => {
   setLanguage('en');
   const result = localizeConfirmation(confirmation());

@@ -3,9 +3,9 @@ import HindsightAPI
 import Observation
 
 /// Les documents de la banque et leurs sources, réunis : compare les dossiers suivis (métadonnées `repo` et
-/// `path`) et les sessions Codex / Claude Code / Hermes aux documents de la banque, liste aussi les documents
-/// sans source suivie ; envoie ce qui manque ou a changé, retire ce qui n'a plus de source, et peut
-/// synchroniser seul. La liste (`library`) est ce qu'affiche l'écran « Documents ».
+/// `path`) et les sessions Codex / Claude Code aux documents de la banque, liste aussi les documents
+/// sans source suivie ; envoie ou retire les documents après validation explicite.
+/// La liste (`library`) est ce qu'affiche l'écran « Documents ».
 @MainActor
 @Observable
 public final class FileCoverageViewModel {
@@ -49,12 +49,10 @@ public final class FileCoverageViewModel {
     @ObservationIgnored public var pauseGate: PauseGate?
     /// Politique du dossier commun, relue avant préparation et avant confirmation effective.
     @ObservationIgnored public var memoryPolicyURL: (@MainActor () -> URL?)?
-    /// Sessions de conversation connues de l'import (lecture seule).
+    /// Sessions de conversation connues d'un catalogue (lecture seule).
     @ObservationIgnored public var sessions: (@MainActor () async -> [CodexSessionSummary])?
     @ObservationIgnored public var openOperations: (@MainActor () -> Void)?
     @ObservationIgnored public var openDocument: (@MainActor (String) -> Void)?
-    /// Ouvre « Importer » avec ces sessions cochées et la banque pour cible.
-    @ObservationIgnored public var openImport: (@MainActor ([String], String) -> Void)?
 
     public private(set) var roots: [CoverageRoot] = []
     public var includeConversations = false {
@@ -69,7 +67,9 @@ public final class FileCoverageViewModel {
     public var statusFilter: CoverageStatus?
     public var search = ""
     /// Éléments choisis dans la liste (sélection multiple native).
-    public var selection: Set<String> = []
+    public var selection: Set<String> = [] {
+        didSet { if selection != oldValue { invalidateApproval() } }
+    }
     /// Élément affiché dans le détail (sélection simple).
     public private(set) var selectedID: String?
 
@@ -87,8 +87,7 @@ public final class FileCoverageViewModel {
     @ObservationIgnored public var historicalCost: (@MainActor (String, [String]) -> Cost?)?
 
     struct HashEntry: Sendable {
-        let size: Int
-        let modified: Date
+        let version: [Int64]
         let hash: String
     }
 
@@ -101,7 +100,47 @@ public final class FileCoverageViewModel {
     @ObservationIgnored private var liveViewers = 0
     /// Documents de la dernière lecture complète, et file correspondante : base des relectures partielles.
     @ObservationIgnored private var lastDocuments: [DocumentListItem]?
+    @ObservationIgnored private var entriesByID: [String: CoverageEntry] = [:]
     @ObservationIgnored private var lastQueue: (ids: Set<String>, active: Bool) = ([], false)
+    /// Une banque peut porter le même nom sur plusieurs serveurs. Les chemins et options font aussi
+    /// partie du contexte : un ancien inventaire ne doit jamais être réutilisé après leur modification.
+    private struct Context: Equatable, Sendable {
+        let revision: UUID
+        let bank: String
+        let server: URL
+        let authorization: String?
+        let roots: [CoverageRoot]
+        let resolvedRoots: [URL]
+        let rootIdentities: [[Int64]?]
+        let conversations: Bool
+        let policyURL: URL?
+    }
+
+    private struct ReadRequest: Sendable {
+        let revision: UUID
+        let context: Context
+        let client: HindsightClient
+    }
+
+    private struct Inventory: Sendable {
+        let files: [ScannedFile]
+        let sessions: [CodexSessionSummary]
+    }
+
+    private struct Comparison: Sendable {
+        let report: CoverageReport
+        let cache: [String: HashEntry]
+    }
+
+    @ObservationIgnored private var readRevision = UUID()
+    @ObservationIgnored private var contextRevision = UUID()
+    @ObservationIgnored private var detailRevision = UUID()
+    @ObservationIgnored private var readContext: Context?
+    @ObservationIgnored private var reportContext: Context?
+    @ObservationIgnored private var scannedContext: Context?
+    @ObservationIgnored private var pendingAction: UUID?
+    @ObservationIgnored private var preparingAction: UUID?
+    @ObservationIgnored private var writeAction: UUID?
     public private(set) var cost: LoadState<Cost> = .idle
     public private(set) var sending: (done: Int, total: Int)?
     public var confirmation: ConfirmationRequest?
@@ -136,9 +175,13 @@ public final class FileCoverageViewModel {
 
     static func rootsKey(_ bank: String) -> String { "coverageRoots.\(bank)" }
 
+    private func storedRoots(_ bank: String) -> [CoverageRoot] {
+        settings.string(forKey: Self.rootsKey(bank)).flatMap { try? JSONDecoder().decode([CoverageRoot].self, from: Data($0.utf8)) } ?? []
+    }
+
     func loadRoots() {
         guard let bank else { return roots = [] }
-        roots = settings.string(forKey: Self.rootsKey(bank)).flatMap { try? JSONDecoder().decode([CoverageRoot].self, from: Data($0.utf8)) } ?? []
+        roots = storedRoots(bank)
         includeConversations = false
     }
 
@@ -156,6 +199,7 @@ public final class FileCoverageViewModel {
     }
 
     public func removeRoot(_ root: CoverageRoot) async {
+        loadRoots()
         roots.removeAll { $0.path == root.path }
         saveRoots()
         await reload()
@@ -173,6 +217,7 @@ public final class FileCoverageViewModel {
     }
 
     private func update(_ root: CoverageRoot, _ change: (inout CoverageRoot) -> Void) {
+        loadRoots()
         guard let i = roots.firstIndex(where: { $0.path == root.path }) else { return }
         change(&roots[i])
         saveRoots()
@@ -183,122 +228,202 @@ public final class FileCoverageViewModel {
 
     // MARK: Analyse
 
+    private func context(client: HindsightClient) -> Context? {
+        guard let bank else { return nil }
+        let roots = storedRoots(bank)
+        return Context(revision: contextRevision, bank: bank, server: client.baseURL, authorization: client.authorization, roots: roots,
+                       resolvedRoots: roots.map { $0.url.resolvingSymlinksInPath().standardizedFileURL },
+                       rootIdentities: roots.map { root in (try? FileVersion(root.url).values).map { Array($0.prefix(2)) } },
+                       conversations: includeConversations, policyURL: memoryPolicyURL?()?.standardizedFileURL)
+    }
+
+    private func matches(_ expected: Context) -> Bool { context(client: clientProvider()) == expected }
+
+    private func invalidateApproval() {
+        pendingAction = nil
+        confirmation = nil
+    }
+
+    private func clearReport() {
+        invalidateApproval()
+        detailRevision = UUID()
+        cost = .idle
+        state = .idle
+        reportBank = nil
+        reportContext = nil
+        scanned = nil
+        scannedContext = nil
+        library = []
+        selection = []
+        selectedID = nil
+        warnings = []
+        actionMessage = nil
+        lastAutoSync = nil
+        queuedIDs = []
+        recentSends = [:]
+        hashCache = [:]
+        lastDocuments = nil
+        entriesByID = [:]
+        lastQueue = ([], false)
+    }
+
+    /// À appeler dès un changement de serveur ou de banque, avant les lectures du nouveau contexte.
+    /// Invalide aussi un aller-retour A → B → A pendant une requête ou une confirmation ouverte.
+    public func invalidateContext() {
+        contextRevision = UUID()
+        readRevision = UUID()
+        readContext = nil
+        clearReport()
+        loadRoots()
+        isRefreshing = false
+        progress = nil
+    }
+
+    private func beginRead() -> ReadRequest? {
+        loadRoots()
+        readRevision = UUID()
+        let client = clientProvider()
+        guard let context = context(client: client) else {
+            clearReport()
+            readContext = nil
+            isRefreshing = false
+            progress = nil
+            return nil
+        }
+        if (reportContext ?? readContext) != context { clearReport() }
+        readContext = context
+        isRefreshing = true
+        return ReadRequest(revision: readRevision, context: context, client: client)
+    }
+
+    private func isCurrent(_ request: ReadRequest) -> Bool {
+        !Task.isCancelled && readRevision == request.revision && matches(request.context)
+    }
+
+    private func finishRead(_ request: ReadRequest) {
+        guard readRevision == request.revision else { return }
+        isRefreshing = false
+        progress = nil
+        if state.isLoading { state = .idle }
+    }
+
     public func loadIfNeeded() async {
-        if reportBank != bank || state.value == nil, !state.isLoading { await reload() }
+        let current = context(client: clientProvider())
+        if (reportContext ?? readContext) != current || (state.value == nil && !state.isLoading) { await reload() }
     }
 
     /// Analyse les dossiers et les conversations, puis relit la banque.
     public func reload() async {
-        loadRoots()
-        guard let bank else {
-            state = .idle
-            reportBank = nil
-            library = []
-            return
-        }
-        if reportBank != bank {
-            // Autre banque : rien de l'ancienne ne doit rester affiché pendant la lecture.
-            library = []
-            selection = []
-            selectedID = nil
-            queuedIDs = []
-            recentSends = [:]
-            lastDocuments = nil
-            lastQueue = ([], false)
-        }
-        if state.value == nil || reportBank != bank { state = .loading }
-        isRefreshing = true
-        defer {
-            isRefreshing = false
-            progress = nil
-        }
+        guard let request = beginRead() else { return }
+        defer { finishRead(request) }
+        if state.value == nil { state = .loading }
+        let roots = request.context.roots
         progress = roots.isEmpty ? nil : "Inventaire des dossiers…"
         let (files, warnings) = roots.isEmpty ? ([], []) : await scanner.scan(roots: roots)
+        guard isCurrent(request) else { return }
         var sessions: [CodexSessionSummary] = []
-        if includeConversations, let provider = self.sessions {
+        if request.context.conversations, let provider = self.sessions {
             progress = "Inventaire des conversations…"
             sessions = Self.sessions(await provider(), within: roots)
         }
-        guard self.bank == bank else { return }
+        guard isCurrent(request) else { return }
         self.warnings = warnings
         scanned = (files, sessions)
-        await readMemory(bank: bank)
+        scannedContext = request.context
+        await readMemory(request, inventory: Inventory(files: files, sessions: sessions))
     }
 
     /// Relit la banque (documents, file d'attente) sans réanalyser les dossiers.
     public func refreshMemory() async {
-        guard let bank, scanned != nil, reportBank == bank else { return await reload() }
-        isRefreshing = true
-        defer { isRefreshing = false }
-        await readMemory(bank: bank)
+        let current = context(client: clientProvider())
+        guard let scanned, scannedContext == current, reportContext == current else { return await reload() }
+        guard let request = beginRead() else { return }
+        defer { finishRead(request) }
+        await readMemory(request, inventory: Inventory(files: scanned.files, sessions: scanned.sessions))
     }
 
-    private func readMemory(bank: String) async {
-        guard let scanned else { return }
-        let client = clientProvider()
+    private func readMemory(_ request: ReadRequest, inventory: Inventory) async {
+        let bank = request.context.bank, client = request.client
         do {
             if state.value == nil { progress = "Lecture des documents de « \(bank) »…" }
             let documents = try await Self.allDocuments(client: client, bank: bank)
+            guard isCurrent(request) else { return }
             let queue = await Self.queuedDocuments(client: client, bank: bank)
+            guard isCurrent(request) else { return }
             if state.value == nil { progress = "Comparaison…" }
-            await compare(documents: documents, queue: queue, bank: bank)
+            await compare(documents: documents, queue: queue, request: request, inventory: inventory)
         } catch is CancellationError {
         } catch {
-            if state.value == nil || reportBank != bank { state = .failed(error.userMessage) } else { actionMessage = "Relecture impossible : \(error.userMessage)" }
+            guard isCurrent(request) else { return }
+            if state.value == nil { state = .failed(error.userMessage) } else { actionMessage = "Relecture impossible : \(error.userMessage)" }
         }
     }
 
     /// Compare sources et documents (hors du fil principal), puis reconstruit la liste.
-    private func compare(documents: [DocumentListItem], queue: (ids: Set<String>, active: Bool), bank: String) async {
-        guard let scanned else { return }
-        let files = scanned.files, sessions = scanned.sessions, cache = hashCache
-        let (report, newCache) = await Task.detached(priority: .userInitiated) { () -> (CoverageReport, [String: HashEntry]) in
+    private func compare(documents: [DocumentListItem], queue: (ids: Set<String>, active: Bool), request: ReadRequest, inventory: Inventory) async {
+        guard isCurrent(request) else { return }
+        let files = inventory.files, sessions = inventory.sessions, cache = hashCache
+        let result = await Task.detached(priority: .userInitiated) {
             var cache = cache
             let r = FileCoverage.report(files: files, sessions: sessions, documents: documents) { f in Self.hash(f, cache: &cache) }
-            return (r, cache)
+            return Comparison(report: r, cache: cache)
         }.value
-        // La banque a pu changer pendant la lecture.
-        guard self.bank == bank else { return }
-        hashCache = newCache
+        guard isCurrent(request) else { return }
+        hashCache = result.cache
         lastDocuments = documents
         lastQueue = queue
-        state = .loaded(report)
-        reportBank = bank
+        state = .loaded(result.report)
+        entriesByID = [:]
+        for entry in result.report.entries { entriesByID[entry.id] = entry }
+        reportBank = request.context.bank
+        reportContext = request.context
         rebuildLibrary(queue: queue)
     }
 
     /// Relit seulement les documents en file quand ils sont peu nombreux (une banque peut en compter des
     /// milliers) ; sinon toute la banque.
     public func refreshQueued() async {
-        guard let bank, reportBank == bank, var documents = lastDocuments, !queuedIDs.isEmpty, queuedIDs.count <= 25 else {
+        let current = context(client: clientProvider())
+        guard reportContext == current, scannedContext == current, let scanned,
+              var documents = lastDocuments, !queuedIDs.isEmpty, queuedIDs.count <= 25 else {
             return await refreshMemory()
         }
-        isRefreshing = true
-        defer { isRefreshing = false }
-        let client = clientProvider()
-        for id in queuedIDs {
-            guard let page = try? await client.listDocuments(bank, q: id, limit: 20), self.bank == bank else { continue }
-            if let fresh = page.items.first(where: { $0.id == id }) {
-                if let i = documents.firstIndex(where: { $0.id == id }) { documents[i] = fresh } else { documents.append(fresh) }
+        guard let request = beginRead() else { return }
+        defer { finishRead(request) }
+        let ids = queuedIDs, client = request.client, bank = request.context.bank
+        let inventory = Inventory(files: scanned.files, sessions: scanned.sessions)
+        do {
+            for id in ids {
+                let page = try await client.listDocuments(bank, q: id, limit: 20)
+                guard isCurrent(request) else { return }
+                if let fresh = page.items.first(where: { $0.id == id }) {
+                    if let i = documents.firstIndex(where: { $0.id == id }) { documents[i] = fresh } else { documents.append(fresh) }
+                }
             }
+            let queue = await Self.queuedDocuments(client: client, bank: bank)
+            guard isCurrent(request) else { return }
+            await compare(documents: documents, queue: queue, request: request, inventory: inventory)
+        } catch {
+            guard isCurrent(request) else { return }
+            await readMemory(request, inventory: inventory)
         }
-        let queue = await Self.queuedDocuments(client: client, bank: bank)
-        guard self.bank == bank else { return }
-        await compare(documents: documents, queue: queue, bank: bank)
     }
 
     /// Un document vient d'être remis en extraction (retraitement) : « en file » tout de suite, puis suivi.
     public func markQueued(_ documentID: String) {
+        guard let reportContext, matches(reportContext) else { return }
         recentSends[documentID] = Date()
         rebuildLibrary(queue: (lastQueue.ids, true))
     }
 
-    /// Empreinte d'un fichier texte, recalculée seulement s'il a changé (taille ou date).
+    /// Empreinte recalculée après remplacement ou modification, même si taille et mtime sont conservées.
     nonisolated static func hash(_ f: ScannedFile, cache: inout [String: HashEntry]) -> String? {
-        if let c = cache[f.key], c.size == f.size, c.modified == f.modified { return c.hash }
+        guard let version = try? FileVersion(f.url).values else { return nil }
+        if let c = cache[f.key], c.version == version { return c.hash }
         guard let data = try? Data(contentsOf: f.url) else { return nil }
+        guard (try? FileVersion(f.url).values) == version else { return nil }
         let h = SHA256.hex(data)
-        cache[f.key] = HashEntry(size: f.size, modified: f.modified, hash: h)
+        cache[f.key] = HashEntry(version: version, hash: h)
         return h
     }
 
@@ -395,7 +520,7 @@ public final class FileCoverageViewModel {
         }
     }
 
-    public var selectedEntry: CoverageEntry? { state.value?.entries.first { $0.id == selectedID } }
+    public var selectedEntry: CoverageEntry? { selectedID.flatMap { entriesByID[$0] } }
 
     // MARK: Bibliothèque : filtres
 
@@ -435,16 +560,16 @@ public final class FileCoverageViewModel {
 
     /// Cochable : à envoyer (absent, modifié, sans fait) ou à retirer (présent en mémoire).
     public static func isSelectable(_ e: CoverageEntry) -> Bool {
-        e.canSend || !e.documents.isEmpty || (e.session != nil && e.status != .current)
+        e.canSend || !e.documents.isEmpty
     }
 
     public func toggle(_ id: String) {
         if selection.contains(id) { selection.remove(id) } else { selection.insert(id) }
     }
 
-    /// Choisit ce qui est visible et à envoyer (fichiers ou conversations).
+    /// Choisit les fichiers visibles et envoyables.
     public func selectVisible() {
-        for i in visibleItems where i.canSend || i.canImport { selection.insert(i.id) }
+        for i in visibleItems where i.canSend { selection.insert(i.id) }
     }
 
     public func clearSelection() { selection = [] }
@@ -458,19 +583,30 @@ public final class FileCoverageViewModel {
         guard id != selectedID else { return }
         selectedID = id
         cost = .idle
-        Task { await select(id) }
+        detailRevision = UUID()
+        let revision = detailRevision
+        Task { await readCost(id, revision: revision) }
     }
 
     public func select(_ id: String?) async {
         selectedID = id
         cost = .idle
-        guard let bank, let item = focusedItem, !item.documents.isEmpty else { return }
+        detailRevision = UUID()
+        await readCost(id, revision: detailRevision)
+    }
+
+    private func readCost(_ id: String?, revision: UUID) async {
+        let client = clientProvider()
+        guard revision == detailRevision, selectedID == id, let context = context(client: client), reportContext == context,
+              let item = focusedItem, !item.documents.isEmpty else { return }
+        let bank = context.bank
         cost = .loading
-        let docs = Array(item.documents.prefix(20)), client = clientProvider(), book = priceBook?() ?? .defaults
+        let docs = Array(item.documents.prefix(20)), book = priceBook?() ?? .defaults
         var calls = 0, tokens = TokenCount(), dollars = 0.0, unpriced = 0
         do {
             for d in docs {
                 let page = try await client.llmRequests(bank, callType: ModelCallKind.generativeFilter, documentID: d.id, limit: 500)
+                guard revision == detailRevision, selectedID == id, matches(context), focusedItem?.documents == item.documents, !Task.isCancelled else { return }
                 for r in page.items where r.isGenerative {
                     let t = TokenCount(input: r.inputTokens ?? 0, output: r.outputTokens ?? 0, cached: r.cachedTokens ?? 0, thoughts: r.thoughtsTokens ?? 0)
                     calls += 1
@@ -481,18 +617,70 @@ public final class FileCoverageViewModel {
             var result = Cost(calls: calls, tokens: tokens, dollars: dollars, unpriced: unpriced, documentsRead: docs.count)
             // Le serveur ne garde ses traces qu'un temps : l'historique local de l'app peut en savoir plus.
             if let h = historicalCost?(bank, item.documents.map(\.id)), h.calls > calls { result = h }
-            if selectedID == id { cost = .loaded(result) }
+            if revision == detailRevision, selectedID == id, matches(context), focusedItem?.documents == item.documents, !Task.isCancelled { cost = .loaded(result) }
         } catch {
-            if selectedID == id { cost = .failed(error.userMessage) }
+            if revision == detailRevision, selectedID == id, matches(context), focusedItem?.documents == item.documents, !Task.isCancelled { cost = .failed(error.userMessage) }
         }
     }
 
     // MARK: Envoi (confirmé)
 
+    private struct SourceStamp: Sendable, Equatable {
+        let file: ScannedFile
+        let version: [Int64]
+        let resolvedURL: URL
+        let hash: String
+    }
+
+    private struct PreparedUpload: Sendable {
+        let upload: Upload
+        let sources: [SourceStamp]
+    }
+
+    /// Refuse les liens ajoutés sous un dossier choisi. Les octets lus et leur identité restent figés
+    /// jusqu'à la validation ; l'envoi ne relit jamais un autre fichier à la place de celui approuvé.
+    nonisolated private static func readSource(_ file: ScannedFile, roots: [CoverageRoot]?) throws -> (data: Data, stamp: SourceStamp) {
+        let url = file.url.standardizedFileURL, fm = FileManager.default
+        guard (try fm.attributesOfItem(atPath: url.path)[.type] as? FileAttributeType) == .typeRegular else {
+            throw HindsightError.refused("Source remplacée ou non ordinaire : \(file.key)")
+        }
+        if let roots {
+            guard let root = roots.first(where: {
+                url.path.hasPrefix($0.url.standardizedFileURL.path + "/") && FileCoverage.includes(file.path, allFiles: $0.allFiles)
+            }) else { throw HindsightError.refused("Source hors des dossiers suivis : \(file.key)") }
+            let rootURL = root.url.standardizedFileURL
+            var parent = url.deletingLastPathComponent()
+            while parent != rootURL {
+                guard (try fm.attributesOfItem(atPath: parent.path)[.type] as? FileAttributeType) == .typeDirectory else {
+                    throw HindsightError.refused("Le chemin de la source a changé : \(file.key)")
+                }
+                let next = parent.deletingLastPathComponent()
+                guard next != parent else { throw HindsightError.refused("Source hors du dossier suivi.") }
+                parent = next
+            }
+            let resolved = url.resolvingSymlinksInPath().standardizedFileURL
+            guard resolved.path.hasPrefix(rootURL.resolvingSymlinksInPath().standardizedFileURL.path + "/") else {
+                throw HindsightError.refused("Source hors du dossier suivi : \(file.key)")
+            }
+        }
+        let before = try FileVersion(url).values
+        let resolved = url.resolvingSymlinksInPath().standardizedFileURL
+        let data = try Data(contentsOf: url)
+        guard try FileVersion(url).values == before,
+              (try fm.attributesOfItem(atPath: url.path)[.type] as? FileAttributeType) == .typeRegular,
+              url.resolvingSymlinksInPath().standardizedFileURL == resolved else {
+            throw HindsightError.refused("Le fichier a changé pendant la lecture : \(file.key)")
+        }
+        return (data, SourceStamp(file: file, version: before, resolvedURL: resolved, hash: SHA256.hex(data)))
+    }
+
     /// Lit les fichiers choisis (hors du fil principal) et prépare les requêtes.
-    nonisolated static func prepare(_ files: [ScannedFile]) -> Upload {
+    nonisolated static func prepare(_ files: [ScannedFile]) -> Upload { prepareFiles(files, roots: nil).upload }
+
+    nonisolated private static func prepareFiles(_ files: [ScannedFile], roots: [CoverageRoot]?) -> PreparedUpload {
         var items: [(MemoryItem, Int)] = []
         var uploads: [(UploadFile, FileRetainMetadata)] = []
+        var sources: [SourceStamp] = []
         var characters = 0
         var unreadable: [String] = []
         for f in files {
@@ -500,10 +688,11 @@ public final class FileCoverageViewModel {
                 unreadable.append(f.key + " (PDF : fournir la source TeX ou Markdown)")
                 continue
             }
-            guard let data = try? Data(contentsOf: f.url) else {
+            guard let source = try? readSource(f, roots: roots) else {
                 unreadable.append(f.key)
                 continue
             }
+            let data = source.data
             if FileCoverage.isText(f.path) {
                 guard let text = String(data: data, encoding: .utf8) else {
                     unreadable.append(f.key + " (pas du texte UTF-8)")
@@ -516,8 +705,16 @@ public final class FileCoverageViewModel {
                 uploads.append(u)
                 characters += u.file.mimeType == "text/html" ? u.file.data.count / 3 : u.file.data.count / 10
             }
+            sources.append(source.stamp)
         }
-        return Upload(items: items, files: uploads, characters: characters, unreadable: unreadable)
+        return PreparedUpload(upload: Upload(items: items, files: uploads, characters: characters, unreadable: unreadable), sources: sources)
+    }
+
+    nonisolated private static func sourcesUnchanged(_ sources: [SourceStamp], roots: [CoverageRoot]) -> Bool {
+        sources.allSatisfy { source in
+            guard let current = try? readSource(source.file, roots: roots) else { return false }
+            return current.stamp == source
+        }
     }
 
     private func selectionPolicyError(_ entries: [CoverageEntry], bank: String) -> String? {
@@ -547,25 +744,33 @@ public final class FileCoverageViewModel {
     }
 
     public func requestSend() async {
-        guard let bank else { return }
-        if let reason = pauseGate?(bank) {
-            actionMessage = reason
-            return
-        }
+        guard writeAction == nil, preparingAction == nil else { return }
+        invalidateApproval()
+        let client = clientProvider()
+        guard let context = context(client: client) else { return }
+        let bank = context.bank, approvedSelection = selection, token = UUID()
         let selected = selectedEntries
-        let conversations = selected.filter { $0.session != nil && $0.status != .current }.compactMap(\.session).map(\.id)
         let entries = selected.filter(\.canSend)
-        if let reason = selectionPolicyError(entries, bank: bank) {
-            confirmation = nil
+        if let reason = pauseGate?(bank) ?? selectionPolicyError(entries, bank: bank) {
             actionMessage = reason
             return
         }
-        guard !entries.isEmpty else {
-            if !conversations.isEmpty { openImport?(conversations, bank) }
+        guard context == reportContext else {
+            actionMessage = "Le contexte a changé. Actualisez les dossiers avant de préparer l’envoi."
             return
         }
-        let upload = await Task.detached(priority: .userInitiated) { Self.prepare(entries.map(\.file)) }.value
+        pendingAction = token
+        guard !entries.isEmpty else { invalidateApproval(); return }
+        preparingAction = token
+        defer { if preparingAction == token { preparingAction = nil } }
+        let prepared = await Task.detached(priority: .userInitiated) { Self.prepareFiles(entries.map(\.file), roots: context.roots) }.value
+        guard pendingAction == token, matches(context), selection == approvedSelection, !Task.isCancelled else {
+            if pendingAction == token { invalidateApproval() }
+            return
+        }
+        let upload = prepared.upload
         guard upload.count > 0 else {
+            invalidateApproval()
             actionMessage = "Aucun fichier lisible parmi la sélection : " + upload.unreadable.joined(separator: ", ")
             return
         }
@@ -574,65 +779,107 @@ public final class FileCoverageViewModel {
             "\(upload.count) fichier(s) → banque « \(bank) » : \(upload.items.count) en texte, \(upload.files.count) converti(s) par le serveur (HTML, Office).",
             "≈ \(Format.number(upload.approxTokens)) jetons envoyés au LLM d'extraction (estimation grossière pour les fichiers convertis).",
         ]
-        lines.append("Documents sélectionnés :\n" + entries.filter { entry in !upload.unreadable.contains { $0.hasPrefix(entry.file.key + " (") } }.map { "• " + $0.file.key }.joined(separator: "\n"))
+        lines.append("Documents sélectionnés :\n" + prepared.sources.map { "• " + $0.file.key }.joined(separator: "\n"))
         if replaced > 0 { lines.append("\(replaced) document(s) existant(s) seront REMPLACÉS : leurs faits sont supprimés puis réextraits.") }
         if !upload.unreadable.isEmpty { lines.append("Ignoré(s) : " + upload.unreadable.joined(separator: ", ")) }
         if let e = estimate?(bank, .retain(characters: upload.characters, images: 0, consolidation: true)) { lines.append(e.summary) }
-        if !conversations.isEmpty { lines.append("Les \(conversations.count) conversation(s) cochée(s) s'ouvriront ensuite dans « Importer ».") }
         lines.append("Les images intégrées aux HTML sont retirées. L'extraction se fait en tâche de fond ; suivez-la dans « Opérations ».")
         confirmation = ConfirmationRequest(
             title: "Envoyer à « \(bank) » ?", message: lines.joined(separator: "\n"), confirmTitle: "Envoyer",
             severity: replaced > 0 ? .destructive : .normal
         ) { [weak self] in
-            guard let self else { return }
-            // Une pause a pu être décidée pendant que la confirmation était ouverte.
-            if let reason = self.pauseGate?(bank) {
-                self.actionMessage = reason
+            guard let self, self.consume(token) else { return }
+            defer { self.finishWrite(token) }
+            guard self.validateSend(context: context, selection: approvedSelection, entries: entries) else { return }
+            let unchanged = await Task.detached(priority: .userInitiated) {
+                Self.sourcesUnchanged(prepared.sources, roots: context.roots)
+            }.value
+            guard self.validateSend(context: context, selection: approvedSelection, entries: entries) else { return }
+            guard unchanged else {
+                self.actionMessage = "Un fichier a été modifié ou remplacé. Préparez à nouveau l’envoi."
                 return
             }
-            if let reason = self.selectionPolicyError(entries, bank: bank) {
-                self.actionMessage = reason
-                return
-            }
-            await self.perform(upload, bank: bank)
-            if !conversations.isEmpty { self.openImport?(conversations, bank) }
+            await self.perform(upload, client: client, context: context, selection: approvedSelection, entries: entries)
         }
     }
 
+    /// Le pont retire sa confirmation avant d'appeler `perform` ; le jeton privé reste consommable une
+    /// seule fois, indépendamment de cette propriété d'affichage.
+    private func consume(_ token: UUID) -> Bool {
+        guard pendingAction == token, preparingAction == nil, writeAction == nil else { return false }
+        pendingAction = nil
+        confirmation = nil
+        writeAction = token
+        readRevision = UUID()
+        detailRevision = UUID()
+        isRefreshing = false
+        progress = nil
+        return true
+    }
+
+    private func finishWrite(_ token: UUID) {
+        guard writeAction == token else { return }
+        writeAction = nil
+        sending = nil
+    }
+
+    private func validateSend(context: Context, selection approvedSelection: Set<String>, entries: [CoverageEntry]) -> Bool {
+        guard !Task.isCancelled, matches(context), selection == approvedSelection else {
+            actionMessage = "Le serveur, les dossiers ou la sélection ont changé. Préparez à nouveau l’envoi."
+            return false
+        }
+        if let reason = pauseGate?(context.bank) ?? selectionPolicyError(entries, bank: context.bank) {
+            actionMessage = reason
+            return false
+        }
+        guard reportContext == context, entries.allSatisfy({ approved in
+            guard let current = entriesByID[approved.id] else { return false }
+            return current.file.url == approved.file.url && current.documents == approved.documents && current.canSend
+        }) else {
+            actionMessage = "Les documents ont changé. Actualisez la liste avant de préparer l’envoi."
+            return false
+        }
+        return true
+    }
+
     @discardableResult
-    func perform(_ upload: Upload, bank: String) async -> Int {
-        let client = clientProvider()
+    private func perform(_ upload: Upload, client: HindsightClient, context: Context, selection approvedSelection: Set<String>, entries: [CoverageEntry]) async -> Int {
+        let bank = context.bank
         var operations = 0, sent = 0, errors: [String] = []
         sending = (0, upload.count)
         let start = Date()
-        for batch in CodexImportViewModel.batches(upload.items, byteLimit: 8_000_000, itemLimit: 10) {
+        for batch in RetainBatching.batches(upload.items, byteLimit: 8_000_000, itemLimit: 10) {
+            guard validateSend(context: context, selection: approvedSelection, entries: entries) else { return sent }
             do {
                 let r = try await client.retain(bank, RetainRequest(items: batch, async: true))
+                guard r.success else { throw HindsightError.refused("L’envoi a été refusé par le serveur.") }
                 operations += r.operationIds?.count ?? (r.operationId == nil ? 0 : 1)
                 sent += batch.count
-                for item in batch { if let id = item.documentId { recentSends[id] = start } }
+                if matches(context) { for item in batch { if let id = item.documentId { recentSends[id] = start } } }
             } catch {
                 errors.append("\(batch.first?.documentId ?? "?")… : \(error.userMessage)")
             }
-            sending = (sent, upload.count)
+            if matches(context) { sending = (sent, upload.count) }
         }
         for batch in Self.fileBatches(upload.files, limit: fileBatchLimit, bytes: fileBatchBytes) {
+            guard validateSend(context: context, selection: approvedSelection, entries: entries) else { return sent }
             do {
                 let r = try await client.retainFiles(bank, files: batch.map(\.file), metadata: batch.map(\.metadata))
                 operations += r.operationIds.count
                 sent += batch.count
-                for f in batch { if let id = f.metadata.documentId { recentSends[id] = start } }
+                if matches(context) { for f in batch { if let id = f.metadata.documentId { recentSends[id] = start } } }
             } catch {
                 errors.append("\(batch.first?.metadata.documentId ?? "?")… : \(error.userMessage)")
             }
-            sending = (sent, upload.count)
+            if matches(context) { sending = (sent, upload.count) }
         }
+        guard matches(context), !Task.isCancelled else { return sent }
         sending = nil
-        selection = []
+        if selection == approvedSelection { selection = [] }
         actionMessage =
             "\(sent)/\(upload.count) fichier(s) mis en file d'extraction dans « \(bank) » (\(operations) opération(s))."
             + (errors.isEmpty ? "" : " Refusés : " + errors.joined(separator: " ; "))
-        if sent > 0, reportBank == bank { await refreshMemory() }
+        if sent > 0, reportContext == context { await refreshMemory() }
         return sent
     }
 
@@ -670,29 +917,79 @@ public final class FileCoverageViewModel {
     }
 
     public func requestRemove(_ docs: [DocumentListItem], what: String) {
-        guard let bank, !docs.isEmpty else { return }
+        guard writeAction == nil, preparingAction == nil else { return }
+        invalidateApproval()
+        let client = clientProvider()
+        guard let context = context(client: client), reportContext == context, !docs.isEmpty else { return }
+        var seen = Set<String>()
+        let docs = docs.filter { seen.insert($0.id).inserted }
+        let knownDocuments = Set(lastDocuments ?? [])
+        guard docs.allSatisfy({ knownDocuments.contains($0) }) else {
+            actionMessage = "Les documents ont changé. Actualisez la liste avant de préparer le retrait."
+            return
+        }
+        let bank = context.bank, approvedSelection = selection, token = UUID()
+        let orphanIDs = Set(state.value?.orphans.map(\.id) ?? []).intersection(docs.map(\.id))
+        pendingAction = token
         let facts = docs.reduce(0) { $0 + $1.memoryUnitCount }
         confirmation = ConfirmationRequest(
             title: "Retirer \(docs.count) document(s) de « \(bank) » ?",
             message: "\(what) : \(Format.count(docs.count, "document")) et \(Format.count(facts, "fait")) supprimés définitivement de la banque. Les fichiers ne sont pas touchés ; les renvoyer coûtera une nouvelle extraction.",
             confirmTitle: "Retirer", severity: .destructive, requiredText: docs.count > 10 ? bank : nil
         ) { [weak self] in
-            await self?.remove(docs, bank: bank)
+            guard let self, self.consume(token) else { return }
+            defer { self.finishWrite(token) }
+            guard self.validateRemoval(context: context, selection: approvedSelection) else { return }
+            do {
+                let current = try await Self.allDocuments(client: client, bank: bank)
+                guard self.validateRemoval(context: context, selection: approvedSelection) else { return }
+                let byID = Dictionary(grouping: current, by: \.id)
+                guard docs.allSatisfy({ byID[$0.id] == [$0] }) else {
+                    self.actionMessage = "Les documents ont changé depuis la confirmation. Préparez à nouveau le retrait."
+                    return
+                }
+                // Un fichier « sans source » a pu être restauré depuis l'inventaire.
+                let repositories = FileCoverageScanner.repositories(in: context.roots.map(\.url))
+                let restored = docs.contains { doc in
+                    guard orphanIDs.contains(doc.id), let source = FileCoverage.repoAndPath(doc) else { return false }
+                    return repositories.contains { repo in
+                        repo.lastPathComponent == source.repo && FileManager.default.fileExists(atPath: repo.appendingPathComponent(source.path).path)
+                    }
+                }
+                guard !restored else {
+                    self.actionMessage = "Un fichier source a été retrouvé. Actualisez les dossiers avant de préparer le retrait."
+                    return
+                }
+                await self.remove(docs, client: client, context: context, selection: approvedSelection)
+            } catch {
+                if self.matches(context) { self.actionMessage = "Vérification impossible : \(error.userMessage)" }
+            }
         }
     }
 
-    func remove(_ docs: [DocumentListItem], bank: String) async {
-        let client = clientProvider()
+    private func validateRemoval(context: Context, selection approvedSelection: Set<String>) -> Bool {
+        guard !Task.isCancelled, matches(context), selection == approvedSelection else {
+            actionMessage = "Le serveur, les dossiers ou la sélection ont changé. Préparez à nouveau le retrait."
+            return false
+        }
+        return true
+    }
+
+    private func remove(_ docs: [DocumentListItem], client: HindsightClient, context: Context, selection approvedSelection: Set<String>) async {
+        let bank = context.bank
         var removed = 0, errors: [String] = []
         for d in docs {
+            guard validateRemoval(context: context, selection: approvedSelection) else { return }
             do {
-                _ = try await client.deleteDocument(bank, id: d.id)
+                let result = try await client.deleteDocument(bank, id: d.id)
+                guard result.success else { throw HindsightError.refused(result.message) }
                 removed += 1
             } catch {
                 errors.append("\(d.id) : \(error.userMessage)")
             }
         }
-        selection = []
+        guard matches(context), !Task.isCancelled else { return }
+        if selection == approvedSelection { selection = [] }
         actionMessage = "\(removed)/\(docs.count) document(s) retiré(s) de « \(bank) »." + (errors.isEmpty ? "" : " Échecs : " + errors.joined(separator: " ; "))
         await refreshMemory()
     }
@@ -708,39 +1005,12 @@ public final class FileCoverageViewModel {
         }
     }
 
-    /// Un passage : analyse, puis envoi si le volume tient sous le plafond.
+    /// Les anciens réglages restent lisibles ; aucun envoi automatique n'est exécuté.
     public func autoSyncOnce() async {
         loadRoots()
         if roots.contains(where: \.autoSync) {
             lastAutoSync = "Synchronisation automatique suspendue : sélectionnez et validez chaque envoi."
-            return
         }
-        guard let bank, roots.contains(where: \.autoSync), sending == nil, confirmation == nil else { return }
-        if pauseGate?(bank) != nil {
-            lastAutoSync = "Synchronisation automatique suspendue : la banque est en pause (\(Format.dateTime(Date())))."
-            return
-        }
-        await reload()
-        // L'analyse est longue : la banque affichée ou la pause ont pu changer entre-temps.
-        guard self.bank == bank, reportBank == bank else { return }
-        if pauseGate?(bank) != nil {
-            lastAutoSync = "Synchronisation automatique suspendue : la banque est en pause (\(Format.dateTime(Date())))."
-            return
-        }
-        let entries = autoSyncEntries
-        guard !entries.isEmpty else {
-            lastAutoSync = "Synchronisation automatique : rien à envoyer (\(Format.dateTime(Date())))."
-            return
-        }
-        let upload = await Task.detached(priority: .utility) { Self.prepare(entries.map(\.file)) }.value
-        guard self.bank == bank, pauseGate?(bank) == nil else { return }
-        guard upload.approxTokens <= autoSyncTokenLimit else {
-            lastAutoSync = "Synchronisation automatique suspendue : \(entries.count) fichier(s), ≈ \(Format.number(upload.approxTokens)) jetons, au-delà du plafond de \(Format.number(autoSyncTokenLimit)). Envoyez-les à la main ou relevez le plafond."
-            return
-        }
-        let sent = await perform(upload, bank: bank)
-        lastAutoSync = "Synchronisation automatique : \(sent) fichier(s) envoyé(s) (\(Format.dateTime(Date())))."
-        await reload()
     }
 
     /// Boucle de fond, tant que l'app est ouverte.
@@ -750,6 +1020,7 @@ public final class FileCoverageViewModel {
             while !Task.isCancelled {
                 guard let interval = self?.autoSyncInterval else { return }
                 try? await Task.sleep(for: interval)
+                guard !Task.isCancelled else { return }
                 await self?.autoSyncOnce()
             }
         }

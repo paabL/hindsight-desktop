@@ -90,7 +90,6 @@ try {
     'operations',
     'audit',
     'timeline',
-    'hermes',
     'server',
     'admin',
     'facts',

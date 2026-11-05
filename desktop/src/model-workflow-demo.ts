@@ -178,8 +178,21 @@ export function modelWorkflowDemo() {
   };
 }
 
-let saved: Row | undefined;
-let revision = 0;
+type DemoState = { saved: Row; pending?: Row; revision: number };
+const states = new WeakMap<Row, DemoState>();
+function modelSnapshot(server: Row): Row {
+  return structuredClone({
+    roles: server.roles,
+    modelWorkflow: server.modelWorkflow,
+    decision: server.hindsightModels?.decision,
+  });
+}
+function restoreSnapshot(server: Row, snapshot: Row) {
+  const saved = structuredClone(snapshot);
+  server.roles = saved.roles;
+  server.modelWorkflow = saved.modelWorkflow;
+  if (server.hindsightModels) server.hindsightModels.decision = saved.decision;
+}
 export function changeModelWorkflowDemo(server: Row, command: string, args: Row): boolean {
   if (
     ![
@@ -192,14 +205,26 @@ export function changeModelWorkflowDemo(server: Row, command: string, args: Row)
   )
     return false;
   if (command === 'confirm' && args.id !== 'example-model-save') return false;
-  saved ??= structuredClone({ roles: server.roles, modelWorkflow: server.modelWorkflow });
+  let state = states.get(server);
+  if (!state) {
+    state = { saved: modelSnapshot(server), revision: 0 };
+    states.set(server, state);
+  }
   if (command === 'server.revert') {
-    Object.assign(server, structuredClone(saved), { hasChanges: false });
+    restoreSnapshot(server, state.saved);
+    state.pending = undefined;
+    server.hasChanges = false;
     return true;
   }
-  if (command === 'server.save') return true;
+  if (command === 'server.save') {
+    state.pending = modelSnapshot(server);
+    return true;
+  }
   if (command === 'confirm') {
-    saved = structuredClone({ roles: server.roles, modelWorkflow: server.modelWorkflow });
+    if (!state.pending) throw new Error('Cette confirmation a expiré.');
+    state.saved = state.pending;
+    state.pending = undefined;
+    restoreSnapshot(server, state.saved);
     server.hasChanges = false;
     server.needsRestart = true;
     return true;
@@ -240,7 +265,7 @@ export function changeModelWorkflowDemo(server: Row, command: string, args: Row)
             enabled('MENTAL_MODEL_REFRESH_USE_DECISION_MODEL')
           : enabled(op.toUpperCase() + '_USE_DECISION_MODEL')));
   }
-  w.revision = 'example-' + ++revision;
+  w.revision = 'example-' + ++state.revision;
   server.hasChanges = true;
   return true;
 }

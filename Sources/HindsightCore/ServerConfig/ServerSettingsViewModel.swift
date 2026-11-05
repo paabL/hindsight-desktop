@@ -58,6 +58,7 @@ public final class ServerSettingsViewModel {
     public private(set) var original: LaunchScript?
     public private(set) var draft: LaunchScript?
     @ObservationIgnored private var originalText = ""
+    @ObservationIgnored private var loadedScriptURL: URL?
     public private(set) var backups: [LaunchScriptStore.Backup] = []
     /// Le fichier a été enregistré depuis le dernier redémarrage réussi.
     public private(set) var needsRestart = false
@@ -96,14 +97,17 @@ public final class ServerSettingsViewModel {
         settings.set(scriptPath, forKey: SettingsKey.launchScriptPath)
         state = .loading
         do {
-            let text = try store.read()
+            let source = store
+            let text = try source.read()
             originalText = text
+            loadedScriptURL = source.url
             original = LaunchScript(text: text)
             draft = original
             refreshModelCatalog()
             backups = store.backups()
             state = .loaded(())
         } catch {
+            loadedScriptURL = nil
             original = nil
             draft = nil
             state = .failed("\(error)")
@@ -417,6 +421,10 @@ public final class ServerSettingsViewModel {
 
     /// Serveur de décision de ce Mac (`LocalDecisionModel`), avec sa clé.
     public func useLocalDecisionModel(apiKey: String) {
+        guard connectionContext.isLocalServer else {
+            actionMessage = "Le modèle installé sur ce Mac nécessite un serveur Hindsight local. Sélectionnez d'abord son adresse locale."
+            return
+        }
         setValue(Decision.provider, "hindsight")
         setValue(Decision.model, nil)
         setValue(Decision.baseURL, LocalDecisionModel.baseURL)
@@ -461,13 +469,18 @@ public final class ServerSettingsViewModel {
 
     /// Validate newly selected Cloud endpoints without running shell or reading account tokens.
     public var configurationProblems: [String] {
-        guard let draft, let original, !connections.status(.hindsightCloud).isConnected else { return [] }
+        guard let draft, let original else { return [] }
+        return configurationProblems(for: draft, replacing: original)
+    }
+
+    private func configurationProblems(for draft: LaunchScript, replacing original: LaunchScript) -> [String] {
+        let connected = connectionContext.isLocalServer && connections.status(.hindsightCloud).isConnected
         let targets = [
             ("RERANKER", "RERANKER_HINDSIGHT_API_KEY", "RERANKER_BASE_URL"),
             ("EMBEDDINGS", "EMBEDDINGS_HINDSIGHT_API_KEY", "EMBEDDINGS_BASE_URL"),
             ("DECISION_MODEL", "DECISION_MODEL_API_KEY", "DECISION_MODEL_BASE_URL"),
         ]
-        return targets.compactMap { role, key, url in
+        var problems = targets.compactMap { role, key, url -> String? in
             let provider = "HINDSIGHT_API_" + role + "_PROVIDER"
             let keyName = "HINDSIGHT_API_" + key
             let urlName = "HINDSIGHT_API_" + url
@@ -475,14 +488,41 @@ public final class ServerSettingsViewModel {
             if role == "DECISION_MODEL", let address = draft.value(urlName), !address.isEmpty, address != HindsightInference.url { return nil }
             // Existing external credential arrangements are left alone; validate an actual change.
             guard [provider, keyName, urlName].contains(where: { draft.value($0) != original.value($0) }) else { return nil }
+            guard !connected else { return nil }
             return "Hindsight Cloud : connectez votre compte ou configurez \(keyName). Pour un modèle local, choisissez « Sur ce Mac »."
         }
+        let global = "HINDSIGHT_API_DECISION_MODEL_"
+        for operation in ["RECALL", "REFLECT", "CONSOLIDATION"] {
+            let own = "HINDSIGHT_API_\(operation)_DECISION_MODEL_"
+            let ownProvider = draft.value(own + "PROVIDER").flatMap { $0.isEmpty ? nil : $0 }
+            let globalProvider = draft.value(global + "PROVIDER") ?? "none"
+            guard (ownProvider ?? globalProvider) == "hindsight" else { continue }
+            let inherits = ownProvider == nil || ownProvider == globalProvider
+            func setting(_ suffix: String) -> String {
+                let local = draft.value(own + suffix) ?? ""
+                return local.isEmpty && inherits ? draft.value(global + suffix) ?? "" : local
+            }
+            let address = setting("BASE_URL")
+            guard address.isEmpty || address == HindsightInference.url else { continue }
+            let relevant = [own, global].flatMap { prefix in ["PROVIDER", "BASE_URL", "API_KEY"].map { prefix + $0 } }
+            guard relevant.contains(where: { draft.value($0) != original.value($0) }) else { continue }
+            let inheritedLocalKey = inherits && (draft.value(own + "API_KEY") ?? "").isEmpty
+                && draft.value(global + "BASE_URL") == LocalDecisionModel.baseURL && !setting("API_KEY").isEmpty
+            if inheritedLocalKey {
+                problems.append("Décision \(operation.lowercased()) : l'URL Cloud hériterait de la clé du modèle local. Choisissez l'URL locale ou une clé propre à cette opération avant d'enregistrer.")
+            } else if setting("API_KEY").isEmpty && !connected {
+                problems.append("Décision \(operation.lowercased()) sur Hindsight Cloud : connectez le compte ou configurez \(own)API_KEY. Pour un modèle local, choisissez l'URL de ce Mac.")
+            }
+        }
+        return problems
     }
 
     public func requestSave() {
-        guard hasChanges, let draft else { return }
+        guard hasChanges, let draft, loadedScriptURL == store.url else { return }
         guard configurationProblems.isEmpty else { actionMessage = configurationProblems.joined(separator: "\n"); confirmation = nil; return }
         let summary = changeSummary
+        let destination = store
+        let expected = originalText
         confirmation = ConfirmationRequest(
             title: "Enregistrer le script de lancement ?",
             message:
@@ -490,22 +530,23 @@ public final class ServerSettingsViewModel {
                 + "\n\nUne copie de l'état actuel sera faite à côté du fichier avant l'écriture. Rien ne change pour le serveur tant qu'il n'est pas redémarré.",
             confirmTitle: "Enregistrer", severity: .normal
         ) { [weak self] in
-            await self?.save(draft.text)
+            await self?.save(draft.text, to: destination, expecting: expected)
         }
     }
 
-    private func save(_ text: String) async {
-        // Recheck the exact confirmed draft; a newer draft cannot authorize different text.
-        let current = draft
-        draft = LaunchScript(text: text)
-        let problems = configurationProblems
-        draft = current
+    private func save(_ text: String, to destination: LaunchScriptStore, expecting expected: String, restoring: Bool = false) async {
+        guard loadedScriptURL == destination.url, store.url == destination.url, originalText == expected else {
+            actionMessage = "Les réglages ont changé depuis la confirmation. Rechargez le script et réessayez."
+            return
+        }
+        let problems = configurationProblems(for: LaunchScript(text: text), replacing: LaunchScript(text: expected))
         guard problems.isEmpty else { actionMessage = problems.joined(separator: "\n"); return }
         do {
-            let backup = try store.save(text, expecting: originalText)
-            actionMessage = "Enregistré. Sauvegarde : \(backup.lastPathComponent). Redémarrez le serveur pour appliquer."
+            let backup = try destination.save(text, expecting: expected)
+            actionMessage = restoring ? "Sauvegarde restaurée. Redémarrez le serveur pour appliquer."
+                : "Enregistré. Sauvegarde : \(backup.lastPathComponent). Redémarrez le serveur pour appliquer."
             needsRestart = true
-            service?.approveCurrentScript()
+            service?.approveScript(at: destination.url, hash: SHA256.hex(Data(text.utf8)))
             await load()
         } catch {
             actionMessage = "Échec : \(error)"
@@ -513,27 +554,30 @@ public final class ServerSettingsViewModel {
     }
 
     public func requestRestore(_ backup: LaunchScriptStore.Backup) {
+        guard let original, loadedScriptURL == store.url else { return }
+        let destination = store
+        let expected = originalText
+        let text: String
+        do { text = try String(contentsOf: backup.url, encoding: .utf8) }
+        catch { actionMessage = "Échec : \(error)"; return }
+        let candidate = LaunchScript(text: text)
+        let problems = configurationProblems(for: candidate, replacing: original)
+        guard problems.isEmpty else { actionMessage = problems.joined(separator: "\n"); confirmation = nil; return }
+        let changes = LineDiff.compact(LineDiff.diff(original.lines.map(LaunchScript.masked), candidate.lines.map(LaunchScript.masked)))
+            .map(\.text).joined(separator: "\n")
         confirmation = ConfirmationRequest(
             title: "Restaurer \(backup.url.lastPathComponent) ?",
-            message: "Le script actuel sera remplacé par cette sauvegarde (il est lui-même sauvegardé d'abord). Redémarrez ensuite le serveur.",
+            message: "Le script actuel sera remplacé par cette sauvegarde (il est lui-même sauvegardé d'abord). Redémarrez ensuite le serveur.\n\n" + changes,
             confirmTitle: "Restaurer"
         ) { [weak self] in
-            guard let self else { return }
-            do {
-                try self.store.restore(backup)
-                self.actionMessage = "Sauvegarde restaurée. Redémarrez le serveur pour appliquer."
-                self.needsRestart = true
-                self.service?.approveCurrentScript()
-                await self.load()
-            } catch {
-                self.actionMessage = "Échec : \(error)"
-            }
+            await self?.save(text, to: destination, expecting: expected, restoring: true)
         }
     }
 
     /// A completed managed restart applies only the script that was actually started.
-    public func acknowledgeStartedScript(_ hash: String?) {
-        guard let hash, hash == SHA256.hex(Data(originalText.utf8)),
+    public func acknowledgeStartedScript(_ hash: String?, at url: URL? = nil) {
+        if let source = url ?? service?.scriptURL, source.resolvingSymlinksInPath() != store.url { return }
+        guard loadedScriptURL == store.url, let hash, hash == SHA256.hex(Data(originalText.utf8)),
               let disk = try? store.read(), hash == SHA256.hex(Data(disk.utf8)) else { return }
         needsRestart = false
     }
@@ -550,7 +594,9 @@ public final class ServerSettingsViewModel {
     }
 
     public func requestRestart() {
+        guard !isRestarting else { return }
         let cmd = restartCommand.trimmingCharacters(in: .whitespacesAndNewlines)
+        let context = restartContext()
         if usesManagedService, let service {
             service.inspectScript()
             if let problem = service.blockingIssues.first {
@@ -558,14 +604,21 @@ public final class ServerSettingsViewModel {
                 return
             }
             let changed = service.scriptChangedSinceApproval
+            let scriptURL = service.scriptURL
+            let scriptHash = service.scriptHash
             confirmation = ConfirmationRequest(
                 title: "Redémarrer le serveur Hindsight ?",
                 message: (changed ? "Le script a été modifié hors de l'app depuis votre dernière approbation : vérifiez-le.\n\n" : "")
                     + "Le service de l'app relance \(service.scriptURL.path).\n\nLes requêtes en cours seront interrompues ; les opérations en file seront reprises par le serveur à son redémarrage. L'app attend ensuite que l'API réponde puis teste les LLM.",
                 confirmTitle: changed ? "Approuver et redémarrer" : "Redémarrer"
             ) { [weak self] in
-                if changed { service.approveCurrentScript() }
-                await self?.restartManaged()
+                guard let self, self.validateRestart(context), let scriptHash,
+                      service.scriptURL == scriptURL, service.scriptHash == scriptHash else { return }
+                if changed, !service.approveScript(at: scriptURL, hash: scriptHash) {
+                    self.actionMessage = "Le script a changé depuis la confirmation : vérifiez-le à nouveau."
+                    return
+                }
+                await self.restartManaged(context: context)
             }
             return
         }
@@ -580,11 +633,49 @@ public final class ServerSettingsViewModel {
                 "Commande exécutée sur ce Mac :\n\(cmd)\n\nLes requêtes en cours seront interrompues ; les opérations en file seront reprises par le serveur à son redémarrage. L'app attend ensuite que l'API réponde puis teste les LLM.",
             confirmTitle: "Redémarrer"
         ) { [weak self] in
-            await self?.restart(cmd)
+            guard let self, self.validateRestart(context) else { return }
+            await self.restart(cmd, context: context)
         }
     }
 
+    private struct RestartContext {
+        let client: HindsightClient
+        let bank: String?
+        let scriptURL: URL
+        let scriptHash: String?
+    }
+
+    private var isRestarting: Bool {
+        if case .running = restartState { return true }
+        return false
+    }
+
+    private func restartContext() -> RestartContext {
+        let source = store
+        return RestartContext(client: clientProvider(), bank: bankProvider(), scriptURL: source.url,
+                              scriptHash: (try? source.read()).map { SHA256.hex(Data($0.utf8)) })
+    }
+
+    private func matches(_ context: RestartContext) -> Bool {
+        let current = clientProvider()
+        return context.client.baseURL == current.baseURL && context.client.authorization == current.authorization
+            && context.bank == bankProvider() && context.scriptURL == store.url
+    }
+
+    private func validateRestart(_ context: RestartContext) -> Bool {
+        guard matches(context), context.scriptHash == restartContext().scriptHash else {
+            actionMessage = "Le serveur, la banque ou le script a changé depuis la confirmation. Réessayez."
+            return false
+        }
+        return true
+    }
+
     func restartManaged() async {
+        await restartManaged(context: restartContext())
+    }
+
+    private func restartManaged(context: RestartContext) async {
+        guard !isRestarting else { return }
         guard let service else { return }
         restartState = .running("Redémarrage du service…")
         restartLog = ""
@@ -594,10 +685,16 @@ public final class ServerSettingsViewModel {
             restartState = .failed(service.message ?? "Le serveur ne répond pas après le redémarrage.")
             return
         }
-        await verifyAfterRestart(alreadyUp: true)
+        await verifyAfterRestart(alreadyUp: true, context: context,
+                                 startedHash: service.scriptURL.resolvingSymlinksInPath() == context.scriptURL ? service.startedScriptHash : nil)
     }
 
     func restart(_ cmd: String) async {
+        await restart(cmd, context: restartContext())
+    }
+
+    private func restart(_ cmd: String, context: RestartContext) async {
+        guard !isRestarting else { return }
         restartState = .running("Exécution de la commande…")
         restartLog = "$ \(cmd)\n"
         llmHealth = nil
@@ -612,29 +709,50 @@ public final class ServerSettingsViewModel {
             restartState = .failed("Impossible d'exécuter la commande : \(error.localizedDescription)")
             return
         }
-        await verifyAfterRestart(alreadyUp: false)
+        await verifyAfterRestart(alreadyUp: false, context: context, startedHash: context.scriptHash)
     }
 
-    func verifyAfterRestart(alreadyUp: Bool) async {
+    private func verifyAfterRestart(alreadyUp: Bool, context: RestartContext, startedHash: String?) async {
         restartState = .running("Attente de l'API…")
-        let client = clientProvider()
+        let client = context.client
         let deadline = Date().addingTimeInterval(healthTimeout)
         var up = alreadyUp
-        while !up && Date() < deadline {
-            if (try? await client.version()) != nil {
+        while !up && Date() < deadline && !Task.isCancelled {
+            guard matches(context) else { break }
+            let version: VersionResponse? = try? await client.send(APIRequest("GET", ["version"], timeout: 3))
+            if version != nil {
                 up = true
                 break
             }
             try? await Task.sleep(for: pollInterval)
         }
+        guard matches(context), !Task.isCancelled else {
+            llmHealth = nil
+            restartState = .failed("Le contexte a changé pendant le redémarrage. Actualisez le serveur et la banque sélectionnés.")
+            return
+        }
         guard up else {
             restartState = .failed("L'API ne répond pas après \(Int(healthTimeout)) s. Consultez la sortie ci-dessous et les journaux du serveur.")
             return
         }
-        needsRestart = false
-        if let bank = bankProvider() {
+        acknowledgeStartedScript(startedHash, at: context.scriptURL)
+        if let bank = context.bank {
             restartState = .running("Test des LLM…")
-            llmHealth = try? await client.llmHealth(bank)
+            do {
+                let health = try await client.llmHealth(bank)
+                guard matches(context), !Task.isCancelled else {
+                    restartState = .failed("Le contexte a changé pendant le test des LLM. Actualisez le diagnostic.")
+                    return
+                }
+                guard !health.operations.isEmpty else {
+                    restartState = .failed("Serveur redémarré, mais le diagnostic LLM ne contient aucun résultat.")
+                    return
+                }
+                llmHealth = health
+            } catch {
+                restartState = .failed("Serveur redémarré, mais la vérification des LLM a échoué : \(SecretMasker.mask(error.userMessage))")
+                return
+            }
         }
         let bad = llmHealth?.operations.filter { !$0.ok } ?? []
         restartState =

@@ -3,12 +3,15 @@ import { chromium, expect } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const base = 'http://127.0.0.1:16431';
+const port = Number(process.env.HINDSIGHT_SERVICE_TEST_PORT || 16473);
+assert.ok(Number.isInteger(port) && port >= 16450 && port < 65536);
+const base = `http://127.0.0.1:${port}`;
 const server = spawn(
   process.execPath,
-  ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '16431', '--strictPort'],
+  ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(port), '--strictPort'],
   { cwd: root, stdio: 'ignore' },
 );
 let browser;
@@ -20,7 +23,6 @@ try {
     if (server.exitCode != null || i === 99) throw new Error('Vite did not start');
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  await mkdir(new URL('../screenshots/', import.meta.url), {recursive:true});
   browser = await chromium.launch({ channel: 'chrome', headless: true });
   const page = await browser.newPage({ viewport: { width: 1000, height: 760 } });
   const errors = [];
@@ -83,6 +85,7 @@ try {
   await expect(card).toContainText('missing reranker credential', { timeout: 7000 });
   await expect(card.getByRole('button', { name: 'Démarrer', exact: true })).toBeEnabled();
   await card.getByRole('button', { name: 'Démarrer', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.__serviceFixture.starts)).toBe(2);
   await page.evaluate(() => {
     window.__serviceFixture.busy = false;
     window.__serviceFixture.error = null;
@@ -103,7 +106,11 @@ try {
     .getByRole('button', { name: 'Préparer ces changements', exact: true })
     .boundingBox();
   assert.ok(footer.y + footer.height <= 760, 'Editor footer must remain in the small viewport');
-  await editor.screenshot({ path: root + 'screenshots/decision-compact.png' });
+  if (process.env.HINDSIGHT_SERVICE_SCREENSHOT) {
+    const screenshot = path.resolve(process.env.HINDSIGHT_SERVICE_SCREENSHOT);
+    await mkdir(path.dirname(screenshot), { recursive: true });
+    await editor.screenshot({ path: screenshot });
+  }
   assert.deepEqual(errors, []);
   console.log(
     'Offline service progress, repeated start protection, inline failure/recovery and compact editor on a small viewport verified.',

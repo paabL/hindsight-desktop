@@ -75,12 +75,11 @@ final class DocumentLibraryTests: XCTestCase {
         XCTAssertNotEqual(items[0].id, items[1].id)
         XCTAssertEqual(Set(items.map(\.title)), ["Corrige le test"])
         XCTAssertEqual(items.first { !$0.documents.isEmpty }?.state, .current)
-        XCTAssertFalse(items.first { $0.documents.isEmpty }?.canImport ?? true, "Codex passe désormais par Agent Dump")
+        XCTAssertTrue(items.allSatisfy { !$0.canSend }, "Les conversations restent consultables sans import natif")
+        XCTAssertTrue(items.allSatisfy { $0.sourceURL?.pathExtension == "jsonl" })
         XCTAssertEqual(items[0].group.title, "Conversations Codex")
-        var hermes = session("h")
-        hermes.meta?.sourceKind = .hermes
-        let hermesReport = FileCoverage.report(files: [], sessions: [hermes], documents: []) { _ in nil }
-        XCTAssertTrue(DocumentLibrary.build(report: hermesReport).first?.canImport ?? false, "Hermes conserve son import manuel")
+        XCTAssertFalse(FileCoverageViewModel.isSelectable(report.entries[1]), "Une conversation absente de la banque ne peut pas être envoyée ici")
+        XCTAssertTrue(FileCoverageViewModel.isSelectable(report.entries[0]), "Un document existant peut toujours être sélectionné pour retrait")
     }
 
     /// Dossier `repoA` avec une note absente de la banque ; faux serveur dont les documents évoluent.

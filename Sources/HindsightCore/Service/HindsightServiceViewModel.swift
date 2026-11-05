@@ -67,7 +67,10 @@ public final class HindsightServiceViewModel {
     public private(set) var failure: String?
     public private(set) var startedScriptHash: String?
     @ObservationIgnored private var attemptScriptHash: String?
+    @ObservationIgnored private var attemptScriptURL: URL?
+    @ObservationIgnored private var attemptClient: HindsightClient?
     @ObservationIgnored private var logOffsets: [URL: UInt64] = [:]
+    @ObservationIgnored private var refreshRevision = UUID()
 
     public var phase: String {
         if failure != nil && !isBusy { return "failed" }
@@ -108,16 +111,47 @@ public final class HindsightServiceViewModel {
     public var isInstalled: Bool { installed != nil }
     public var blockingIssues: [FileSafety.Issue] { issues.filter(\.isBlocking) }
     /// Le service installé exécute un autre script que celui de l'écran « Modèles & serveur ».
-    public var pointsToOtherScript: Bool { installed.map { $0.scriptPath != scriptURL.path } ?? false }
-    public var canStart: Bool { isInstalled && !isBusy && !job.running && !job.pending && !apiReachable }
-    public var canStop: Bool { isInstalled && !isBusy && job.running }
+    public var pointsToOtherScript: Bool {
+        installed.map { URL(fileURLWithPath: $0.scriptPath).resolvingSymlinksInPath() != scriptURL.resolvingSymlinksInPath() } ?? false
+    }
+    public var canStart: Bool {
+        isInstalled && !isBusy && Self.isLocalEndpoint(clientProvider().baseURL) && !job.running && !job.pending && !apiReachable
+    }
+    public var canStop: Bool { isInstalled && !isBusy && (job.running || job.pending) }
 
     public func refresh() async {
-        installed = (try? Data(contentsOf: paths.plist)).flatMap(LaunchAgentSpec.parse)
-        job = installed == nil ? .notLoaded : await jobStatus()
-        apiReachable = await probeAPI()
+        guard !isBusy else { return }
+        let revision = UUID()
+        refreshRevision = revision
+        let client = clientProvider()
+        let script = scriptURL
+        let spec = (try? Data(contentsOf: paths.plist)).flatMap(LaunchAgentSpec.parse)
+        let currentJob = spec == nil ? .notLoaded : await jobStatus()
+        let reachable = await probeAPI(client)
+        guard refreshRevision == revision, !isBusy, clientProvider().baseURL == client.baseURL, scriptURL == script else { return }
+        installed = spec
+        job = currentJob
+        apiReachable = reachable
         inspectScript()
-        if !isBusy { status = computeStatus(); if apiReachable { failure = nil } }
+        status = computeStatus()
+        loadLog()
+    }
+
+    private func beginOperation(_ next: Status) {
+        refreshRevision = UUID()
+        isBusy = true
+        status = next
+    }
+
+    private func endOperation() {
+        refreshRevision = UUID()
+        isBusy = false
+        status = computeStatus()
+    }
+
+    private func refreshOperationState() async {
+        job = await jobStatus()
+        apiReachable = await probeAPI()
         loadLog()
     }
 
@@ -129,15 +163,35 @@ public final class HindsightServiceViewModel {
     }
 
     func jobStatus() async -> LaunchJobStatus {
-        guard let r = try? await runner.run(ProcessInvocation(Self.launchctl, ["print", target], timeout: 10)), r.succeeded else {
-            return .notLoaded
-        }
-        return LaunchJobStatus.parse(printOutput: r.stdout)
+        (try? await checkedJobStatus()) ?? .notLoaded
     }
 
-    func probeAPI() async -> Bool {
-        let response: VersionResponse? = try? await clientProvider().send(APIRequest("GET", ["version"], timeout: 3))
+    private func checkedJobStatus() async throws -> LaunchJobStatus {
+        let result = try await runner.run(ProcessInvocation(Self.launchctl, ["print", target], timeout: 10))
+        guard result.succeeded else {
+            if !result.timedOut, result.status == 113 { return .notLoaded }
+            throw ServiceError.launchctl("print", result.combined)
+        }
+        return LaunchJobStatus.parse(printOutput: result.stdout)
+    }
+
+    func probeAPI(_ client: HindsightClient? = nil) async -> Bool {
+        let client = client ?? clientProvider()
+        guard Self.isLocalEndpoint(client.baseURL) else { return false }
+        let response: VersionResponse? = try? await client.send(APIRequest("GET", ["version"], timeout: 3))
         return response != nil
+    }
+
+    private static func isLocalEndpoint(_ url: URL) -> Bool {
+        ["localhost", "127.0.0.1", "::1", "[::1]"].contains(url.host?.lowercased() ?? "")
+    }
+
+    private func requireLocalEndpoint() -> Bool {
+        guard Self.isLocalEndpoint(clientProvider().baseURL) else {
+            message = "Le service de ce Mac doit être vérifié avec une adresse locale. Sélectionnez le serveur local avant de le démarrer ou de modifier sa file."
+            return false
+        }
+        return true
     }
 
     public func inspectScript() {
@@ -147,7 +201,7 @@ public final class HindsightServiceViewModel {
             let hash = SHA256.hex(data)
             scriptHash = hash
             let approved = settings.string(forKey: SettingsKey.serviceScriptHash)
-            scriptChangedSinceApproval = approved != nil && approved != hash
+            scriptChangedSinceApproval = approved != hash
             scriptWarning = LaunchScriptShape.backgroundingWarning(String(decoding: data, as: UTF8.self))
         } else {
             scriptHash = nil
@@ -171,6 +225,8 @@ public final class HindsightServiceViewModel {
 
     private func beginAttempt() {
         attemptScriptHash = (try? Data(contentsOf: scriptURL)).map(SHA256.hex)
+        attemptScriptURL = scriptURL
+        attemptClient = clientProvider()
         failure = nil
         message = nil
         logOffsets = Dictionary(uniqueKeysWithValues: logURLs.map { url in
@@ -182,27 +238,55 @@ public final class HindsightServiceViewModel {
     private func fail(_ text: String) {
         loadLog()
         let current = logURLs.map { ServiceDiagnostics.tail($0, after: logOffsets[$0] ?? 0) }.joined(separator: "\n")
-        failure = text + (ServiceDiagnostics.error(in: current).map { "\n" + $0 } ?? "")
+        failure = SecretMasker.mask(text) + (ServiceDiagnostics.error(in: current).map { "\n" + $0 } ?? "")
         message = failure
+    }
+
+    private func requireAttemptScript() throws {
+        guard scriptURL == attemptScriptURL, clientProvider().baseURL == attemptClient?.baseURL,
+              let data = try? Data(contentsOf: scriptURL), SHA256.hex(data) == attemptScriptHash,
+              !FileSafety.inspect(scriptURL, uid: uid).contains(where: \.isBlocking) else {
+            throw ServiceError.io("Le script ou l'adresse du serveur a changé pendant l'opération. Vérifiez les réglages et réessayez.")
+        }
     }
 
     /// À appeler quand l'utilisateur a validé le contenu actuel du script (ex. enregistrement confirmé du diff).
     public func approveCurrentScript() {
         guard let data = try? Data(contentsOf: scriptURL) else { return }
-        settings.set(SHA256.hex(data), forKey: SettingsKey.serviceScriptHash)
+        approveScript(at: scriptURL, hash: SHA256.hex(data))
+    }
+
+    /// Approval belongs to the exact file and bytes that were reviewed, including when settings edit another script.
+    @discardableResult
+    public func approveScript(at url: URL, hash: String) -> Bool {
+        guard scriptURL.resolvingSymlinksInPath() == url.resolvingSymlinksInPath(),
+              let data = try? Data(contentsOf: scriptURL), SHA256.hex(data) == hash,
+              !FileSafety.inspect(scriptURL, uid: uid).contains(where: \.isBlocking) else { return false }
+        settings.set(hash, forKey: SettingsKey.serviceScriptHash)
         inspectScript()
+        return true
+    }
+
+    private func validateConfirmation(script url: URL, hash: String?) -> Bool {
+        inspectScript()
+        guard scriptURL == url, scriptHash == hash, hash != nil, blockingIssues.isEmpty else {
+            message = "Le script a changé depuis la confirmation : vérifiez-le à nouveau."
+            return false
+        }
+        return true
     }
 
     // MARK: Installation (confirmée)
 
     public func requestInstall(startAtLogin: Bool) {
-        guard !isBusy else { return }
+        guard !isBusy, requireLocalEndpoint() else { return }
         inspectScript()
         if let problem = blockingIssues.first {
             message = "Impossible d'utiliser ce script : \(problem)"
             return
         }
         let url = scriptURL
+        let hash = scriptHash
         var lines = [
             "Script exécuté : \(url.path)",
             "Empreinte SHA-256 : \(scriptHash.map { String($0.prefix(16)) + "…" } ?? "?")",
@@ -220,13 +304,16 @@ public final class HindsightServiceViewModel {
             title: isInstalled ? "Réinstaller le service Hindsight ?" : "Installer le service Hindsight ?",
             message: lines.joined(separator: "\n"), confirmTitle: "Installer et démarrer", severity: .normal
         ) { [weak self] in
-            await self?.install(startAtLogin: startAtLogin)
+            guard let self, !self.isBusy, self.validateConfirmation(script: url, hash: hash) else { return }
+            await self.install(startAtLogin: startAtLogin)
         }
     }
 
     func install(startAtLogin: Bool) async {
-        isBusy = true
-        defer { isBusy = false }
+        guard !isBusy, requireLocalEndpoint() else { return }
+        beginOperation(.starting)
+        beginAttempt()
+        defer { endOperation() }
         do {
             try ensureExecutable()
             try prepareLog()
@@ -234,26 +321,27 @@ public final class HindsightServiceViewModel {
             let spec = LaunchAgentSpec(
                 scriptPath: scriptURL.path, logPath: paths.log.path, runAtLoad: startAtLogin, path: SystemProcessRunner.standardPath(),
                 workerPaused: installed?.workerPaused ?? false)
-            try writePlist(spec)
-            approveCurrentScript()
-            if await jobStatus().loaded {
-                _ = try? await runner.run(ProcessInvocation(Self.launchctl, ["bootout", target], timeout: stopTimeout))
-                await waitUntilDown()
+            try await unloadAgent()
+            try await waitUntilDown()
+            guard let approvedURL = attemptScriptURL, let approvedHash = attemptScriptHash,
+                  approveScript(at: approvedURL, hash: approvedHash) else {
+                throw ServiceError.io("Le script a changé pendant l'installation : vérifiez-le à nouveau.")
             }
+            try writePlist(spec)
+            installed = spec
             let r = try await runner.run(ProcessInvocation(Self.launchctl, ["bootstrap", domain, paths.plist.path], timeout: 20))
             guard r.succeeded else { throw ServiceError.launchctl("bootstrap", r.combined) }
-            installed = spec
         } catch {
-            message = "Installation impossible : \(error)"
-            await refresh()
+            fail("Installation impossible : \(error)")
+            await refreshOperationState()
             return
         }
-        await start()
+        await startWhileBusy(bootstrapped: true)
     }
 
     /// Démarrage automatique à l'ouverture de session (pris en compte à la prochaine session).
     public func setStartAtLogin(_ on: Bool) {
-        guard var spec = installed, spec.runAtLoad != on else { return }
+        guard !isBusy, var spec = installed, spec.runAtLoad != on else { return }
         spec.runAtLoad = on
         do {
             try writePlist(spec)
@@ -275,62 +363,83 @@ public final class HindsightServiceViewModel {
     }
 
     func uninstall() async {
-        isBusy = true
-        status = .stopping
-        if await jobStatus().loaded {
-            _ = try? await runner.run(ProcessInvocation(Self.launchctl, ["bootout", target], timeout: stopTimeout))
+        guard !isBusy else { return }
+        beginOperation(.stopping)
+        beginAttempt()
+        defer { endOperation() }
+        do {
+            try await unloadAgent()
+            try FileManager.default.removeItem(at: paths.plist)
+            installed = nil
+            job = .notLoaded
+            apiReachable = await probeAPI()
+            message = "Service désinstallé."
+        } catch {
+            fail("Désinstallation impossible : \(error)")
+            await refreshOperationState()
         }
-        try? FileManager.default.removeItem(at: paths.plist)
-        isBusy = false
-        message = "Service désinstallé."
-        await refresh()
     }
 
     // MARK: Démarrer / arrêter / redémarrer
 
     public func requestStart() {
-        guard !isBusy else { return }
+        guard !isBusy, requireLocalEndpoint() else { return }
+        guard installed != nil else { message = "Installez d'abord le service Hindsight."; return }
         inspectScript()
         if let problem = blockingIssues.first {
             message = "Démarrage refusé : \(problem)"
             return
         }
         guard scriptChangedSinceApproval else {
-            isBusy = true
-            status = .starting
-            Task { await start() }
+            beginOperation(.starting)
+            Task {
+                defer { endOperation() }
+                await startWhileBusy()
+            }
             return
         }
+        let url = scriptURL, hash = scriptHash
         confirmation = ConfirmationRequest(
             title: "Le script de lancement a changé",
             message:
                 "\(scriptURL.path) a été modifié hors de l'app depuis votre dernière approbation (empreinte \(scriptHash.map { String($0.prefix(12)) } ?? "?")…).\n\nVérifiez son contenu avant de l'exécuter.",
             confirmTitle: "Approuver et démarrer", severity: .normal
         ) { [weak self] in
-            self?.approveCurrentScript()
-            await self?.start()
+            guard let self, !self.isBusy, self.validateConfirmation(script: url, hash: hash) else { return }
+            self.approveCurrentScript()
+            await self.start()
         }
     }
 
     func start() async {
-        guard installed != nil else { isBusy = false; return }
-        isBusy = true
-        status = .starting
-        beginAttempt()
-        defer { isBusy = false; status = computeStatus() }
-        if await probeAPI() {
+        guard !isBusy, installed != nil else { return }
+        beginOperation(.starting)
+        defer { endOperation() }
+        await startWhileBusy()
+    }
+
+    private func startWhileBusy(bootstrapped: Bool = false) async {
+        guard installed != nil, requireLocalEndpoint() else { return }
+        if !bootstrapped { beginAttempt() }
+        inspectScript()
+        guard blockingIssues.isEmpty, !scriptChangedSinceApproval, !pointsToOtherScript else {
+            fail("Vérifiez et approuvez le script du service avant de démarrer.")
+            return
+        }
+        if !bootstrapped, await probeAPI() {
             message = "Un serveur répond déjà à cette adresse : arrêtez-le avant de démarrer le service."
-            await refresh()
+            await refreshOperationState()
             return
         }
         do {
             try prepareLog()
             _ = try await loadAgentForStart()
+            try requireAttemptScript()
             let r = try await runner.run(ProcessInvocation(Self.launchctl, ["kickstart", target], timeout: 20))
             guard r.succeeded else { throw ServiceError.launchctl("kickstart", r.combined) }
         } catch {
             fail("Démarrage impossible : \(error)")
-            await refresh()
+            await refreshOperationState()
             return
         }
         await waitUntilUp(action: "démarré")
@@ -348,69 +457,74 @@ public final class HindsightServiceViewModel {
     }
 
     func stop() async {
-        isBusy = true
-        status = .stopping
-        defer { isBusy = false }
-        _ = try? await runner.run(ProcessInvocation(Self.launchctl, ["kill", "SIGTERM", target], timeout: 10))
-        let deadline = Date().addingTimeInterval(stopTimeout)
-        while Date() < deadline {
-            job = await jobStatus()
-            if !job.running { break }
-            try? await Task.sleep(for: pollInterval)
+        guard !isBusy else { return }
+        beginOperation(.stopping)
+        beginAttempt()
+        defer { endOperation() }
+        do {
+            // Unloading also cancels a pending spawn; SIGTERM alone can leave a scheduled launch alive.
+            try await unloadAgent()
+            apiReachable = await probeAPI()
+            message = apiReachable
+                ? "Le service est arrêté, mais l'API répond encore : un autre serveur tourne à cette adresse (lancé hors de l'app)."
+                : "Serveur arrêté."
+        } catch {
+            fail("Arrêt impossible : \(error)")
+            await refreshOperationState()
         }
-        apiReachable = await probeAPI()
-        if job.running {
-            message = "Le serveur ne s'est pas arrêté dans les \(Int(stopTimeout)) s."
-        } else if apiReachable {
-            message = "Le service est arrêté, mais l'API répond encore : un autre serveur tourne à cette adresse (lancé hors de l'app)."
-        } else {
-            message = "Serveur arrêté."
-        }
-        status = computeStatus()
         loadLog()
     }
 
     public func requestRestart() {
-        guard !isBusy else { return }
+        guard !isBusy, requireLocalEndpoint() else { return }
         inspectScript()
         if let problem = blockingIssues.first {
             message = "Redémarrage refusé : \(problem)"
             return
         }
         let changed = scriptChangedSinceApproval
+        let url = scriptURL, hash = scriptHash
         confirmation = ConfirmationRequest(
             title: "Redémarrer le serveur Hindsight ?",
             message: (changed ? "Le script a été modifié hors de l'app depuis votre dernière approbation : vérifiez-le.\n\n" : "")
                 + "Les requêtes en cours seront interrompues ; les opérations en file reprendront au redémarrage.",
             confirmTitle: changed ? "Approuver et redémarrer" : "Redémarrer"
         ) { [weak self] in
-            if changed { self?.approveCurrentScript() }
-            _ = await self?.restart()
+            guard let self, !self.isBusy, self.validateConfirmation(script: url, hash: hash) else { return }
+            if changed { self.approveCurrentScript() }
+            _ = await self.restart()
         }
     }
 
     /// Redémarre (ou démarre) le job et attend l'API. Retourne vrai si l'API répond.
     @discardableResult
     public func restart() async -> Bool {
-        guard installed != nil, !isBusy else { return false }
-        isBusy = true
-        status = .starting
+        guard installed != nil, !isBusy, requireLocalEndpoint() else { return false }
+        inspectScript()
+        guard blockingIssues.isEmpty, !scriptChangedSinceApproval, !pointsToOtherScript else {
+            message = "Vérifiez et approuvez le script du service avant de redémarrer."
+            return false
+        }
+        beginOperation(.starting)
         beginAttempt()
-        defer { isBusy = false; status = computeStatus() }
+        defer { endOperation() }
+        var previousPID: Int?
         do {
             try prepareLog()
             let bootstrapped = try await loadAgentForStart()
+            if !bootstrapped { previousPID = try await checkedJobStatus().pid }
+            try requireAttemptScript()
             let arguments = bootstrapped ? ["kickstart", target] : ["kickstart", "-k", target]
             let r = try await runner.run(ProcessInvocation(Self.launchctl, arguments, timeout: stopTimeout + 10))
             guard r.succeeded else { throw ServiceError.launchctl("kickstart -k", r.combined) }
         } catch {
             fail("Redémarrage impossible : \(error)")
-            await refresh()
+            await refreshOperationState()
             return false
         }
         // Laisse à l'ancien processus le temps de libérer le port avant de sonder.
         try? await Task.sleep(for: pollInterval)
-        return await waitUntilUp(action: "redémarré")
+        return await waitUntilUp(action: "redémarré", replacingPID: previousPID)
     }
 
     private func loadAgentForStart() async throws -> Bool {
@@ -419,13 +533,13 @@ public final class HindsightServiceViewModel {
            let raw = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
            (raw["EnvironmentVariables"] as? [String: String])?["HINDSIGHT_API_ENABLE_BANK_LLM_HEALTH"] == nil {
             try writePlist(spec)
-            if await jobStatus().loaded {
-                let result = try await runner.run(ProcessInvocation(Self.launchctl, ["bootout", target], timeout: stopTimeout))
-                guard result.succeeded else { throw ServiceError.launchctl("bootout", result.combined) }
-                await waitUntilDown()
+            if try await checkedJobStatus().loaded {
+                try await unloadAgent()
+                try await waitUntilDown()
             }
         }
-        if !(await jobStatus().loaded) {
+        if try await !checkedJobStatus().loaded {
+            try requireAttemptScript()
             let result = try await runner.run(ProcessInvocation(Self.launchctl, ["bootstrap", domain, paths.plist.path], timeout: 20))
             guard result.succeeded else { throw ServiceError.launchctl("bootstrap", result.combined) }
             return true
@@ -452,28 +566,36 @@ public final class HindsightServiceViewModel {
     /// confirmation de l'utilisateur, ou applique un plafond qu'il a confirmé.
     @discardableResult
     public func setWorkerPaused(_ paused: Bool) async -> Bool {
-        guard !isBusy else { return false }
+        guard !isBusy, requireLocalEndpoint() else { return false }
         guard var spec = installed else {
             message = "Le serveur n'est pas lancé par le service de l'app : sa file ne peut pas être gelée d'ici."
             return false
         }
         guard spec.workerPaused != paused else { return true }
+        beginOperation(.stopping)
+        beginAttempt()
+        defer { endOperation() }
         spec.workerPaused = paused
         job = await jobStatus()
-        if !job.running {
+        if !job.running && !job.pending {
             // Serveur arrêté : ne pas le démarrer. L'agent réécrit et déchargé, le prochain démarrage le recharge
             // (launchd ne relit l'environnement qu'au chargement).
             do {
+                try await unloadAgent()
                 try writePlist(spec)
                 installed = spec
-                if job.loaded { _ = try? await runner.run(ProcessInvocation(Self.launchctl, ["bootout", target], timeout: stopTimeout)) }
                 job = await jobStatus()
                 status = computeStatus()
                 return true
             } catch {
-                message = (paused ? "Gel de la file impossible : " : "Reprise de la file impossible : ") + "\(error)"
+                fail((paused ? "Gel de la file impossible : " : "Reprise de la file impossible : ") + "\(error)")
+                await refreshOperationState()
                 return false
             }
+        }
+        guard !pointsToOtherScript else {
+            fail("Le service utilise un autre script. Réinstallez-le avec le script sélectionné avant de modifier sa file.")
+            return false
         }
         inspectScript()
         if let problem = blockingIssues.first {
@@ -484,55 +606,75 @@ public final class HindsightServiceViewModel {
             message = "Le script de lancement a changé depuis votre dernière approbation : redémarrez d'abord le serveur depuis « Serveur & modèles »."
             return false
         }
-        isBusy = true
         status = .stopping
-        defer { isBusy = false }
         do {
+            try await unloadAgent()
+            try await waitUntilDown()
             try writePlist(spec)
             installed = spec
-            if await jobStatus().loaded {
-                _ = try? await runner.run(ProcessInvocation(Self.launchctl, ["bootout", target], timeout: stopTimeout))
-                await waitUntilDown()
-            }
             try prepareLog()
             status = .starting
+            try requireAttemptScript()
             let r = try await runner.run(ProcessInvocation(Self.launchctl, ["bootstrap", domain, paths.plist.path], timeout: 20))
             guard r.succeeded else { throw ServiceError.launchctl("bootstrap", r.combined) }
             let k = try await runner.run(ProcessInvocation(Self.launchctl, ["kickstart", target], timeout: 20))
             guard k.succeeded else { throw ServiceError.launchctl("kickstart", k.combined) }
         } catch {
-            message = (paused ? "Gel de la file impossible : " : "Reprise de la file impossible : ") + "\(error)"
-            await refresh()
+            fail((paused ? "Gel de la file impossible : " : "Reprise de la file impossible : ") + "\(error)")
+            await refreshOperationState()
             return false
         }
         try? await Task.sleep(for: pollInterval)
         return await waitUntilUp(action: paused ? "redémarré, file gelée" : "redémarré, file reprise")
     }
 
-    func waitUntilDown() async {
+    private func unloadAgent() async throws {
+        job = try await checkedJobStatus()
+        guard job.loaded else { return }
+        let result = try await runner.run(ProcessInvocation(Self.launchctl, ["bootout", target], timeout: stopTimeout))
+        guard result.succeeded else { throw ServiceError.launchctl("bootout", result.combined) }
         let deadline = Date().addingTimeInterval(stopTimeout)
-        while Date() < deadline, await probeAPI() {
-            try? await Task.sleep(for: pollInterval)
+        repeat {
+            try Task.checkCancellation()
+            job = try await checkedJobStatus()
+            if !job.loaded { return }
+            try await Task.sleep(for: pollInterval)
+        } while Date() < deadline
+        throw ServiceError.io("Le service ne s'est pas arrêté dans les \(Int(stopTimeout)) s.")
+    }
+
+    func waitUntilDown() async throws {
+        let deadline = Date().addingTimeInterval(stopTimeout)
+        while await probeAPI(attemptClient) {
+            guard Date() < deadline else { throw ServiceError.io("L'ancienne API répond encore après l'arrêt du service.") }
+            try await Task.sleep(for: pollInterval)
         }
     }
 
     @discardableResult
-    func waitUntilUp(action: String) async -> Bool {
+    func waitUntilUp(action: String, replacingPID: Int? = nil) async -> Bool {
         let deadline = Date().addingTimeInterval(startTimeout)
         var sawRunning = false
         let started = Date()
         while Date() < deadline, !Task.isCancelled {
-            if await probeAPI() {
-                apiReachable = true
-                job = await jobStatus()
+            let reachable = await probeAPI(attemptClient)
+            job = await jobStatus()
+            guard scriptURL == attemptScriptURL, clientProvider().baseURL == attemptClient?.baseURL else {
+                apiReachable = false
+                fail("Le script ou l'adresse du serveur a changé pendant le démarrage. Actualisez son état.")
+                return false
+            }
+            apiReachable = reachable
+            // A different server can answer at this address while our job has already exited.
+            if reachable && job.running && (replacingPID == nil || (job.pid != nil && job.pid != replacingPID)) {
                 status = computeStatus()
                 message = "Serveur \(action) : l'API répond."
+                failure = nil
                 loadLog()
                 startedScriptHash = attemptScriptHash
                 await onServerStarted?()
                 return true
             }
-            job = await jobStatus()
             sawRunning = sawRunning || job.running
             if !job.running && !job.pending && job.lastExitCode != nil && (sawRunning || Date().timeIntervalSince(started) >= min(2, startTimeout / 2)) {
                 break
@@ -541,10 +683,12 @@ public final class HindsightServiceViewModel {
         }
         loadLog()
         job = await jobStatus()
-        apiReachable = false
+        apiReachable = await probeAPI(attemptClient)
         status = computeStatus()
         let exit = job.lastExitCode.map { " (code de sortie \($0))" } ?? ""
-        fail("Le service a été lancé mais l'API ne répond pas\(exit). Consultez le journal ci-dessous.")
+        fail(apiReachable
+            ? "L'API répond, mais le nouveau processus du service n'est pas prêt\(exit). Consultez le journal ci-dessous."
+            : "Le service a été lancé mais l'API ne répond pas\(exit). Consultez le journal ci-dessous.")
         return false
     }
 

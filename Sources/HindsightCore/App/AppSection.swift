@@ -2,7 +2,7 @@ import Foundation
 
 /// Sections de la barre latérale.
 public enum AppSection: String, CaseIterable, Identifiable, Sendable {
-    case sources, dashboard, memory, mentalModels, documents, consumption, operations, search, timeline, graph, audit, admin, server, codex
+    case sources, dashboard, memory, mentalModels, documents, consumption, operations, search, timeline, graph, audit, admin, server
 
     public var id: String { rawValue }
 
@@ -21,7 +21,6 @@ public enum AppSection: String, CaseIterable, Identifiable, Sendable {
         case .audit: return "Activité"
         case .admin: return "Administration"
         case .server: return "Serveur & modèles"
-        case .codex: return "Import Hermes"
         }
     }
 
@@ -41,7 +40,6 @@ public enum AppSection: String, CaseIterable, Identifiable, Sendable {
         case .audit: return "chart.bar.xaxis"
         case .admin: return "slider.horizontal.3"
         case .server: return "server.rack"
-        case .codex: return "square.and.arrow.down.on.square"
         }
     }
 }

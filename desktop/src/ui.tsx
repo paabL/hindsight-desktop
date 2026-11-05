@@ -98,7 +98,11 @@ export function Button({
   children?: ReactNode;
 }) {
   return (
-    <button {...props} className={`button ${kind} ${className}`}>
+    <button
+      type={props.onClick ? 'button' : 'submit'}
+      {...props}
+      className={`button ${kind} ${className}`}
+    >
       {Icon && <Icon size={16} strokeWidth={1.8} />} {children}
     </button>
   );
@@ -110,6 +114,7 @@ export function IconButton({
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & { icon: LucideIcon; label: string }) {
   return (
     <button
+      type="button"
       {...props}
       className={`icon-button ${props.className || ''}`}
       aria-label={label}
@@ -229,14 +234,33 @@ export function Tabs({
 }) {
   return (
     <div className="tabs" role="tablist">
-      {items.map((item) => (
+      {items.map((item, index) => (
         <button
           type="button"
           key={item.id}
           role="tab"
           aria-selected={value === item.id}
+          tabIndex={value === item.id ? 0 : -1}
           className={value === item.id ? 'active' : ''}
           onClick={() => onChange(item.id)}
+          onKeyDown={(event) => {
+            const next =
+              event.key === 'Home'
+                ? 0
+                : event.key === 'End'
+                  ? items.length - 1
+                  : event.key === 'ArrowRight'
+                    ? (index + 1) % items.length
+                    : event.key === 'ArrowLeft'
+                      ? (index + items.length - 1) % items.length
+                      : -1;
+            if (next < 0) return;
+            event.preventDefault();
+            event.currentTarget.parentElement
+              ?.querySelectorAll<HTMLElement>('[role="tab"]')
+              [next]?.focus();
+            onChange(items[next].id);
+          }}
         >
           {item.label}
           {item.count != null && <span>{number(item.count)}</span>}
@@ -264,12 +288,31 @@ export function Modal({
   useEffect(() => {
     const old = document.activeElement as HTMLElement;
     const container = ref.current;
-    const focusable = () =>
-      container?.querySelectorAll<HTMLElement>(
-        'button:not(:disabled),input:not(:disabled),textarea,select,[tabindex="0"],a[href]',
+    const focusable = () => {
+      const collapsed = Array.from(container?.querySelectorAll('details:not([open])') || []);
+      return Array.from(
+        container?.querySelectorAll<HTMLElement>(
+          'button,input,textarea,select,summary,[tabindex],a[href]',
+        ) || [],
+      ).filter(
+        (element) =>
+          !element.matches(':disabled') &&
+          element.tabIndex >= 0 &&
+          !element.closest('[inert]') &&
+          !collapsed.some(
+            (details) =>
+              details.contains(element) &&
+              !details.querySelector(':scope > summary')?.contains(element),
+          ) &&
+          element.getClientRects().length > 0 &&
+          getComputedStyle(element).visibility !== 'hidden',
       );
+    };
+    const initial = focusable();
     (
-      container?.querySelector<HTMLElement>('[autofocus],input,textarea') || focusable()?.[0]
+      initial.find((element) => element.matches('[autofocus],input,textarea')) ||
+      initial[0] ||
+      container
     )?.focus();
     const listener = (event: KeyboardEvent) => {
       if (
@@ -278,15 +321,23 @@ export function Modal({
       )
         return;
       if (event.key === 'Escape') {
+        event.preventDefault();
         event.stopPropagation();
         closeRef.current();
       }
       if (event.key === 'Tab') {
         const list = focusable();
-        if (!list?.length) return;
+        if (!list.length) {
+          event.preventDefault();
+          container?.focus();
+          return;
+        }
         const first = list[0],
           last = list[list.length - 1];
-        if (event.shiftKey && document.activeElement === first) {
+        if (!list.includes(document.activeElement as HTMLElement)) {
+          event.preventDefault();
+          (event.shiftKey ? last : first).focus();
+        } else if (event.shiftKey && document.activeElement === first) {
           event.preventDefault();
           last.focus();
         } else if (!event.shiftKey && document.activeElement === last) {
@@ -314,6 +365,7 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={title}
+        tabIndex={-1}
       >
         <div className="modal-header">
           <div>
@@ -374,6 +426,7 @@ export const Markdown = memo(function Markdown({
         components={{
           a: ({ href, children }) => (
             <button
+              type="button"
               className="inline-link"
               title={href}
               onClick={() => {

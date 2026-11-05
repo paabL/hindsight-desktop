@@ -110,6 +110,10 @@ public final class GraphViewModel {
     @ObservationIgnored private var indexByID: [String: Int] = [:]
     @ObservationIgnored private var engine: GraphSimulationEngine?
     @ObservationIgnored private var runTask: Task<Void, Never>?
+    @ObservationIgnored private var loadID = UUID()
+    @ObservationIgnored private var selectionID = UUID()
+    @ObservationIgnored private var animationID = UUID()
+    @ObservationIgnored private var detailTask: Task<Void, Never>?
 
     public init(client: HindsightClient, bank: String, animated: Bool = true) {
         self.client = client
@@ -122,7 +126,14 @@ public final class GraphViewModel {
     }
 
     public func reload(layout: Bool = true) async {
+        let id = UUID()
+        loadID = id
+        selectionID = UUID()
+        detailTask?.cancel()
+        detailTask = nil
         stopAnimation()
+        engine = nil
+        let mode = mode, filter = filter, maxNodes = max(0, maxNodes), minCount = minCount
         state = .loading
         selectedNodeID = nil
         hoveredIndex = nil
@@ -130,16 +141,22 @@ public final class GraphViewModel {
         nodeFacts = .idle
         selectedFact = nil
         do {
+            try Task.checkCancellation()
             let tags = TagFilter(tags: filter.effectiveTags, match: filter.tagsMatch)
             let (n, e): ([GraphNode], [GraphEdge])
             switch mode {
             case .entities:
                 let g = try await client.entityGraph(bank, limit: maxNodes * 8, minCount: minCount, tags: tags)
+                try Task.checkCancellation()
+                guard loadID == id else { return }
                 serverNodeTotal = g.totalEntities
                 serverEdgeTotal = g.totalEdges
+                factRows = [:]
                 (n, e) = Self.entityGraph(g, maxNodes: maxNodes)
             case .facts:
                 let g = try await client.graph(bank, type: filter.singleType, limit: maxNodes, tags: tags, documentID: nil)
+                try Task.checkCancellation()
+                guard loadID == id else { return }
                 serverNodeTotal = g.totalUnits
                 serverEdgeTotal = g.edges.count
                 factRows = Dictionary(g.tableRows.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
@@ -147,10 +164,10 @@ public final class GraphViewModel {
             }
             install(nodes: n, edges: e)
             state = .loaded(())
-            if layout { await startSimulation() } else { positions = [] }
-        } catch is CancellationError {
+            if layout { await startSimulation(loadID: id) } else { positions = [] }
         } catch {
-            state = .failed(error.userMessage)
+            guard loadID == id else { return }
+            state = Task.isCancelled || error is CancellationError ? .idle : .failed(error.userMessage)
         }
     }
 
@@ -172,14 +189,16 @@ public final class GraphViewModel {
 
     // MARK: Animation
 
-    private func startSimulation() async {
+    private func startSimulation(loadID: UUID) async {
         let sim = ForceSimulation(nodeCount: nodes.count, links: links.map { ForceSimulation.Link($0.a, $0.b, weight: $0.weight) })
         let engine = GraphSimulationEngine(sim)
         self.engine = engine
         positions = sim.positions
         isPaused = false
         if !animated {
-            positions = await engine.settle()
+            let settled = await engine.settle()
+            guard self.loadID == loadID, !Task.isCancelled, self.engine === engine else { return }
+            positions = settled
             fitGeneration += 1
             return
         }
@@ -205,11 +224,12 @@ public final class GraphViewModel {
                 if r.settled { break }
                 try? await Task.sleep(for: .milliseconds(16))
             }
-            self?.isAnimating = false
+            if !Task.isCancelled { self?.isAnimating = false }
         }
     }
 
     public func pause() {
+        animationID = UUID()
         runTask?.cancel()
         runTask = nil
         isAnimating = false
@@ -218,9 +238,13 @@ public final class GraphViewModel {
 
     /// Reprend (ou relance) l'animation.
     public func resume() {
+        guard let engine else { return }
+        let id = UUID()
+        animationID = id
         isPaused = false
         Task {
-            await engine?.reheat(0.3)
+            await engine.reheat(0.3)
+            guard animationID == id, self.engine === engine, !isPaused else { return }
             runLoop()
         }
     }
@@ -231,9 +255,14 @@ public final class GraphViewModel {
     public func requestFit() { fitGeneration += 1 }
 
     /// Revenir de la fiche d'un fait à celle de l'entité sélectionnée (mode entités).
-    public func clearFact() { selectedFact = nil }
+    public func clearFact() {
+        detailTask?.cancel()
+        detailTask = nil
+        selectedFact = nil
+    }
 
     public func stopAnimation() {
+        animationID = UUID()
         runTask?.cancel()
         runTask = nil
         isAnimating = false
@@ -243,7 +272,7 @@ public final class GraphViewModel {
 
     public func index(of id: String) -> Int? { indexByID[id] }
 
-    public func neighbors(of index: Int) -> [Int] { index < adjacency.count ? adjacency[index] : [] }
+    public func neighbors(of index: Int) -> [Int] { adjacency.indices.contains(index) ? adjacency[index] : [] }
 
     /// Nœuds dont le libellé contient la recherche.
     public var highlightedIDs: Set<String> {
@@ -262,7 +291,7 @@ public final class GraphViewModel {
     }
 
     public var selectedNode: GraphNode? { selectedNodeID.flatMap { indexByID[$0] }.map { nodes[$0] } }
-    public var hoveredNode: GraphNode? { hoveredIndex.flatMap { $0 < nodes.count ? nodes[$0] : nil } }
+    public var hoveredNode: GraphNode? { hoveredIndex.flatMap { nodes.indices.contains($0) ? nodes[$0] : nil } }
 
     public func hover(_ index: Int?) {
         if hoveredIndex != index { hoveredIndex = index }
@@ -299,7 +328,7 @@ public final class GraphViewModel {
 
     /// Garde les `maxNodes` entités les plus mentionnées et les liens entre elles.
     static func entityGraph(_ g: EntityGraphResponse, maxNodes: Int) -> ([GraphNode], [GraphEdge]) {
-        let top = g.nodes.map(\.data).sorted { ($0.mentionCount, $1.id) > ($1.mentionCount, $0.id) }.prefix(maxNodes)
+        let top = g.nodes.map(\.data).sorted { ($0.mentionCount, $1.id) > ($1.mentionCount, $0.id) }.prefix(max(0, maxNodes))
         let keep = Set(top.map(\.id))
         let nodes = top.map {
             GraphNode(
@@ -319,7 +348,7 @@ public final class GraphViewModel {
             degree[e.data.source, default: 0] += 1
             degree[e.data.target, default: 0] += 1
         }
-        let top = g.nodes.map(\.data).sorted { (degree[$0.id] ?? 0, $1.id) > (degree[$1.id] ?? 0, $0.id) }.prefix(maxNodes)
+        let top = g.nodes.map(\.data).sorted { (degree[$0.id] ?? 0, $1.id) > (degree[$1.id] ?? 0, $0.id) }.prefix(max(0, maxNodes))
         let keep = Set(top.map(\.id))
         let nodes = top.map { d -> GraphNode in
             let row = rows[d.id]
@@ -339,6 +368,10 @@ public final class GraphViewModel {
     // MARK: Sélection
 
     public func select(_ id: String?) async {
+        let requestID = UUID()
+        selectionID = requestID
+        detailTask?.cancel()
+        detailTask = nil
         selectedNodeID = id
         entityDetail = .idle
         nodeFacts = .idle
@@ -350,8 +383,24 @@ public final class GraphViewModel {
             nodeFacts = .loading
             async let detail = client.entity(bank, id: id)
             async let facts = client.listMemories(bank, MemoryListQuery(entityID: id, limit: 50))
-            do { entityDetail = .loaded(try await detail) } catch { entityDetail = .failed(error.userMessage) }
-            do { nodeFacts = .loaded(try await facts.items.map(FactHit.init)) } catch { nodeFacts = .failed(error.userMessage) }
+            do {
+                let response = try await detail
+                guard selectionID == requestID else { return }
+                try Task.checkCancellation()
+                entityDetail = .loaded(response)
+            } catch {
+                guard selectionID == requestID else { return }
+                entityDetail = Task.isCancelled || error is CancellationError ? .idle : .failed(error.userMessage)
+            }
+            do {
+                let response = try await facts
+                guard selectionID == requestID else { return }
+                try Task.checkCancellation()
+                nodeFacts = .loaded(response.items.map(FactHit.init))
+            } catch {
+                guard selectionID == requestID else { return }
+                nodeFacts = Task.isCancelled || error is CancellationError ? .idle : .failed(error.userMessage)
+            }
         case .facts:
             let hit: FactHit
             if let row = factRows[id] {
@@ -369,8 +418,9 @@ public final class GraphViewModel {
     }
 
     public func selectFact(_ hit: FactHit) {
+        detailTask?.cancel()
         let vm = FactDetailViewModel(client: client, bank: bank, hit: hit)
         selectedFact = vm
-        Task { await vm.load() }
+        detailTask = Task { await vm.load() }
     }
 }

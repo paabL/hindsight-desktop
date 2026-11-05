@@ -24,21 +24,24 @@ public final class BankCatalog {
         do {
             async let t = Self.allTags(client: client, bank: bank)
             async let e = client.listEntities(bank, limit: 500)
-            tags = try await t
-            entities = try await e.items
+            let loadedTags = try await t
+            let loadedEntities = try await e.items
+            try Task.checkCancellation()
+            tags = loadedTags
+            entities = loadedEntities
             state = .loaded(())
-        } catch is CancellationError {
-            state = .idle
         } catch {
-            state = .failed(error.userMessage)
+            state = Task.isCancelled || error is CancellationError ? .idle : .failed(error.userMessage)
         }
     }
 
     static func allTags(client: HindsightClient, bank: String, cap: Int = 2000) async throws -> [TagItem] {
         var out: [TagItem] = []
         while out.count < cap {
-            let page = try await client.listTags(bank, limit: 500, offset: out.count)
-            out += page.items
+            try Task.checkCancellation()
+            let page = try await client.listTags(bank, limit: min(500, cap - out.count), offset: out.count)
+            try Task.checkCancellation()
+            out.append(contentsOf: page.items.prefix(cap - out.count))
             if page.items.isEmpty || out.count >= page.total { break }
         }
         return out
@@ -54,6 +57,7 @@ public final class BankCatalog {
     public var plainTags: [TagItem] { tags.filter { !$0.tag.hasPrefix("task:") } }
 
     public func entities(matching q: String, limit: Int = 30) -> [EntityListItem] {
+        let limit = max(0, limit)
         let q = q.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty else { return Array(entities.prefix(limit)) }
         return Array(entities.filter { $0.canonicalName.range(of: q, options: [.caseInsensitive, .diacriticInsensitive]) != nil }.prefix(limit))

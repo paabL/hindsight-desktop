@@ -15,6 +15,16 @@ public struct CoverageRoot: Codable, Sendable, Hashable, Identifiable {
         self.autoSync = autoSync
     }
 
+    private enum CodingKeys: String, CodingKey { case path, allFiles, autoSync }
+
+    /// Les anciens réglages peuvent ne contenir que le chemin ; les options absentes restent désactivées.
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        path = try values.decode(String.self, forKey: .path)
+        allFiles = try values.decodeIfPresent(Bool.self, forKey: .allFiles) ?? false
+        autoSync = try values.decodeIfPresent(Bool.self, forKey: .autoSync) ?? false
+    }
+
     public var id: String { path }
     public var url: URL { URL(fileURLWithPath: path) }
 }
@@ -79,7 +89,7 @@ public struct CoverageEntry: Identifiable, Sendable {
     public let file: ScannedFile
     public let documents: [DocumentListItem]
     public let status: CoverageStatus
-    /// Conversation (Codex, Claude Code, Hermes) plutôt que fichier ; elle s'envoie par « Importer ».
+    /// Conversation Codex ou Claude Code plutôt que fichier ; consultable sans import natif.
     public var session: CodexSessionSummary?
 
     public var facts: Int { documents.reduce(0) { $0 + $1.memoryUnitCount } }

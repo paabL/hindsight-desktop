@@ -78,3 +78,33 @@ Omit the server URL and bank ID to use the deterministic fake inventory. The
 script restores its fixture's selection ledger and policy afterwards. Compare
 the semantic hashes as well as timings. Results contain counts, timings, hashes
 and memory readings, not document text.
+
+
+## 0.1.8 stress audit
+
+A separate check compares installed 0.1.7 with the 0.1.8 candidate on 12,000
+synthetic local files and a temporary, GET-only inventory server. Both binaries
+read the same disposable fixture sequentially; no real source, collector or
+model is used. These are one-machine diagnostics, with filesystem caching and
+normal timing variation, rather than a statistically established speedup.
+
+| Operation | 0.1.7 | 0.1.8 candidate |
+| --- | ---: | ---: |
+| First local list visible | 121 ms | 176 ms |
+| Complete background verification | 1,727 ms | 1,901 ms |
+| Subsequent inventory refresh, median of 3 | 481 ms | 521 ms |
+| Inclusion change, median of 6 | 419 ms | 423 ms |
+
+All 12,000 IDs and previous memory-state fields match. The candidate adds
+`stored_hash` provenance from the inventory so a stored reader can detect a
+changed document even when the local file is unchanged. Consequently the full
+state hash changes; comparing previous fields separately verifies preservation.
+This pass improves correctness under concurrent activity; these timings do not
+establish a raw refresh-speed improvement over 0.1.7.
+
+The browser stress suite also exercises 20,000 operations with 100 rows initially
+rendered, 12,002 sources, 8,000 model choices, and a graph of 1,000 nodes and 24,519
+links. It deliberately reverses replies and changes banks/servers while reads
+are pending. See [TESTING.md](TESTING.md#concurrency-and-large-data-stress) for the
+reproduction commands and scope. Inference throughput and quality are separate
+from these application tests.

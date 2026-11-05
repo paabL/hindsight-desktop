@@ -45,8 +45,20 @@ export function asideLabel(record: Row): string {
 export function sourceTextPath(record: Row): string | null {
   const files = record.files;
   if (!files) return null;
+  // Match the core's upload source even when original/raw files precede it in the manifest.
+  if (!Array.isArray(files) && typeof files === 'object') {
+    const document = files['document.md'];
+    if (typeof document === 'string') return document;
+    if (document && typeof document.path === 'string') return document.path;
+  }
   const candidates: unknown[] =
-    typeof files === 'string' ? [files] : Array.isArray(files) ? files : Object.values(files);
+    typeof files === 'string'
+      ? [files]
+      : Array.isArray(files)
+        ? files
+        : Object.keys(files)
+            .sort()
+            .map((key) => files[key]);
   const paths = candidates.flatMap((file) =>
     typeof file === 'string'
       ? [file]
@@ -59,6 +71,19 @@ export function sourceTextPath(record: Row): string | null {
     paths.find((p) => /\.json$/i.test(p)) ||
     null
   );
+}
+
+/** A status toggle preserves the reader; a changed source or stored version invalidates it. */
+export function sourceReaderKey(record: Row): string {
+  return JSON.stringify([
+    record.id,
+    sourceTextPath(record),
+    sourceOriginalPath(record),
+    record.source_updated_at,
+    record.memory?.document_id,
+    record.memory?.hash,
+    record.memory?.stored_hash,
+  ]);
 }
 
 const normalized = (value: unknown) =>

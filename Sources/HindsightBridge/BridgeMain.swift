@@ -94,9 +94,9 @@ final class DesktopBridge {
     var sourcesGeneration = UUID()
     var collectionTask: Task<Void, Never>?
     var serviceTask: Task<Void, Never>?
+    var autoSyncConfirmation: UUID?
     var graphMode = GraphViewModel.Mode.entities
     var graphLimit = 300
-    var autoSyncConfirmation: UUID?
     var catalogCache: (stamp: [String], header: Any)?
     let testing = ProcessInfo.processInfo.environment["HINDSIGHT_DESKTOP_TEST_MODE"] == "1"
 
@@ -414,12 +414,6 @@ final class DesktopBridge {
         case "coverage.remove": app.coverage.selection = Set(strings("ids")); app.coverage.requestRemoveSelection()
         case "sync.script": app.projectSync.setScript(str("path"))
         case "sync.run": await app.projectSync.requestSync(ids: strings("ids"))
-        case "hermes.preview": await app.codexImport.showPreview(str("id"))
-        case "hermes.plan":
-            app.codexImport.selection = Set(strings("ids"))
-            app.codexImport.targetBankID = try session().bank
-            await app.codexImport.preparePlan()
-        case "hermes.import": app.codexImport.requestImport()
         case "diagnostic.llm":
             let dashboard = try session().dashboard
             await dashboard.loadIfNeeded()
@@ -512,7 +506,6 @@ final class DesktopBridge {
             return
         }
         if name == "settings" { return }
-        if name == "hermes" { await app.codexImport.scan(); return }
         let s = try session()
         switch name {
         case "dashboard": await s.dashboard.reload()
@@ -523,8 +516,11 @@ final class DesktopBridge {
             await s.documents.reload()
         case "coverage": await app.coverage.reload()
         case "operations":
-            s.operations.statusFilter = OperationsViewModel.StatusFilter(rawValue: p["status"] as? String ?? "all") ?? .all
-            await s.operations.reload()
+            if let status = p["status"] as? String {
+                guard let filter = OperationsViewModel.StatusFilter(rawValue: status) else { throw BridgeFailure("Filtre d'opérations inconnu.") }
+                s.operations.statusFilter = filter
+            }
+            await s.operations.reload(silently: p["polling"] as? Bool == true)
         case "facts", "timeline":
             s.timeline.text = p["query"] as? String ?? ""
             let type = p["type"] as? String ?? ""
@@ -549,7 +545,7 @@ final class DesktopBridge {
         let s = app.session
         return [workspace.confirmation, updater.confirmation, ownConfirmation, app.confirmation, app.memoryFolder.confirmation, app.service.confirmation,
                 app.pause.confirmation, app.coverage.confirmation, app.projectSync.confirmation,
-                app.serverSettings.confirmation, app.localDecision.confirmation, app.codexImport.confirmation, app.bankManagement.confirmation,
+                app.serverSettings.confirmation, app.localDecision.confirmation, app.bankManagement.confirmation,
                 s?.operations.confirmation, s?.admin.confirmation, s?.memoryDesign.confirmation,
                 s?.documents.reader?.confirmation, s?.audit.confirmation].compactMap { $0 }
     }
@@ -557,11 +553,11 @@ final class DesktopBridge {
     func clearConfirmations() {
         workspace.confirmation = nil
         updater.confirmation = nil
-        autoSyncConfirmation = nil
         ownConfirmation = nil; app.confirmation = nil; app.memoryFolder.confirmation = nil
+        autoSyncConfirmation = nil
         app.service.confirmation = nil; app.pause.confirmation = nil; app.coverage.confirmation = nil
         app.projectSync.confirmation = nil; app.serverSettings.confirmation = nil; app.localDecision.confirmation = nil
-        app.codexImport.confirmation = nil; app.bankManagement.confirmation = nil
+        app.bankManagement.confirmation = nil
         app.session?.operations.confirmation = nil; app.session?.admin.confirmation = nil
         app.session?.memoryDesign.confirmation = nil; app.session?.documents.reader?.confirmation = nil
         app.session?.audit.confirmation = nil
@@ -575,7 +571,7 @@ final class DesktopBridge {
                         app.service.message, app.serverSettings.actionMessage, app.coverage.actionMessage,
                         app.session?.admin.actionMessage, app.session?.operations.actionMessage,
                         app.session?.memoryDesign.actionMessage, app.session?.documents.reader?.actionMessage,
-                        app.codexImport.actionMessage, app.projectSync.actionMessage, app.memoryFolder.importSummary].compactMap { $0 }
+                        app.projectSync.actionMessage, app.memoryFolder.importSummary].compactMap { $0 }
         return [
             "app": ["connected": connected, "connectionError": wire(error), "serverURLNotice": wire(app.serverURLNotice), "serverURL": app.serverURL.absoluteString,
                     "version": wire(app.connection.version), "banks": wire(app.banks), "bank": wire(app.selectedBankID),
@@ -647,9 +643,12 @@ final class DesktopBridge {
             return ["items": wire(s?.documents.sortedItems ?? []), "total": s?.documents.total ?? 0,
                     "canLoadMore": s?.documents.canLoadMore ?? false, "error": wire(s?.documents.state.errorMessage)]
         case "coverage":
-            return ["items": wire(app.coverage.visibleItems), "roots": wire(app.coverage.roots), "error": wire(app.coverage.state.errorMessage), "warnings": app.coverage.warnings]
+            return ["items": wire(app.coverage.visibleItems), "roots": wire(app.coverage.roots),
+                    "catalogFolder": wire(app.memoryFolder.repository?.path), "loading": app.coverage.state.isLoading, "error": wire(app.coverage.state.errorMessage), "warnings": app.coverage.warnings]
         case "operations":
             return ["items": wire(s?.operations.rows.map(\.raw) ?? []), "total": s?.operations.total ?? 0,
+                    "statusFilter": s?.operations.statusFilter.rawValue ?? "all", "refreshing": s?.operations.isRefreshing ?? false,
+                    "counts": wire(s?.operations.stats?.operationsByStatus), "loadingMore": s?.operations.isLoadingMore ?? false,
                     "canLoadMore": s?.operations.canLoadMore ?? false, "error": wire(s?.operations.state.errorMessage),
                     "consultationOnly": s?.operations.consultationOnly ?? false]
         case "consumption":
@@ -678,7 +677,6 @@ final class DesktopBridge {
         case "audit": return ["audit": wire(s?.audit.audit.value ?? []), "traces": wire(s?.audit.llm.value ?? []), "reads": wire(s?.reads.events ?? []), "error": wire(s?.audit.audit.errorMessage), "traceError": wire(s?.audit.llm.errorMessage)]
         case "memory": return ["draft": wire(s?.memoryDesign.draft), "config": wire(s?.admin.config.value), "error": wire(s?.memoryDesign.state.errorMessage), "trial": wire(s?.memoryDesign.trial.value), "trialError": wire(s?.memoryDesign.trial.errorMessage), "problems": s?.memoryDesign.problems ?? [], "serverIs120": s?.memoryDesign.serverIs120 ?? false]
         case "server", "model-settings": return serverSnapshot()
-        case "hermes": return ["items": wire(app.codexImport.filteredSessions), "preview": wire(app.codexImport.preview.value), "plan": wire(app.codexImport.plan.value), "error": wire(app.codexImport.scanState.errorMessage), "sendErrors": app.codexImport.sendErrors]
         default: return [:]
         }
     }

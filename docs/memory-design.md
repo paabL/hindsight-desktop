@@ -110,5 +110,3 @@ decision model may use the same name.
   [API reference](https://hindsight.vectorize.io/api-reference), and
   [version 0.8.5: per-bank auditing](https://hindsight.vectorize.io/blog/2026/07/21/version-0-8-5).
 - Research paper: [Hindsight is 20/20](https://arxiv.org/html/2512.12818v1).
-- Hermes Agent: [Session Storage](https://hermes-agent.nousresearch.com/docs/developer-guide/session-storage)
-  and `hermes_state*.py` in `NousResearch/hermes-agent`.

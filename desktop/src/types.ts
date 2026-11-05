@@ -13,7 +13,6 @@ export type Section =
   | 'audit'
   | 'timeline'
   | 'graph'
-  | 'hermes'
   | 'server'
   | 'admin'
   | 'settings'

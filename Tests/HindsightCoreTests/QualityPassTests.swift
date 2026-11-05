@@ -8,85 +8,10 @@ import XCTest
 // Passe qualité : régressions des bugs relevés en relecture.
 
 @MainActor
-final class HermesReadingTests: XCTestCase {
-    static let structured = "\u{0}json:" + #"[{"type":"text","text":"Regarde ça"},{"type":"image_url","image_url":{"url":"data:image/png;base64,iVBORw0KGgo="}}]"#
-
-    func testHexColumnsAreDecoded() async {
-        let hex = Data(Self.structured.utf8).map { String(format: "%02X", $0) }.joined()
-        XCTAssertEqual(HermesReader.unhex(hex), Self.structured)
-        XCTAssertNil(HermesReader.unhex("ABC"), "longueur impaire")
-        XCTAssertEqual(HermesReader.text(["content_hex": .string(hex)], "content"), Self.structured)
-        XCTAssertEqual(HermesReader.text(["content": "brut"], "content"), "brut", "lignes de test sans hexadécimal")
-
-        let rows: [[String: JSONValue]] = [
-            ["id": 1, "role": "user", "content_hex": .string(hex), "timestamp": 1_790_000_001],
-            ["id": 2, "role": "assistant", "content_hex": .string("4F4B"), "timestamp": 1_790_000_002],
-        ]
-        let conv = HermesReader.conversation(session: ["id": "s1", "source": "cli"], messages: rows)
-        let users = conv.events.compactMap { e -> [CodexBlock]? in if case .user(_, _, let b) = e { return b } else { return nil } }
-        XCTAssertEqual(users.first?.count, 2, "texte + image du contenu structuré")
-        XCTAssertTrue(conv.events.contains { if case .assistant(_, _, "OK", _) = $0 { return true } else { return false } })
-    }
-
-    func testTruncatedStructuredPreviewKeepsText() async {
-        let truncated = String(Self.structured.prefix(60))
-        XCTAssertEqual(HermesReader.textFragments(truncated), "Regarde ça")
-        let row: [String: JSONValue] = ["id": "s1", "source": "cli", "first_user_hex": .string(Data(truncated.utf8).map { String(format: "%02x", $0) }.joined())]
-        XCTAssertEqual(HermesReader.summary(row, db: URL(fileURLWithPath: "/tmp/state.db"), modified: Date()).firstUserText, "Regarde ça")
-    }
-
-    func testDatabaseIsOpenedImmutableWhenNoJournalExists() async throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("hs-hermes-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let db = dir.appendingPathComponent("état 1.db")
-        try Data().write(to: db)
-        let arg = HermesReader.databaseArgument(db)
-        XCTAssertTrue(arg.hasPrefix("file:") && arg.hasSuffix("?immutable=1&mode=ro"), arg)
-        XCTAssertEqual(URLComponents(string: arg)?.path, db.path, "le chemin décodé est conservé, en Unicode composé ou décomposé")
-        XCTAssertTrue(arg.contains("%20") && !arg.contains(" "), "espaces encodés : \(arg)")
-        try Data().write(to: URL(fileURLWithPath: db.path + "-wal"))
-        XCTAssertEqual(HermesReader.databaseArgument(db), db.path, "journal présent : ouverture classique, rien n'est créé")
-    }
-
-    /// Bout en bout avec le vrai sqlite3 : un contenu préfixé d'un octet nul doit arriver entier.
-    func testStructuredContentSurvivesSqlite3() async throws {
-        try XCTSkipUnless(FileManager.default.isExecutableFile(atPath: HermesReader.sqlite3), "sqlite3 absent")
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("hs-hermes-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let db = dir.appendingPathComponent("state.db")
-        let hex = Data(Self.structured.utf8).map { String(format: "%02X", $0) }.joined()
-        let sql = """
-            CREATE TABLE sessions (id TEXT, source TEXT, title TEXT, started_at REAL);
-            CREATE TABLE messages (id INTEGER, session_id TEXT, role TEXT, content TEXT, timestamp REAL, active INTEGER, compacted INTEGER);
-            INSERT INTO sessions VALUES ('s1', 'cli', 'Essai', 1790000000);
-            INSERT INTO messages VALUES (1, 's1', 'user', CAST(X'\(hex)' AS TEXT), 1790000001, 1, 0);
-            INSERT INTO messages VALUES (2, 's1', 'assistant', 'Vu.', 1790000002, 1, 0);
-            """
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: HermesReader.sqlite3)
-        p.arguments = [db.path, sql]
-        try p.run()
-        p.waitUntilExit()
-        XCTAssertEqual(p.terminationStatus, 0)
-
-        let summaries = HermesReader.summaries(database: db)
-        XCTAssertEqual(summaries.first?.firstUserText, "Regarde ça")
-        let conv = try HermesReader.parse(CodexFile(database: db, session: "s1", modified: Date()))
-        let users = conv.events.compactMap { e -> [CodexBlock]? in if case .user(_, _, let b) = e { return b } else { return nil } }
-        XCTAssertEqual(users.first?.count, 2)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: db.path + "-wal"), "aucun fichier créé à côté de la base")
-    }
-}
-
-@MainActor
 final class ClaudeCodeCommandTests: XCTestCase {
     func testSessionSourceNeedsNoFileRead() async {
         let claude = CodexSessionSummary(file: CodexFile(url: URL(fileURLWithPath: "/Users/x/.claude/projects/p/s.jsonl")))
         XCTAssertEqual(claude.source, .claudeCode)
-        let hermes = CodexSessionSummary(file: CodexFile(database: URL(fileURLWithPath: "/tmp/state.db"), session: "s", modified: Date()))
-        XCTAssertEqual(hermes.source, .hermes)
         XCTAssertEqual(CodexSessionSummary(file: CodexFile(url: URL(fileURLWithPath: "/Users/x/.codex/sessions/s.jsonl"))).source, .codex)
     }
 }

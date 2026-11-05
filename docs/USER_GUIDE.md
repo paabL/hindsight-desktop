@@ -18,6 +18,9 @@ If needed, create one in **Settings → Memory bank → New bank**.
   **Catalog** opens an existing, configured memory folder; use **Prepare upload
   to Hindsight** for its collected sources. Optional collectors require separate
   configuration.
+  The catalog and tracked folders are separate. If the catalog folder is not
+  tracked in the current bank, **Tracked folders** shows it with **Track this
+  folder**. This action adds the comparison; uploads still need confirmation.
 - **Memory** shows what the selected bank has stored. Its tabs open **Facts**,
   **Documents**, **Timeline** and **Graph**. Open available source documents to
   check where a fact came from.
@@ -70,6 +73,7 @@ You can browse and filter while verification or collection runs.
 | **Refresh view** in the top bar, or `⌘R` | Rechecks existing files against the selected bank; does not run collectors. |
 | **Refresh folder** | Runs the configured collectors and updates local archives in the background; does not upload to Hindsight. |
 | **Prepare upload to Hindsight** | Previews additions and changes from enabled sources; **Send** requires confirmation. |
+| **Check Hindsight status** | Rechecks the bank inventory without collecting or uploading sources. |
 
 Opening a source shows its text and provenance. **Stored version** reads the copy
 in Hindsight; **Current source** returns to the local file. Changing inclusion
@@ -78,6 +82,9 @@ stored copy; **Remove from memory** is a separate, confirmed action.
 
 **Separate archives** keeps internal reviews and empty exports accessible.
 Documents already in the bank can be linked to a matching local source.
+
+The separate native conversation importer has been retired. Previously stored
+conversations remain readable in the generic catalog and document views.
 
 ## Shortcuts
 

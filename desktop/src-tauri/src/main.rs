@@ -46,18 +46,42 @@ async fn bridge_call(app: &tauri::AppHandle, request: Value, guard: &mut Option<
         let stdout = BufReader::new(child.stdout.take().ok_or("Sortie du moteur indisponible")?);
         *guard = Some(NativeBridge { _child: child, stdin, stdout, next: 0 });
     }
+    call_running_bridge(guard, command, args, std::time::Duration::from_secs(125 * 60)).await
+}
+
+enum BridgeFailure {
+    Transport,
+    Action(String),
+}
+
+async fn call_running_bridge(guard: &mut Option<NativeBridge>, command: &str, args: String, timeout: std::time::Duration) -> Result<Value, String> {
     let native = guard.as_mut().ok_or("Moteur indisponible")?;
+    let result = tokio::time::timeout(timeout, exchange(native, command, args)).await;
+    match result {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(BridgeFailure::Action(message))) => Err(message),
+        // Never replay an uncertain request. Discard the broken process so an explicit next
+        // action can create a fresh bridge rather than reusing a dead pipe indefinitely.
+        Ok(Err(BridgeFailure::Transport)) | Err(_) => {
+            *guard = None;
+            Err("Le moteur Hindsight s'est interrompu. Vérifiez les opérations avant de réessayer, puis reconnectez le serveur.".into())
+        }
+    }
+}
+
+async fn exchange(native: &mut NativeBridge, command: &str, args: String) -> Result<Value, BridgeFailure> {
     native.next += 1;
     let id = native.next;
     // Paramètres sérialisés une seule fois, pour la limite de taille comme pour la ligne envoyée.
     let line = format!("{{\"args\":{args},\"command\":{},\"id\":{id}}}\n", Value::from(command));
-    native.stdin.write_all(line.as_bytes()).await.map_err(|e| e.to_string())?;
-    native.stdin.flush().await.map_err(|e| e.to_string())?;
+    native.stdin.write_all(line.as_bytes()).await.map_err(|_| BridgeFailure::Transport)?;
+    native.stdin.flush().await.map_err(|_| BridgeFailure::Transport)?;
     let mut line = String::new();
-    if native.stdout.read_line(&mut line).await.map_err(|e| e.to_string())? == 0 { return Err("Le moteur Hindsight s'est arrêté. Rouvrez l'application.".into()); }
-    let mut reply: Value = serde_json::from_str(&line).map_err(|e| e.to_string())?;
-    if reply["id"] != id { return Err("Réponse du moteur désynchronisée".into()); }
-    if let Some(error) = reply.get("error").and_then(Value::as_str) { return Err(error.into()); }
+    if native.stdout.read_line(&mut line).await.map_err(|_| BridgeFailure::Transport)? == 0 { return Err(BridgeFailure::Transport); }
+    let mut reply: Value = serde_json::from_str(&line).map_err(|_| BridgeFailure::Transport)?;
+    if reply["id"] != id { return Err(BridgeFailure::Transport); }
+    if let Some(error) = reply.get("error").and_then(Value::as_str) { return Err(BridgeFailure::Action(error.into())); }
+    if reply.get("result").is_none() || reply.get("error").is_some_and(|value| !value.is_null()) { return Err(BridgeFailure::Transport); }
     // Le résultat est rendu sans copie profonde (plusieurs mégaoctets pour certaines sections). Il reste
     // décodé puis réencodé : les clés repartent triées vers la vue, quel que soit l'ordre du moteur.
     Ok(reply.get_mut("result").map(Value::take).unwrap_or(Value::Null))
@@ -90,4 +114,64 @@ fn main() {
         .invoke_handler(tauri::generate_handler![bridge, save_export, release_update::release_update_check, release_update::release_update_install])
         .run(tauri::generate_context!())
         .expect("Impossible de démarrer Hindsight Desktop");
+}
+
+#[cfg(test)]
+mod bridge_tests {
+    use super::*;
+    use std::time::Duration;
+
+    fn fake_bridge(script: &str) -> NativeBridge {
+        let mut child = Command::new("/bin/sh").args(["-c", script])
+            .stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null()).kill_on_drop(true).spawn().unwrap();
+        NativeBridge { stdin: child.stdin.take().unwrap(), stdout: BufReader::new(child.stdout.take().unwrap()), _child: child, next: 0 }
+    }
+
+    fn runtime() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap()
+    }
+
+    #[test]
+    fn dead_or_desynchronized_process_is_discarded_without_replaying_the_request() {
+        runtime().block_on(async {
+            for script in [
+                "exit 0",
+                "read request; printf 'not-json\\n'",
+                "read request; printf '{\"id\":999,\"result\":{}}\\n'",
+                "read request; printf '{\"id\":1}\\n'",
+                "read request; printf '{\"id\":1,\"error\":false}\\n'",
+            ] {
+                let mut state = Some(fake_bridge(script));
+                let result = call_running_bridge(&mut state, "confirm", "{}".into(), Duration::from_secs(2)).await;
+                assert!(result.is_err());
+                assert!(state.is_none(), "broken pipe must not remain cached");
+                // A new process is created only for the next explicit call, never to retry confirm.
+                state = Some(fake_bridge("read request; printf '{\"id\":1,\"result\":{\"connected\":true}}\\n'"));
+                let next = call_running_bridge(&mut state, "connect", "{}".into(), Duration::from_secs(2)).await.unwrap();
+                assert_eq!(next["connected"], true);
+            }
+        });
+    }
+
+    #[test]
+    fn a_refused_action_keeps_the_process_and_sequence_for_the_next_request() {
+        runtime().block_on(async {
+            let mut state = Some(fake_bridge("read request; printf '{\"id\":1,\"error\":\"Refused\"}\\n'; read request; printf '{\"id\":2,\"result\":{\"ok\":true}}\\n'"));
+            assert_eq!(call_running_bridge(&mut state, "confirm", "{}".into(), Duration::from_secs(2)).await, Err("Refused".into()));
+            assert!(state.is_some());
+            let next = call_running_bridge(&mut state, "snapshot", "{}".into(), Duration::from_secs(2)).await.unwrap();
+            assert_eq!(next["ok"], true);
+        });
+    }
+
+    #[test]
+    fn a_response_timeout_discards_the_process_without_retrying() {
+        runtime().block_on(async {
+            let mut state = Some(fake_bridge("while read request; do :; done"));
+            let result = call_running_bridge(&mut state, "confirm", "{}".into(), Duration::from_millis(20)).await;
+            assert!(result.is_err());
+            assert!(state.is_none());
+        });
+    }
 }

@@ -8,7 +8,7 @@ public enum HelpTopic: String, CaseIterable, Sendable, Identifiable {
     case recall, recallArms, reflect, budget, factTypes, dates, tags, dryRun, memoryDefense
     case merge, rename, clone, transfer
     case audit, reads, llmTraces, costs
-    case graph, invalidate, reprocess, conversationImport, service, updates, operations
+    case graph, invalidate, reprocess, service, updates, operations
     case consumption, pause, budgets, library
 
     public var id: String { rawValue }
@@ -295,15 +295,6 @@ public enum HelpTopic: String, CaseIterable, Sendable, Identifiable {
                 Supprime les faits du document puis relance l'extraction avec la configuration ACTUELLE (utile après \
                 un changement de mission ou de mode). Les corrections manuelles de ces faits sont perdues ; appels \
                 LLM et VLM.
-                """)
-        case .conversationImport:
-            return (
-                "Import Hermes",
-                """
-                Import manuel des conversations Hermes depuis sa base locale, ouverte en lecture seule. \
-                Chaque tâche devient un document après confirmation. Les conversations **Codex et Claude Code** \
-                sont exportées par **Agent Dump** dans le dossier commun : consultez **Dossier mémoire**. \
-                La collecte de ce dossier n'envoie rien à Hindsight.
                 """)
         case .service:
             return (

@@ -79,6 +79,7 @@ public final class LocalDecisionModel {
     @ObservationIgnored private let locate: @Sendable (String) -> String?
     @ObservationIgnored private let startTimeout: TimeInterval
     @ObservationIgnored private let pollInterval: Duration
+    @ObservationIgnored private var refreshRevision = UUID()
 
     public init(
         runner: ProcessRunning = SystemProcessRunner(), paths: Paths = .standard(), uid: UInt32 = FileSafety.currentUID,
@@ -102,8 +103,14 @@ public final class LocalDecisionModel {
     public nonisolated static func healthy(_ url: URL) async -> Bool {
         var request = URLRequest(url: url, timeoutInterval: 2)
         request.cachePolicy = .reloadIgnoringLocalCacheData
-        guard let (_, response) = try? await URLSession.shared.data(for: request) else { return false }
-        return (response as? HTTPURLResponse)?.statusCode == 200
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let status = (response as? HTTPURLResponse)?.statusCode else { return false }
+        return healthyResponse(data, status: status)
+    }
+
+    nonisolated static func healthyResponse(_ data: Data, status: Int) -> Bool {
+        guard status == 200, let health = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
+        return health["status"] as? String == "ok" && health["model"] as? String == "hs-decide-1-flash"
     }
 
     /// Environnement, modèle, script et service présents (une installation interrompue se reprend).
@@ -116,21 +123,46 @@ public final class LocalDecisionModel {
 
     public func refresh() async {
         guard !isBusy else { return }
+        let revision = UUID()
+        refreshRevision = revision
         guard isInstalled else {
             phase = .notInstalled
             return
         }
-        if await probe(healthURL) {
-            phase = .running
-            return
-        }
-        phase = await jobStatus().running ? .starting : .stopped
+        let current = await currentPhase()
+        guard refreshRevision == revision, !isBusy else { return }
+        phase = current
+    }
+
+    private func currentPhase() async -> Phase {
+        guard isInstalled else { return .notInstalled }
+        guard let job = try? await checkedJobStatus() else { return .unknown }
+        if job.running, await probe(healthURL) { return .running }
+        return job.running || job.pending ? .starting : .stopped
+    }
+
+    private func beginOperation() {
+        refreshRevision = UUID()
+        isBusy = true
+        problem = nil
+    }
+
+    private func endOperation() {
+        refreshRevision = UUID()
+        isBusy = false
     }
 
     func jobStatus() async -> LaunchJobStatus {
-        guard let r = try? await runner.run(ProcessInvocation(HindsightServiceViewModel.launchctl, ["print", target], timeout: 10)),
-              r.succeeded else { return .notLoaded }
-        return LaunchJobStatus.parse(printOutput: r.stdout)
+        (try? await checkedJobStatus()) ?? .notLoaded
+    }
+
+    private func checkedJobStatus() async throws -> LaunchJobStatus {
+        let result = try await runner.run(ProcessInvocation(HindsightServiceViewModel.launchctl, ["print", target], timeout: 10))
+        guard result.succeeded else {
+            if !result.timedOut, result.status == 113 { return .notLoaded }
+            throw ServiceError("Lecture du service local impossible : \(SecretMasker.mask(result.combined).prefix(300))")
+        }
+        return LaunchJobStatus.parse(printOutput: result.stdout)
     }
 
     // MARK: Clé
@@ -205,6 +237,7 @@ public final class LocalDecisionModel {
     }
 
     public func requestInstall() {
+        guard !isBusy else { return }
         confirmation = ConfirmationRequest(
             title: "Installer le modèle de décision sur ce Mac ?",
             message: """
@@ -221,16 +254,16 @@ public final class LocalDecisionModel {
 
     func install() async {
         guard !isBusy else { return }
-        isBusy = true
-        problem = nil
+        beginOperation()
         log = ""
-        defer { isBusy = false }
+        defer { endOperation() }
         guard let uv = locate("uv") else {
             problem = "uv est requis pour créer l'environnement Python : https://docs.astral.sh/uv/"
-            phase = isInstalled ? .stopped : .notInstalled
+            phase = await currentPhase()
             return
         }
         do {
+            if FileManager.default.fileExists(atPath: paths.plist.path) { try await unload() }
             try FileManager.default.createDirectory(at: paths.root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
             for step in steps(uv: uv) where !step.done() {
                 phase = .installing(step.title)
@@ -248,6 +281,8 @@ public final class LocalDecisionModel {
             try await load()
         } catch {
             problem = error.userMessage
+            phase = await currentPhase()
+            return
         }
         phase = await waitUntilHealthy(fallback: isInstalled ? .stopped : .notInstalled)
     }
@@ -282,12 +317,12 @@ public final class LocalDecisionModel {
 
     /// Charge le service (s'il ne l'est pas) et le lance.
     private func load() async throws {
-        if await !jobStatus().loaded {
+        if try await !checkedJobStatus().loaded {
             let r = try await runner.run(ProcessInvocation(HindsightServiceViewModel.launchctl, ["bootstrap", domain, paths.plist.path], timeout: 20))
-            guard r.succeeded else { throw ServiceError("launchctl bootstrap a échoué : \(r.combined.prefix(300))") }
+            guard r.succeeded else { throw ServiceError("launchctl bootstrap a échoué : \(SecretMasker.mask(r.combined).prefix(300))") }
         }
         let k = try await runner.run(ProcessInvocation(HindsightServiceViewModel.launchctl, ["kickstart", target], timeout: 20))
-        guard k.succeeded else { throw ServiceError("launchctl kickstart a échoué : \(k.combined.prefix(300))") }
+        guard k.succeeded else { throw ServiceError("launchctl kickstart a échoué : \(SecretMasker.mask(k.combined).prefix(300))") }
         phase = .starting
     }
 
@@ -295,7 +330,11 @@ public final class LocalDecisionModel {
         guard problem == nil, isInstalled else { return fallback }
         let deadline = Date().addingTimeInterval(startTimeout)
         while Date() < deadline {
-            if await probe(healthURL) { return .running }
+            if Task.isCancelled { problem = "Démarrage annulé."; return await currentPhase() }
+            let job: LaunchJobStatus
+            do { job = try await checkedJobStatus() }
+            catch { problem = error.userMessage; return .unknown }
+            if job.running, await probe(healthURL) { return .running }
             try? await Task.sleep(for: pollInterval)
         }
         problem = "Le serveur local ne répond pas : voir \(paths.log.path)."
@@ -306,19 +345,21 @@ public final class LocalDecisionModel {
 
     public func start() async {
         guard !isBusy, isInstalled else { return }
-        isBusy = true
-        problem = nil
-        defer { isBusy = false }
+        beginOperation()
+        defer { endOperation() }
         do {
             try writePlist()
             try await load()
         } catch {
             problem = error.userMessage
+            phase = await currentPhase()
+            return
         }
         phase = await waitUntilHealthy(fallback: .stopped)
     }
 
     public func requestStop() {
+        guard !isBusy else { return }
         confirmation = ConfirmationRequest(
             title: "Arrêter le modèle de décision local ?",
             message: "Hindsight repassera par ses appels LLM tant que le modèle est arrêté. Le service redémarrera à la prochaine ouverture de session.",
@@ -328,13 +369,19 @@ public final class LocalDecisionModel {
 
     func stop() async {
         guard !isBusy else { return }
-        isBusy = true
-        defer { isBusy = false }
-        _ = try? await runner.run(ProcessInvocation(HindsightServiceViewModel.launchctl, ["bootout", target], timeout: 30))
-        phase = isInstalled ? .stopped : .notInstalled
+        beginOperation()
+        defer { endOperation() }
+        do {
+            try await unload()
+            phase = isInstalled ? .stopped : .notInstalled
+        } catch {
+            problem = error.userMessage
+            phase = await currentPhase()
+        }
     }
 
     public func requestUninstall() {
+        guard !isBusy else { return }
         confirmation = ConfirmationRequest(
             title: "Désinstaller le modèle de décision local ?",
             message: "Supprime le service et \(paths.root.path) (environnement Python, modèle et clé, environ 2 Go). Choisissez d'abord un autre modèle de décision dans le script du serveur.",
@@ -344,19 +391,34 @@ public final class LocalDecisionModel {
 
     func uninstall() async {
         guard !isBusy else { return }
-        isBusy = true
-        defer { isBusy = false }
-        _ = try? await runner.run(ProcessInvocation(HindsightServiceViewModel.launchctl, ["bootout", target], timeout: 30))
+        beginOperation()
+        defer { endOperation() }
         let fm = FileManager.default
         do {
+            try await unload()
             if fm.fileExists(atPath: paths.plist.path) { try fm.removeItem(at: paths.plist) }
             if fm.fileExists(atPath: paths.root.path) { try fm.removeItem(at: paths.root) }
             problem = nil
         } catch {
             problem = error.userMessage
+            phase = await currentPhase()
+            return
         }
         log = ""
         phase = .notInstalled
+    }
+
+    private func unload() async throws {
+        guard try await checkedJobStatus().loaded else { return }
+        let result = try await runner.run(ProcessInvocation(HindsightServiceViewModel.launchctl, ["bootout", target], timeout: 30))
+        guard result.succeeded else { throw ServiceError("Arrêt du modèle local impossible : \(SecretMasker.mask(result.combined).prefix(300))") }
+        let deadline = Date().addingTimeInterval(30)
+        repeat {
+            try Task.checkCancellation()
+            if try await !checkedJobStatus().loaded { return }
+            try await Task.sleep(for: pollInterval)
+        } while Date() < deadline
+        throw ServiceError("Le service du modèle local ne s'est pas arrêté. Ses fichiers sont conservés.")
     }
 
     struct ServiceError: LocalizedError {

@@ -243,12 +243,33 @@ public final class LLMConnections {
 
     /// Hindsight Cloud seulement : `hindsight-admin cloud logout` efface la clé enregistrée sur ce Mac.
     public func disconnect(_ account: LLMAccount, context: LLMConnectionContext) async {
-        guard account.canDisconnect, activeAccount == nil, let executable = executable(account, context: context) else { return }
+        guard account.canDisconnect, activeAccount == nil else { return }
+        if let problem = problem(account, context: context) {
+            statuses[account] = .unavailable(problem)
+            return
+        }
+        guard let executable = executable(account, context: context) else {
+            statuses[account] = .unavailable(Self.missingExecutable(account))
+            return
+        }
         invalidateChecks()
+        let logoutRevision = revision
+        activeAccount = account
+        statuses[account] = .checking
+        defer {
+            if revision == logoutRevision {
+                activeAccount = nil
+                if statuses[account] == .checking { statuses[account] = .unchecked }
+            }
+        }
         let invocation = ProcessInvocation(executable, ["cloud", "logout"], in: NSHomeDirectory(), environment: ["HOME": NSHomeDirectory()],
                                            inheritEnvironment: false, timeout: 30)
-        if let result = try? await runner.run(invocation), result.succeeded {
-            statuses[account] = await check(account, context: context)
+        let result = try? await runner.run(invocation)
+        guard revision == logoutRevision, !Task.isCancelled else { return }
+        if result?.succeeded == true {
+            let status = await check(account, context: context)
+            guard revision == logoutRevision, !Task.isCancelled else { return }
+            statuses[account] = status
         } else {
             statuses[account] = .failed("Déconnexion impossible. Réessayez.")
         }

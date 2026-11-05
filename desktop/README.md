@@ -57,7 +57,6 @@ opens explicitly labeled fictional data. Native file and server access uses Taur
 | Settings → Memory behavior | Missions, extraction, consolidation, recall, disposition, advanced settings and previews |
 | Settings → Server & models | launchd service, model roles, official sign-in clients, changes, backups and logs |
 | Settings → Memory bank | Banks, directives, exports, cloning, merging, imports, sync previews and deletions |
-| Sources → Imports | Session previews and confirmed imports |
 
 Bank configuration changes use the server API. Model settings are edited in the
 local launch script. Features depend on server capabilities and separately
@@ -162,8 +161,7 @@ to these readable archives.
 **Refresh folder** explicitly starts collection and updates the local catalog without
 contacting Hindsight. It runs in the background, with status and output available
 while the user navigates. Configured collectors may contact their own source services.
-Codex and Claude Code
-exports use Agent Dump; Hermes imports are separate. Source dates take priority
+Codex and Claude Code exports use Agent Dump. Source dates take priority
 over archive dates, and collection-date fallbacks are labeled.
 
 **Add documents** accepts `.md`, `.tex` and `.pdf` files and a configured project.
@@ -203,7 +201,7 @@ uploading again and first backs up the state to
 Advanced project sync previews list document IDs. `sync.py` binds approval to
 the plan's exact content and metadata; changing the plan or script requires a
 new preview. Its queue must be readable and empty at preparation and confirmation.
-Folder uploads and Hermes imports also display their selection before approval.
+Folder uploads also display their selection before approval.
 Automatic folder sync is suspended, including previously enabled settings.
 These protections do not govern other clients or direct Hindsight API calls.
 

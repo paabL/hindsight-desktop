@@ -28,14 +28,14 @@ public final class AppModel {
     public private(set) var client: HindsightClient
     public private(set) var connection: Connection = .unknown
     public private(set) var banks: [BankListItem] = []
+    @ObservationIgnored private var connectionRevision = UUID()
+    @ObservationIgnored private var banksRevision = UUID()
     public private(set) var session: BankSession?
     public var selectedSection: AppSection = .sources
     /// Dernière erreur à afficher dans une bannière globale.
     public var bannerError: String?
     /// Réglages serveur (script de lancement) : indépendants de la banque sélectionnée.
     public private(set) var serverSettings: ServerSettingsViewModel!
-    /// Import Hermes manuel, disponible dans les outils avancés.
-    public private(set) var codexImport: CodexImportViewModel!
     public private(set) var memoryFolder: MemoryFolderViewModel!
     /// Documents de la banque sélectionnée et leurs sources (dossiers suivis, conversations) : la liste de
     /// l'écran « Documents ».
@@ -63,7 +63,7 @@ public final class AppModel {
 
     public init(
         settings: SettingsStore, transport: any HTTPTransport = URLSessionTransport(),
-        runner: CommandRunner = ShellCommandRunner(), codexIndex: CodexIndex = CodexIndex(),
+        runner: CommandRunner = ShellCommandRunner(),
         processRunner: ProcessRunning = SystemProcessRunner(), servicePaths: ServicePaths = .standard,
         appInfo: AppInfo = AppInfo(version: "dev", build: "0"), ledger: UsageLedger? = UsageLedger(),
         automaticActions: Bool = true
@@ -84,28 +84,12 @@ public final class AppModel {
         self.client = HindsightClient(baseURL: url, transport: transport)
         self.serverSettings = ServerSettingsViewModel(
             settings: settings, runner: runner, client: { [unowned self] in self.client }, bank: { [unowned self] in self.selectedBankID })
-        self.codexImport = CodexImportViewModel(
-            settings: settings, index: codexIndex, client: { [unowned self] in self.client },
-            banks: { [unowned self] in self.banks.map(\.bankId) },
-            createBank: { [unowned self] id, name, mission in await self.createBank(id: id, name: name, mission: mission) })
-        self.codexImport.openOperations = { @MainActor [unowned self] bank in
-            self.selectBank(bank)
-            self.selectedSection = .operations
-        }
-        self.codexImport.estimate = { @MainActor @Sendable [unowned self] bank, kind in self.services.estimator.estimate(kind, bank: bank) }
         self.coverage = FileCoverageViewModel(settings: settings, client: { [unowned self] in self.client }, bank: { [unowned self] in self.selectedBankID })
         self.coverage.memoryPolicyURL = { [unowned self] in self.memoryFolder.repository?.appendingPathComponent("memory-policy.json") }
         self.coverage.estimate = { @MainActor @Sendable [unowned self] bank, kind in self.services.estimator.estimate(kind, bank: bank) }
         self.coverage.priceBook = { @MainActor [unowned self] in self.services.estimator.priceBook }
         self.coverage.openOperations = { @MainActor [unowned self] in self.selectedSection = .operations }
         self.coverage.openDocument = { @MainActor [unowned self] id in self.openDocument(id: id) }
-        self.coverage.openImport = { @MainActor [unowned self] ids, bank in
-            self.codexImport.createNewBank = false
-            self.codexImport.targetBankID = bank
-            self.codexImport.selection = Set(ids)
-            self.selectedSection = .codex
-            Task { await self.codexImport.invalidatePlan() }
-        }
         self.service = HindsightServiceViewModel(
             settings: settings, runner: processRunner, paths: servicePaths,
             client: { [unowned self] in self.client }, scriptPath: { [unowned self] in self.serverSettings.scriptPath })
@@ -131,7 +115,6 @@ public final class AppModel {
             let reason = gauges.map { "\($0.title) : \($0.usedText) sur \($0.limitText)" }.joined(separator: " ; ")
             await self.pause.apply(action, reason: "Plafond atteint — " + reason)
         }
-        self.codexImport.pauseGate = self.pause.gate
         self.coverage.pauseGate = self.pause.gate
         self.projectSync = ProjectSyncViewModel(settings: settings, runner: processRunner, bank: { [unowned self] in self.selectedBankID })
         self.projectSync.pauseGate = self.pause.gate
@@ -169,11 +152,17 @@ public final class AppModel {
         let verdict = ServerURLPolicy.evaluate(url)
         serverURLNotice = verdict.message
         guard verdict.isAccepted else { return false }
+        connectionRevision = UUID()
+        banksRevision = UUID()
+        session?.operations.stopAutoRefresh()
+        session?.documents.closeReader()
+        session?.graph.stopAnimation()
         serverURL = url
         settings.set(url.absoluteString, forKey: SettingsKey.serverURL)
         client = HindsightClient(baseURL: url, transport: transport)
         session = nil
         banks = []
+        coverage?.invalidateContext()
         // Autre serveur : les relevés de consommation repartent de zéro (les banques peuvent porter les mêmes noms).
         consumption.reset()
         await connect()
@@ -182,29 +171,37 @@ public final class AppModel {
 
     /// Vérifie le serveur (`/version`), charge les banques et sélectionne la dernière utilisée.
     public func connect() async {
+        let revision = UUID()
+        connectionRevision = revision
+        let client = self.client
         connection = .connecting
         bannerError = nil
         do {
             let version = try await client.version()
             try Task.checkCancellation()
+            guard connectionRevision == revision else { return }
             connection = .connected(version)
             await refreshBanks()
         } catch is CancellationError {
-            connection = .unknown
+            if connectionRevision == revision { connection = .unknown }
         } catch {
-            connection = .failed(error.userMessage)
+            if connectionRevision == revision { connection = .failed(error.userMessage) }
         }
     }
 
     /// Relit `/version` sans recharger les banques (après un redémarrage du serveur).
     public func refreshServerInfo() async {
-        if let v = try? await client.version() { connection = .connected(v) }
+        let revision = connectionRevision, client = self.client
+        if let v = try? await client.version(), revision == connectionRevision { connection = .connected(v) }
     }
 
     public func refreshBanks() async {
+        let revision = UUID(), connection = connectionRevision, client = self.client
+        banksRevision = revision
         do {
             let list = try await client.listBanks(limit: 200)
             try Task.checkCancellation()
+            guard banksRevision == revision, connection == connectionRevision else { return }
             banks = list.banks
             // Rattrape ce que la pause n'a pas pu faire serveur injoignable (couper ou rétablir la consolidation,
             // annuler les rafraîchissements de pages arrivés entre-temps).
@@ -221,10 +218,13 @@ public final class AppModel {
                 selectBank(first.bankId)
             } else {
                 session = nil
+                coverage?.invalidateContext()
             }
         } catch is CancellationError {
         } catch {
-            bannerError = "Impossible de lister les banques : \(error.userMessage)"
+            if banksRevision == revision, connection == connectionRevision {
+                bannerError = "Impossible de lister les banques : \(error.userMessage)"
+            }
         }
     }
 
@@ -240,13 +240,14 @@ public final class AppModel {
         s.operations.pauseGate = pause.gate
         s.documents.pauseGate = pause.gate
         // Supprimé, retraité ou retagué depuis le lecteur : la liste de l'écran Documents suit.
-        s.documents.onDocumentChanged = { [weak self] documentID, reprocessed in
-            guard let self, self.selectedBankID == id else { return }
+        s.documents.onDocumentChanged = { [weak self, weak s] documentID, reprocessed in
+            guard let self, let s, self.session === s else { return }
             if reprocessed { self.coverage.markQueued(documentID) }
             if self.automaticActions { Task { await self.coverage.refreshMemory() } }
         }
         s.admin.pauseGate = pause.gate
         session = s
+        coverage?.invalidateContext()
         settings.set(id, forKey: SettingsKey.lastBank)
     }
 
@@ -285,7 +286,6 @@ public final class AppModel {
         case .server:
             await serverSettings.load()
             await service.refresh()
-        case .codex: await codexImport.scan()
         }
     }
 

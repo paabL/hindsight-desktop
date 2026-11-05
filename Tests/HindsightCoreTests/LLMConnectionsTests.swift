@@ -49,6 +49,7 @@ final class LLMConnectionsTests: XCTestCase {
         let remote = LLMConnectionContext(isLocalServer: false, codexHome: "/tmp/hs-account")
         await connections.refresh(remote)
         connections.connect(.claude, context: remote)
+        await connections.disconnect(.hindsightCloud, context: remote)
         XCTAssertTrue(runner.calls.isEmpty)
         guard case .unavailable = connections.status(.claude) else { return XCTFail("local account offered for remote server") }
     }
@@ -198,6 +199,55 @@ final class LLMConnectionsTests: XCTestCase {
         XCTAssertNil(LLMConnectionContext.hindsightAdmin(scriptLines: [#"exec "$(pick-venv)/bin/hindsight-api""#], home: "/Users/test"))
         XCTAssertNil(LLMConnectionContext.hindsightAdmin(scriptLines: [#"exec "$UNKNOWN/bin/hindsight-api""#], home: "/Users/test"))
         XCTAssertNil(LLMConnectionContext.hindsightAdmin(scriptLines: ["exec ./start-embedding2-api.sh 8888"], home: "/Users/test"))
+    }
+
+    func testOldLocalAccountCheckCannotOverwriteANewerRemoteContext() async {
+        let base = FakeProcessRunner { _ in
+            ProcessOutput(status: 0, stdout: #"{"loggedIn":true,"authMethod":"claude.ai"}"#)
+        }
+        let gate = LifecycleGateRunner(base)
+        let connections = make(gate)
+        await gate.holdNext("auth")
+        let oldCheck = Task { await connections.refresh(context) }
+        for _ in 0..<1000 { if await gate.blocked { break }; await Task.yield() }
+        let remote = LLMConnectionContext(isLocalServer: false, codexHome: nil)
+        await connections.refresh(remote)
+        await gate.release()
+        await oldCheck.value
+        XCTAssertFalse(connections.isRefreshing)
+        for account in LLMAccount.allCases {
+            guard case .unavailable = connections.status(account) else { return XCTFail("old account status survived a context change") }
+        }
+        XCTAssertEqual(base.calls.count, 1)
+    }
+
+    func testLogoutExcludesRepeatedAccountActionsAndIgnoresLateCompletionAfterCancel() async {
+        let signedIn = Switch(true)
+        let base = FakeProcessRunner { invocation in
+            if invocation.arguments == ["cloud", "logout"] { signedIn.value = false }
+            return ProcessOutput(status: 0, stdout: signedIn.value ? "Organization: Fixture (org_1)\n" : "Not signed in\n")
+        }
+        let gate = LifecycleGateRunner(base)
+        let connections = make(gate)
+        await connections.refresh(context)
+        await gate.holdNext("cloud")
+        let logout = Task { await connections.disconnect(.hindsightCloud, context: context) }
+        for _ in 0..<1000 { if await gate.blocked { break }; await Task.yield() }
+        XCTAssertEqual(connections.activeAccount, .hindsightCloud)
+        let calls = base.calls.count
+        for _ in 0..<100 {
+            connections.connect(.chatGPT, context: context)
+            await connections.disconnect(.hindsightCloud, context: context)
+            await connections.refresh(context)
+        }
+        XCTAssertEqual(base.calls.count, calls)
+        connections.cancel()
+        await connections.refresh(.init(isLocalServer: false, codexHome: nil))
+        await gate.release()
+        await logout.value
+        XCTAssertNil(connections.activeAccount)
+        XCTAssertFalse(connections.isRefreshing)
+        guard case .unavailable = connections.status(.hindsightCloud) else { return XCTFail("late logout overwrote the remote account context") }
     }
 }
 

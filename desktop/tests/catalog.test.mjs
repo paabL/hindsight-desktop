@@ -8,6 +8,7 @@ import {
   catalogProjects,
   sourceOriginalPath,
   isAsideRecord,
+  sourceReaderKey,
 } from '../src/catalog.ts';
 
 test('le catalogue réel classe ses quatre familles de collecteurs', () => {
@@ -85,6 +86,41 @@ test('la lecture choisit le document texte plutôt que les données brutes de se
   );
   assert.equal(sourceTextPath({ files: [{ path: 'a/content.txt' }] }), 'a/content.txt');
   assert.equal(sourceTextPath({ files: {} }), null);
+});
+
+test('le lecteur montre le même texte canonique que l’aperçu d’envoi, quel que soit l’ordre des fichiers', () => {
+  assert.equal(
+    sourceTextPath({ files: { 'original.md': 'original.md', 'document.md': 'normalized.md' } }),
+    'normalized.md',
+  );
+  assert.equal(sourceTextPath({ files: { 'z.md': 'z.md', 'a.tex': 'a.tex' } }), 'a.tex');
+});
+
+test('les changements de version invalident le lecteur sans le fermer pour un simple changement de sélection', () => {
+  const source = {
+    id: 'fixture',
+    files: { 'document.md': 'one.md' },
+    memory: { enabled: true, hash: 'a', stored_hash: 'b', document_id: 'doc' },
+  };
+  assert.equal(
+    sourceReaderKey(source),
+    sourceReaderKey({
+      ...source,
+      memory: { ...source.memory, enabled: false, state: 'excluded' },
+    }),
+  );
+  for (const update of [
+    { files: { 'document.md': 'two.md' } },
+    { memory: { ...source.memory, hash: 'changed' } },
+    { memory: { ...source.memory, stored_hash: 'changed' } },
+    { memory: { ...source.memory, document_id: 'another' } },
+  ])
+    assert.notEqual(sourceReaderKey(source), sourceReaderKey({ ...source, ...update }));
+});
+
+test('les sources historiques Hermes restent consultables dans le catalogue générique', () => {
+  const records = [{ id: 'old-hermes', kind: 'hermes', title: 'Saved conversation' }];
+  assert.deepEqual(filterRecords(records, '', 'conversation', 'all'), records);
 });
 test('les filtres combinent le projet, le texte et les notes ou rapports', () => {
   const records = [

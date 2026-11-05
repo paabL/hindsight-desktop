@@ -50,12 +50,18 @@ public final class DocumentReaderViewModel: Identifiable {
     /// Appelé après suppression du document (pour fermer le lecteur et rafraîchir la liste).
     @ObservationIgnored public var onDeleted: (@MainActor () -> Void)?
     @ObservationIgnored public var onChanged: (@MainActor () -> Void)?
+    /// Le propriétaire attend la relecture avant que la confirmation ne rende son snapshot à l'UI.
+    /// Les notifications publiques restent synchrones et indépendantes d'un écran de suivi.
+    @ObservationIgnored var refreshListAfterChange: (@MainActor () async -> Void)?
     /// Appelé quand le retraitement est lancé : le document repart en extraction.
     @ObservationIgnored public var onReprocessed: (@MainActor () -> Void)?
 
     // Faits extraits de ce document
     public private(set) var facts: LoadState<[MemoryUnitListItem]> = .idle
     public private(set) var factsTotal: Int = 0
+    @ObservationIgnored private var loadID = UUID()
+    @ObservationIgnored private var factsLoadID = UUID()
+    @ObservationIgnored private var factsLimit = 200
 
     public nonisolated var id: String { documentID }
 
@@ -69,11 +75,16 @@ public final class DocumentReaderViewModel: Identifiable {
     // MARK: Chargement
 
     public func load(focusChunk: String? = nil) async {
+        let id = UUID()
+        loadID = id
         state = .loading
         do {
+            try Task.checkCancellation()
             async let doc = client.document(bank, id: documentID)
             async let chunkList = Self.loadAllChunks(client: client, bank: bank, documentID: documentID)
             let (d, cs) = try await (doc, chunkList)
+            try Task.checkCancellation()
+            guard loadID == id else { return }
             document = d
             chunks = cs.sorted { $0.chunkIndex < $1.chunkIndex }
             attachments = DocumentTextParser.merge([d.attachments] + chunks.map { $0.attachments })
@@ -82,11 +93,14 @@ public final class DocumentReaderViewModel: Identifiable {
             if let focusChunk { focus(chunkID: focusChunk) }
             recomputeMatches()
             // L'historique est un complément : son absence n'empêche pas de lire le document.
-            if serverIs110 { history = try? await client.documentHistory(bank, id: documentID, limit: 50).items }
-        } catch is CancellationError {
-            state = .idle
+            if serverIs110 {
+                let events = try? await client.documentHistory(bank, id: documentID, limit: 50).items
+                guard loadID == id, !Task.isCancelled else { return }
+                history = events
+            }
         } catch {
-            state = .failed(error.userMessage)
+            guard loadID == id else { return }
+            state = Task.isCancelled || error is CancellationError ? .idle : .failed(error.userMessage)
         }
     }
 
@@ -94,7 +108,9 @@ public final class DocumentReaderViewModel: Identifiable {
         var all: [ChunkResponse] = []
         var offset = 0
         while true {
+            try Task.checkCancellation()
             let page = try await client.documentChunks(bank, id: documentID, limit: 1000, offset: offset)
+            try Task.checkCancellation()
             all += page.items
             offset += page.items.count
             if page.items.isEmpty || offset >= page.total { break }
@@ -211,16 +227,28 @@ public final class DocumentReaderViewModel: Identifiable {
     // MARK: Faits du document
 
     public func loadFacts(limit: Int = 200) async {
+        let id = UUID()
+        factsLoadID = id
+        factsLimit = max(1, limit)
         facts = .loading
         do {
-            let page = try await client.listMemories(bank, MemoryListQuery(documentID: documentID, limit: limit))
+            try Task.checkCancellation()
+            let page = try await client.listMemories(bank, MemoryListQuery(documentID: documentID, limit: factsLimit))
+            try Task.checkCancellation()
+            guard factsLoadID == id else { return }
             factsTotal = page.total
             facts = .loaded(page.items)
-        } catch is CancellationError {
-            facts = .idle
         } catch {
-            facts = .failed(error.userMessage)
+            guard factsLoadID == id else { return }
+            facts = Task.isCancelled || error is CancellationError ? .idle : .failed(error.userMessage)
         }
+    }
+
+    private func refreshAfterChange() async {
+        await load(focusChunk: focusedChunkID)
+        await loadFacts(limit: factsLimit)
+        onChanged?()
+        await refreshListAfterChange?()
     }
 
     // MARK: Administration du document
@@ -240,8 +268,7 @@ public final class DocumentReaderViewModel: Identifiable {
             do {
                 _ = try await self.client.updateDocumentTags(self.bank, id: self.documentID, tags: clean)
                 self.actionMessage = "Tags mis à jour."
-                await self.load(focusChunk: self.focusedChunkID)
-                self.onChanged?()
+                await self.refreshAfterChange()
             } catch {
                 self.actionMessage = "Échec : \(error.userMessage)"
             }
@@ -266,8 +293,7 @@ public final class DocumentReaderViewModel: Identifiable {
             do {
                 _ = try await self.client.updateDocumentScopes(self.bank, id: self.documentID, scopes: .string(mode))
                 self.actionMessage = "Portée mise à jour."
-                await self.load(focusChunk: self.focusedChunkID)
-                self.onChanged?()
+                await self.refreshAfterChange()
             } catch {
                 self.actionMessage = "Échec : \(error.userMessage)"
             }
@@ -297,7 +323,9 @@ public final class DocumentReaderViewModel: Identifiable {
                 let r = try await self.client.reprocessDocument(self.bank, id: self.documentID)
                 self.actionMessage = "Retraitement lancé (opération \(r.operationId)). Suivez-le dans « Opérations »."
                 self.onReprocessed?()
-                self.onChanged?()
+                // La soumission est asynchrone : relire l'état actuel ne prétend pas que l'opération
+                // est terminée, mais évite de conserver indéfiniment les faits de l'ancien snapshot.
+                await self.refreshAfterChange()
             } catch {
                 self.actionMessage = "Échec : \(error.userMessage)"
             }
@@ -315,6 +343,7 @@ public final class DocumentReaderViewModel: Identifiable {
                 let r = try await self.client.deleteDocument(self.bank, id: self.documentID)
                 self.actionMessage = "Supprimé (\(r.memoryUnitsDeleted) fait(s))."
                 self.onDeleted?()
+                await self.refreshListAfterChange?()
             } catch {
                 self.actionMessage = "Échec : \(error.userMessage)"
             }

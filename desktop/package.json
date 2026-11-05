@@ -1,6 +1,6 @@
 {
   "name": "hindsight-desktop",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "private": true,
   "description": "Independent macOS client for Hindsight",
   "type": "module",
@@ -20,6 +20,7 @@
     "test:i18n": "node tests/i18n-ui.mjs",
     "test:updates": "node tests/updates-ui.mjs",
     "test:navigation": "node tests/navigation-ui.mjs",
+    "test:stress": "node tests/app-state-stress.mjs && node tests/sources-races-ui.mjs && node tests/model-workflow-stress.mjs && node tests/graph-stress.mjs",
     "docs:screenshots": "node scripts/capture-docs.mjs",
     "release:package": "node scripts/package-release.mjs",
     "test:service": "node tests/service-ui.mjs"

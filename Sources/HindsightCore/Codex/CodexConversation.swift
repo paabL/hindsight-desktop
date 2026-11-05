@@ -1,7 +1,7 @@
 import Foundation
 import HindsightAPI
 
-/// En-tête d'une session (Codex `session_meta`, ou équivalent pour Claude Code et Hermes).
+/// En-tête d'une session (Codex `session_meta`, ou équivalent pour Claude Code).
 public struct CodexSessionMeta: Sendable, Hashable, Codable {
     public var id: String
     /// Session racine (différente de `id` pour un sous-agent ou une revue).
@@ -17,12 +17,12 @@ public struct CodexSessionMeta: Sendable, Hashable, Codable {
     public var forkedFromID: String?
     /// Outil d'origine (`nil` = Codex, pour les caches écrits avant l'ajout des autres sources).
     public var sourceKind: ConversationSource?
-    /// Titre de la session quand l'outil en donne un (Hermes).
+    /// Titre de la session quand l'outil en donne un.
     public var title: String?
 
     public var source: ConversationSource { sourceKind ?? .codex }
 
-    /// Session vraisemblablement tapée par l'utilisateur (filtre par défaut de l'import).
+    /// Session vraisemblablement tapée par l'utilisateur (filtre par défaut du catalogue).
     public var isUserConversation: Bool {
         guard let t = threadSource else { return true }
         return ["user", "chatgpt_handoff", "voice_chat", "realtime_voice"].contains(t)
@@ -101,8 +101,7 @@ public struct CodexSessionSummary: Identifiable, Sendable, Hashable, Codable {
 
     /// Outil d'origine, sans relire le fichier : les métadonnées, sinon l'emplacement.
     public var source: ConversationSource {
-        if let s = meta?.source { return s }
-        if file.hermesSession != nil { return .hermes }
+        if let s = meta?.sourceKind { return s }
         return file.path.contains("/.claude/") ? .claudeCode : .codex
     }
 }

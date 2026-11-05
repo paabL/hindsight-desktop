@@ -45,6 +45,8 @@ public final class DocumentsViewModel {
     /// Message d'une action dont la source n'est plus affichée (document supprimé).
     public var actionMessage: String?
     public private(set) var isLoadingMore = false
+    @ObservationIgnored private var loadID = UUID()
+    @ObservationIgnored private var moreID = UUID()
 
     /// Serveur 1.1.0 (historique et portée des documents) ; réglé par `BankSession`.
     public var serverIs110 = false
@@ -63,33 +65,45 @@ public final class DocumentsViewModel {
 
     /// Recharge la liste depuis le début avec les filtres courants.
     public func reload() async {
+        let id = UUID()
+        loadID = id
+        moreID = UUID()
+        isLoadingMore = false
         state = .loading
         do {
+            try Task.checkCancellation()
             let page = try await client.listDocuments(
                 bank, q: query.isEmpty ? nil : query, tags: TagFilter(tags: selectedTags, match: tagsMatch), limit: 100, offset: 0)
+            try Task.checkCancellation()
+            guard loadID == id else { return }
             items = page.items
             total = page.total
             state = .loaded(())
-        } catch is CancellationError {
         } catch {
-            state = .failed(error.userMessage)
+            guard loadID == id else { return }
+            state = Task.isCancelled || error is CancellationError ? .idle : .failed(error.userMessage)
         }
     }
 
     public var canLoadMore: Bool { items.count < total }
 
     public func loadMore() async {
-        guard canLoadMore, !isLoadingMore else { return }
+        guard canLoadMore, !isLoadingMore, !state.isLoading else { return }
+        let id = UUID(), listID = loadID
+        moreID = id
         isLoadingMore = true
-        defer { isLoadingMore = false }
+        defer { if moreID == id { isLoadingMore = false } }
         do {
+            try Task.checkCancellation()
             let page = try await client.listDocuments(
                 bank, q: query.isEmpty ? nil : query, tags: TagFilter(tags: selectedTags, match: tagsMatch), limit: 100,
                 offset: items.count)
+            try Task.checkCancellation()
+            guard loadID == listID, moreID == id else { return }
             items += page.items
             total = page.total
-        } catch is CancellationError {
         } catch {
+            guard loadID == listID, moreID == id, !Task.isCancelled, !(error is CancellationError) else { return }
             state = .failed(error.userMessage)
         }
     }
@@ -140,18 +154,21 @@ public final class DocumentsViewModel {
         r.estimate = estimate
         r.pauseGate = pauseGate
         r.onDeleted = { [weak self, weak r] in
+            guard let self else { return }
             // Le lecteur disparaît avec le document : son message est repris par la liste.
-            self?.actionMessage = r?.actionMessage
-            self?.deletedIDs.insert(documentID)
-            self?.reader = nil
-            self?.onDocumentChanged?(documentID, false)
-            Task { await self?.reload() }
+            self.actionMessage = r?.actionMessage
+            self.deletedIDs.insert(documentID)
+            if self.reader === r { self.closeReader() }
+            self.onDocumentChanged?(documentID, false)
         }
         r.onChanged = { [weak self] in
             self?.onDocumentChanged?(documentID, false)
-            Task { await self?.reload() }
         }
         r.onReprocessed = { [weak self] in self?.onDocumentChanged?(documentID, true) }
+        r.refreshListAfterChange = { [weak self] in
+            guard let self else { return }
+            await self.reload()
+        }
         reader = r
         readerLoad = Task { [weak r] in
             await r?.load(focusChunk: chunkID)

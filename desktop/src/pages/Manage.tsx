@@ -1,5 +1,5 @@
 import { useI18n } from '../i18n';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ArrowDownToLine,
   BookOpen,
@@ -47,6 +47,8 @@ import {
   providerOptions,
   visibleRoleFields,
   isBooleanField,
+  decisionProviderValue,
+  localDecisionURL,
 } from '../model-field-options';
 
 const memoryFields = {
@@ -83,8 +85,18 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
   const [draft, setDraft] = useState<Row>({});
   const [sample, setSample] = useState('');
   const [advanced, setAdvanced] = useState('');
+  const baseline = useRef<Row>({});
   useEffect(() => {
-    if (data.draft) setDraft(data.draft);
+    if (!data.draft) return;
+    const previous = baseline.current;
+    const next = data.draft;
+    baseline.current = next;
+    setDraft((current) => ({
+      ...next,
+      ...Object.fromEntries(
+        Object.entries(current).filter(([key, value]) => value !== previous[key]),
+      ),
+    }));
   }, [data.draft]);
   const set = (key: string, value: unknown) => setDraft((old) => ({ ...old, [key]: value }));
   function config() {
@@ -92,7 +104,12 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
     for (const [key, value] of Object.entries(draft))
       if (key in memoryFields && value !== data.draft?.[key])
         changes[memoryFields[key as keyof typeof memoryFields]] = value;
-    if (advanced.trim()) Object.assign(changes, JSON.parse(advanced));
+    if (advanced.trim()) {
+      const parsed = JSON.parse(advanced);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+        throw new Error('Expected a JSON object');
+      Object.assign(changes, parsed);
+    }
     return changes;
   }
   function action(command: string) {
@@ -491,6 +508,13 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
 export function Admin({ data, run, busy, notify }: PageProps) {
   const { t } = useI18n();
   const [modal, setModal] = useState<string | null>(null);
+  const modalGeneration = useRef(0);
+  const pendingModal = useRef(false);
+  const [submitting, setSubmitting] = useState(false);
+  function showModal(value: string | null) {
+    modalGeneration.current++;
+    setModal(value);
+  }
   const [name, setName] = useState('');
   const [content, setContent] = useState('');
   const [target, setTarget] = useState('');
@@ -540,7 +564,7 @@ export function Admin({ data, run, busy, notify }: PageProps) {
             icon={Plus}
             kind="primary"
             onClick={() => {
-              setModal('create');
+              showModal('create');
               setName('');
               setTarget('');
               setContent('');
@@ -565,7 +589,7 @@ export function Admin({ data, run, busy, notify }: PageProps) {
             icon={Database}
             onClick={() => {
               setName('');
-              setModal('rename');
+              showModal('rename');
             }}
           >
             {' '}
@@ -575,7 +599,7 @@ export function Admin({ data, run, busy, notify }: PageProps) {
             icon={Copy}
             onClick={() => {
               setTarget('');
-              setModal('clone');
+              showModal('clone');
             }}
           >
             {' '}
@@ -586,7 +610,7 @@ export function Admin({ data, run, busy, notify }: PageProps) {
             onClick={() => {
               setSource('');
               setTarget('');
-              setModal('merge');
+              showModal('merge');
             }}
           >
             {' '}
@@ -607,7 +631,7 @@ export function Admin({ data, run, busy, notify }: PageProps) {
               onClick={() => {
                 setName('');
                 setContent('');
-                setModal('directive');
+                showModal('directive');
               }}
             >
               {' '}
@@ -818,12 +842,16 @@ export function Admin({ data, run, busy, notify }: PageProps) {
               directive: t('Une nouvelle directive', 'A new directive'),
             }[modal] || ''
           }
-          onClose={() => setModal(null)}
+          onClose={() => showModal(null)}
         >
           <form
             className="form-stack"
             onSubmit={(e) => {
               e.preventDefault();
+              if (busy || pendingModal.current) return;
+              pendingModal.current = true;
+              setSubmitting(true);
+              const generation = modalGeneration.current;
               const commands: Record<string, string> = {
                 create: 'bank.create',
                 rename: 'bank.rename',
@@ -838,7 +866,15 @@ export function Admin({ data, run, busy, notify }: PageProps) {
                 content,
                 target,
                 source,
-              }).then(() => setModal(null));
+              })
+                .then((result) => {
+                  if (!result?.error && generation === modalGeneration.current) showModal(null);
+                })
+                .catch((error) => notify(error instanceof Error ? error.message : String(error)))
+                .finally(() => {
+                  pendingModal.current = false;
+                  setSubmitting(false);
+                });
             }}
           >
             {['create', 'rename', 'directive'].includes(modal) && (
@@ -883,11 +919,11 @@ export function Admin({ data, run, busy, notify }: PageProps) {
               </label>
             )}
             <div className="modal-actions">
-              <Button type="button" onClick={() => setModal(null)}>
+              <Button type="button" onClick={() => showModal(null)}>
                 {' '}
                 {t('Annuler', 'Cancel')}
               </Button>
-              <Button kind="primary" disabled={busy}>
+              <Button kind="primary" disabled={busy || submitting}>
                 {' '}
                 {t('Continuer', 'Continue')}
               </Button>
@@ -1118,42 +1154,62 @@ export function ServerSettings({ data, run, busy, notify, navigate }: PageProps)
   const serviceBusy = busy || service.busy;
   const [decisionTab, setDecisionTab] = useState('general');
   const [decisionLocation, setDecisionLocation] = useState<string | null>(null);
+  const [roleSaving, setRoleSaving] = useState(false);
+  const savingRole = useRef(false);
+  const [roleError, setRoleError] = useState('');
+  const [roleRevision, setRoleRevision] = useState<string>();
+  const [roleScriptPath, setRoleScriptPath] = useState<string>();
+  const latestData = useRef(data);
+  latestData.current = data;
+  const roleStale =
+    role && (roleScriptPath !== data.scriptPath || roleRevision !== data.modelWorkflow?.revision);
+  const staleMessage = t(
+    'Les réglages ont changé. Fermez cette fenêtre et rouvrez le rôle avant de réessayer.',
+    'Settings changed. Close this window and reopen the role before trying again.',
+  );
   useEffect(() => {
     setDecisionTab('general');
     setDecisionLocation(null);
   }, [role?.id]);
   async function saveRole() {
-    if (role?.id === 'decision' && decisionLocation) {
-      const result = await run('server.decision', { source: decisionLocation });
-      if (result?.error) return;
+    if (!role || busy || savingRole.current || !Object.keys(fields).length) return;
+    if (roleStale) {
+      setRoleError(staleMessage);
+      return;
     }
-    // Changing provider can reset the model: apply explicit model choices afterwards.
-    for (const [name, value] of Object.entries(fields))
-      if (
-        role?.isModelRole &&
-        name === role.fields.find((field: Row) => field.name.endsWith('_PROVIDER'))?.name
-      )
-        await run('server.provider', { role: role?.id, provider: value });
-    for (const [name, value] of Object.entries(fields)) {
-      if (
-        role?.id === 'decision' &&
-        decisionLocation &&
-        [
-          'HINDSIGHT_API_DECISION_MODEL_PROVIDER',
-          'HINDSIGHT_API_DECISION_MODEL_BASE_URL',
-          'HINDSIGHT_API_DECISION_MODEL_API_KEY',
-        ].includes(name)
-      )
-        continue;
-      if (
-        role?.isModelRole &&
-        name === role.fields.find((field: Row) => field.name.endsWith('_PROVIDER'))?.name
-      )
-        continue;
-      if (!(value === '' && role?.fields.some((field: Row) => field.name === name && field.secret)))
-        await run('server.field', { name, value });
+    savingRole.current = true;
+    setRoleSaving(true);
+    setRoleError('');
+    async function apply(command: string, args: Row) {
+      if (latestData.current.scriptPath !== roleScriptPath) throw new Error(staleMessage);
+      const result = await run(command, args);
+      if (result?.error) throw new Error(String(result.error));
+      if (latestData.current.scriptPath !== roleScriptPath) throw new Error(staleMessage);
+      if (result?.data) setRoleRevision(result.data.modelWorkflow?.revision);
     }
-    setRole(null);
+    try {
+      if (role.id === 'decision' && decisionLocation)
+        await apply('server.decision', { source: decisionLocation });
+      const provider = role.fields.find((field: Row) => field.name.endsWith('_PROVIDER'))?.name;
+      // Provider presets may reset the model. Apply explicit fields afterwards, including
+      // advanced overrides entered after choosing the local or Cloud preset.
+      if (role.isModelRole && Object.hasOwn(fields, provider))
+        await apply('server.provider', { role: role.id, provider: fields[provider] });
+      for (const [name, value] of Object.entries(fields)) {
+        if (name === provider && (role.isModelRole || (role.id === 'decision' && decisionLocation)))
+          continue;
+        if (!(
+          value === '' && role.fields.some((field: Row) => field.name === name && field.secret)
+        ))
+          await apply('server.field', { name, value });
+      }
+      setRole(null);
+    } catch (error) {
+      setRoleError(error instanceof Error ? error.message : String(error));
+    } finally {
+      savingRole.current = false;
+      setRoleSaving(false);
+    }
   }
   return (
     <>
@@ -1366,10 +1422,14 @@ export function ServerSettings({ data, run, busy, notify, navigate }: PageProps)
             <button
               key={item.id}
               className="card role-card"
+              disabled={busy || roleSaving}
               onClick={() => {
                 setRole(item);
                 setFields({});
                 setCustomModels(new Set());
+                setRoleError('');
+                setRoleRevision(data.modelWorkflow?.revision);
+                setRoleScriptPath(data.scriptPath);
               }}
             >
               <span className="role-icon">
@@ -1424,7 +1484,7 @@ export function ServerSettings({ data, run, busy, notify, navigate }: PageProps)
               {' '}
               {t('Vérifier et enregistrer', 'Review and save')}
             </Button>
-            <Button onClick={() => void run('server.revert')}>
+            <Button disabled={busy || roleSaving} onClick={() => void run('server.revert')}>
               {' '}
               {t('Abandonner le brouillon', 'Discard draft')}
             </Button>
@@ -1490,6 +1550,7 @@ export function ServerSettings({ data, run, busy, notify, navigate }: PageProps)
         <Modal
           title={role.id === 'decision' ? t('Modèle de décision', 'Decision model') : role.title}
           onClose={() => {
+            if (savingRole.current) return;
             setRole(null);
             setDecisionTab('general');
           }}
@@ -1514,7 +1575,7 @@ export function ServerSettings({ data, run, busy, notify, navigate }: PageProps)
                 ]}
               />
             )}
-            <div className="model-editor-fields">
+            <fieldset className="model-editor-fields" disabled={busy || roleSaving || !!roleStale}>
               {(() => {
                 const all = visibleRoleFields(role, fields, data);
                 const selected =
@@ -1546,16 +1607,8 @@ export function ServerSettings({ data, run, busy, notify, navigate }: PageProps)
                               <select
                                 aria-label={field.label}
                                 value={
-                                  field.name === 'HINDSIGHT_API_DECISION_MODEL_PROVIDER' &&
-                                  (fields[field.name] ?? field.value) === 'hindsight' &&
-                                  (decisionLocation === 'local' ||
-                                    (!decisionLocation &&
-                                      (fields.HINDSIGHT_API_DECISION_MODEL_BASE_URL ??
-                                        role.fields.find(
-                                          (f: Row) =>
-                                            f.name === 'HINDSIGHT_API_DECISION_MODEL_BASE_URL',
-                                        )?.value) === 'http://127.0.0.1:8766'))
-                                    ? '__hindsight_local__'
+                                  field.name === 'HINDSIGHT_API_DECISION_MODEL_PROVIDER'
+                                    ? decisionProviderValue(role, fields)
                                     : (fields[field.name] ?? field.value ?? '')
                                 }
                                 onChange={(e) => {
@@ -1566,11 +1619,23 @@ export function ServerSettings({ data, run, busy, notify, navigate }: PageProps)
                                         : e.target.value === 'hindsight'
                                           ? 'cloud'
                                           : null;
+                                    if (e.target.value === '__hindsight_custom__') return;
                                     setDecisionLocation(location);
                                     if (location) {
-                                      setFields((old) =>
-                                        chooseProvider(role, field, 'hindsight', old, data),
-                                      );
+                                      setFields((old) => {
+                                        const next = chooseProvider(
+                                          role,
+                                          field,
+                                          'hindsight',
+                                          old,
+                                          data,
+                                        );
+                                        next.HINDSIGHT_API_DECISION_MODEL_MODEL = '';
+                                        next.HINDSIGHT_API_DECISION_MODEL_BASE_URL =
+                                          location === 'local' ? localDecisionURL : '';
+                                        delete next.HINDSIGHT_API_DECISION_MODEL_API_KEY;
+                                        return next;
+                                      });
                                       return;
                                     }
                                   }
@@ -1588,9 +1653,20 @@ export function ServerSettings({ data, run, busy, notify, navigate }: PageProps)
                                   {t('Hériter des réglages', 'Inherit settings')}
                                 </option>
                                 {field.name === 'HINDSIGHT_API_DECISION_MODEL_PROVIDER' && (
-                                  <option value="__hindsight_local__">
-                                    {t('Sur ce Mac · Hindsight', 'On this Mac · Hindsight')}
-                                  </option>
+                                  <>
+                                    <option value="__hindsight_local__">
+                                      {t('Sur ce Mac · Hindsight', 'On this Mac · Hindsight')}
+                                    </option>
+                                    {decisionProviderValue(role, fields) ===
+                                      '__hindsight_custom__' && (
+                                      <option value="__hindsight_custom__">
+                                        {t(
+                                          'Hindsight · URL personnalisée',
+                                          'Hindsight · custom endpoint',
+                                        )}
+                                      </option>
+                                    )}
+                                  </>
                                 )}
                                 {providerOptions(role, field, data).map((option) => (
                                   <option key={option.id} value={option.id}>
@@ -1667,7 +1743,10 @@ export function ServerSettings({ data, run, busy, notify, navigate }: PageProps)
                                     autoComplete="off"
                                     placeholder={t('Nom exact du modèle', 'Exact model name')}
                                     onChange={(e) =>
-                                      setFields((old) => ({ ...old, [field.name]: e.target.value }))
+                                      setFields((old) => ({
+                                        ...old,
+                                        [field.name]: e.target.value,
+                                      }))
                                     }
                                   />
                                 )}
@@ -1687,8 +1766,6 @@ export function ServerSettings({ data, run, busy, notify, navigate }: PageProps)
                                     : t('Hérite du serveur', 'Inherits from server')
                                 }
                                 onChange={(e) => {
-                                  if (field.name === 'HINDSIGHT_API_DECISION_MODEL_BASE_URL')
-                                    setDecisionLocation(null);
                                   setFields((old) => ({ ...old, [field.name]: e.target.value }));
                                 }}
                               />
@@ -1721,136 +1798,22 @@ export function ServerSettings({ data, run, busy, notify, navigate }: PageProps)
                     );
                   });
               })()}
-            </div>
+            </fieldset>
+            <ErrorNotice message={roleError || (roleStale && !roleSaving ? staleMessage : '')} />
             <div className="modal-actions">
-              <Button type="button" onClick={() => setRole(null)}>
+              <Button type="button" disabled={roleSaving} onClick={() => setRole(null)}>
                 {' '}
                 {t('Annuler', 'Cancel')}
               </Button>
-              <Button kind="primary" disabled={busy || !Object.keys(fields).length}>
+              <Button
+                kind="primary"
+                disabled={busy || roleSaving || !!roleStale || !Object.keys(fields).length}
+              >
                 {' '}
                 {t('Préparer ces changements', 'Prepare these changes')}
               </Button>
             </div>
           </form>
-        </Modal>
-      )}
-    </>
-  );
-}
-
-export function Hermes({ data, run, busy }: PageProps) {
-  const { t } = useI18n();
-  const [selection, setSelection] = useState<Set<string>>(new Set());
-  const [preview, setPreview] = useState<Row | null>(null);
-  return (
-    <>
-      <PageHeader
-        eyebrow={t('Import de conversations', 'Conversation import')}
-        title={t('Imports', 'Imports')}
-        description={t(
-          'Prévisualisez les conversations Hermes de ce Mac avant de préparer leur envoi à la banque sélectionnée.',
-          'Preview this Mac’s Hermes conversations before preparing an upload to the selected bank.',
-        )}
-        actions={
-          <Button
-            icon={Upload}
-            disabled={busy || !data.plan}
-            onClick={() => void run('hermes.import')}
-          >
-            {' '}
-            {t('Importer le plan préparé', 'Import prepared plan')}
-          </Button>
-        }
-      />
-      <div className="notice">
-        <BookOpen size={17} />{' '}
-        {t(
-          'Les conversations Codex et Claude Code passent par Agent Dump et le catalogue de sources. Cet import direct concerne Hermes.',
-          'Codex and Claude Code conversations go through Agent Dump and the source catalog. This direct import is for Hermes.',
-        )}
-      </div>
-      <ErrorNotice message={data.error} />
-      <section className="card">
-        <CardHeader
-          title={t('Conversations Hermes disponibles', 'Available Hermes conversations')}
-          action={
-            <Button
-              icon={Check}
-              disabled={busy || !selection.size}
-              onClick={() => void run('hermes.plan', { ids: [...selection] })}
-            >
-              {' '}
-              {t('Préparer l’import (', 'Prepare import (')}
-              {selection.size})
-            </Button>
-          }
-        />
-        {data.items?.length ? (
-          data.items.map((item: Row) => (
-            <div className="hermes-row" key={item.id}>
-              <input
-                type="checkbox"
-                aria-label={`${t('Sélectionner', 'Select')} ${item.title || item.id}`}
-                checked={selection.has(item.id)}
-                onChange={() =>
-                  setSelection((old) => {
-                    const next = new Set(old);
-                    if (next.has(item.id)) next.delete(item.id);
-                    else next.add(item.id);
-                    return next;
-                  })
-                }
-              />
-              <div>
-                <strong>{item.title || item.firstUserMessage || item.id}</strong>
-                <p>{date(item.sortDate || item.updatedAt, true)}</p>
-              </div>
-              <Button
-                onClick={() =>
-                  void run('hermes.preview', { id: item.id }).then((result: Row) =>
-                    setPreview(result.data?.preview),
-                  )
-                }
-              >
-                {' '}
-                {t('Prévisualiser', 'Preview')}
-              </Button>
-            </div>
-          ))
-        ) : (
-          <Empty
-            icon={BookOpen}
-            title={t('Aucune session Hermes', 'No Hermes sessions')}
-            description={t(
-              'L’import lit la base locale Hermes lorsqu’elle est disponible sur ce Mac.',
-              'Import reads the local Hermes database when available on this Mac.',
-            )}
-          />
-        )}
-      </section>
-      {data.plan && (
-        <section className="card settings-card">
-          <CardHeader
-            title={t('Plan d’import', 'Import plan')}
-            subtitle={t(
-              'Relisez le volume et les éléments choisis avant l’envoi.',
-              'Review the volume and selected items before sending.',
-            )}
-          />
-          <pre className="json-view">{JSON.stringify(data.plan, null, 2)}</pre>
-        </section>
-      )}
-      {data.sendErrors?.map((e: string) => (
-        <ErrorNotice key={e} message={e} />
-      ))}
-      {preview && (
-        <Modal
-          title={t('Prévisualisation de la conversation', 'Conversation preview')}
-          onClose={() => setPreview(null)}
-          wide
-        >
-          <pre className="json-view">{JSON.stringify(preview, null, 2)}</pre>
         </Modal>
       )}
     </>

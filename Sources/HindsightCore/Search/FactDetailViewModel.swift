@@ -2,6 +2,12 @@ import Foundation
 import HindsightAPI
 import Observation
 
+/// Résultat indexé d'une lecture source : évite les tuples de TaskGroup fragiles en Swift 6.4.2 -O.
+private struct LoadedSourceFact: Sendable {
+    let index: Int
+    let fact: FactHit?
+}
+
 /// Détail d'un fait : texte complet, métadonnées, chunk source, faits sources (pour une observation),
 /// et lien vers le document d'origine.
 @MainActor
@@ -10,6 +16,7 @@ public final class FactDetailViewModel: Identifiable {
     public nonisolated let factID: String
     public let bank: String
     @ObservationIgnored private let client: HindsightClient
+    @ObservationIgnored private var loadID = UUID()
 
     public private(set) var hit: FactHit
     public private(set) var detail: LoadState<MemoryDetail> = .idle
@@ -40,9 +47,17 @@ public final class FactDetailViewModel: Identifiable {
     }
 
     public func load() async {
+        let id = UUID()
+        loadID = id
         detail = .loading
+        chunk = .idle
+        sources = .idle
+        history = nil
         do {
+            try Task.checkCancellation()
             let d = try await client.memory(bank, id: factID)
+            try Task.checkCancellation()
+            guard loadID == id else { return }
             detail = .loaded(d)
             let enriched = FactHit(d, fallbackID: factID)
             // On garde le score et ce que la liste connaissait déjà si le détail est plus pauvre.
@@ -56,52 +71,80 @@ public final class FactDetailViewModel: Identifiable {
                 sourceFactIDs: enriched.sourceFactIDs.isEmpty ? hit.sourceFactIDs : enriched.sourceFactIDs,
                 attachments: enriched.attachments.isEmpty ? hit.attachments : enriched.attachments,
                 state: enriched.state ?? hit.state)
-        } catch is CancellationError {
-            return
         } catch {
+            guard loadID == id else { return }
+            if Task.isCancelled || error is CancellationError {
+                detail = .idle
+                return
+            }
             detail = .failed(error.userMessage)
         }
-        async let c: Void = loadChunk()
-        async let s: Void = loadSources()
-        _ = await (c, s)
+        guard loadID == id, !Task.isCancelled else { return }
+        // Les requêtes complémentaires utilisent toutes le même snapshot du fait et du chargement.
+        let snapshot = hit
+        async let c: Void = loadChunk(loadID: id, chunkID: snapshot.chunkID)
+        async let s: Void = loadSources(loadID: id, ids: Array(snapshot.sourceFactIDs.prefix(20)))
+        async let h: Void = loadHistory(loadID: id, isObservation: snapshot.isObservation)
+        _ = await (c, s, h)
     }
 
-    private func loadChunk() async {
-        guard let id = hit.chunkID else {
+    private func loadChunk(loadID: UUID, chunkID: String?) async {
+        guard self.loadID == loadID, !Task.isCancelled else { return }
+        guard let chunkID else {
             chunk = .idle
             return
         }
         chunk = .loading
         do {
-            chunk = .loaded(try await client.chunk(id: id))
-        } catch is CancellationError {
+            try Task.checkCancellation()
+            let response = try await client.chunk(id: chunkID)
+            try Task.checkCancellation()
+            guard self.loadID == loadID else { return }
+            chunk = .loaded(response)
         } catch {
-            chunk = .failed(error.userMessage)
+            guard self.loadID == loadID else { return }
+            chunk = Task.isCancelled || error is CancellationError ? .idle : .failed(error.userMessage)
         }
     }
 
-    /// Faits sources d'une observation (20 au plus) et son historique.
-    private func loadSources(limit: Int = 20) async {
-        let ids = Array(hit.sourceFactIDs.prefix(limit))
+    /// Faits sources d'une observation (20 au plus), dans l'ordre d'origine malgré les arrivées désordonnées.
+    private func loadSources(loadID: UUID, ids: [String]) async {
+        guard self.loadID == loadID, !Task.isCancelled else { return }
         guard !ids.isEmpty else {
             sources = .idle
             return
         }
         sources = .loading
         let client = self.client, bank = self.bank
-        let fetched = await withTaskGroup(of: (Int, FactHit?).self) { group in
+        let fetched = await withTaskGroup(of: LoadedSourceFact.self) { group in
             for (i, id) in ids.enumerated() {
+                if Task.isCancelled { break }
                 group.addTask {
-                    guard let d = try? await client.memory(bank, id: id) else { return (i, nil) }
-                    return (i, FactHit(d, fallbackID: id))
+                    do {
+                        try Task.checkCancellation()
+                        let d = try await client.memory(bank, id: id)
+                        try Task.checkCancellation()
+                        return LoadedSourceFact(index: i, fact: FactHit(d, fallbackID: id))
+                    } catch {
+                        return LoadedSourceFact(index: i, fact: nil)
+                    }
                 }
             }
-            var out: [(Int, FactHit)] = []
-            for await (i, h) in group { if let h { out.append((i, h)) } }
-            return out.sorted { $0.0 < $1.0 }.map(\.1)
+            var out: [LoadedSourceFact] = []
+            for await result in group { out.append(result) }
+            return out.sorted { $0.index < $1.index }.compactMap(\.fact)
         }
+        guard self.loadID == loadID else { return }
+        guard !Task.isCancelled else { sources = .idle; return }
         sources = .loaded(fetched)
-        if hit.isObservation { history = try? await client.observationHistory(bank, id: factID) }
+    }
+
+    /// L'historique est indépendant des sources : une observation sans sources peut en avoir un.
+    private func loadHistory(loadID: UUID, isObservation: Bool) async {
+        guard self.loadID == loadID, !Task.isCancelled, isObservation else { return }
+        let response = try? await client.observationHistory(bank, id: factID)
+        guard self.loadID == loadID, !Task.isCancelled else { return }
+        history = response
     }
 
     // MARK: Curation (toujours confirmée)

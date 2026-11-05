@@ -73,7 +73,6 @@ const Timeline = lazy(() => import('./pages/Explore').then((m) => ({ default: m.
 const Facts = lazy(() => import('./pages/Explore').then((m) => ({ default: m.Facts })));
 import Operations from './pages/Operations';
 const Admin = lazy(() => import('./pages/Manage').then((m) => ({ default: m.Admin })));
-const Hermes = lazy(() => import('./pages/Manage').then((m) => ({ default: m.Hermes })));
 const MemoryDesign = lazy(() =>
   import('./pages/Manage').then((m) => ({ default: m.MemoryDesign })),
 );
@@ -103,13 +102,12 @@ const baseSections = [
   { id: 'audit', label: 'Journaux', icon: Activity },
   { id: 'timeline', label: 'Chronologie', icon: GitBranch },
   { id: 'graph', label: 'Graphe', icon: Network },
-  { id: 'hermes', label: 'Imports', icon: ArrowRight },
+  { id: 'coverage', label: 'Dossiers suivis', icon: Folder },
   { id: 'server', label: 'Serveur & modèles', icon: Server },
   { id: 'model-settings', label: 'Modèles', icon: Cpu },
   { id: 'admin', label: 'Banque', icon: Database },
   { id: 'memory', label: 'Comportement de la mémoire', icon: Layers3 },
   { id: 'settings', label: 'Application', icon: Settings2 },
-  { id: 'coverage', label: 'Dossiers suivis', icon: Folder },
 ] as const;
 const englishLabels: Record<Section, string> = {
   sources: 'Catalog',
@@ -125,7 +123,6 @@ const englishLabels: Record<Section, string> = {
   audit: 'Logs',
   timeline: 'Timeline',
   graph: 'Graph',
-  hermes: 'Imports',
   server: 'Server & models',
   admin: 'Memory bank',
   settings: 'Application',
@@ -151,7 +148,7 @@ const viewGroups: Partial<
   sources: {
     label: 'Vues des sources',
     english: 'Source views',
-    views: ['sources', 'coverage', 'hermes'],
+    views: ['sources', 'coverage'],
   },
   activity: {
     label: 'Vues de l’activité',
@@ -166,7 +163,7 @@ const viewGroups: Partial<
 };
 function groupFor(section: Section): NavigationGroup {
   if (['facts', 'documents', 'timeline', 'graph'].includes(section)) return 'memory';
-  if (['sources', 'coverage', 'hermes'].includes(section)) return 'sources';
+  if (['sources', 'coverage'].includes(section)) return 'sources';
   if (['operations', 'consumption', 'audit'].includes(section)) return 'activity';
   if (['settings', 'admin', 'memory', 'server'].includes(section)) return 'settings';
   if (section === 'models') return 'knowledge';
@@ -241,17 +238,31 @@ export default function App() {
   const sourcesCache = useRef<{ key: string; data: Row } | null>(null);
   const requestSequence = useRef(0);
   const appliedSequence = useRef(0);
+  const contextGeneration = useRef(0);
+  const contextTransition = useRef<number | null>(null);
+  const foregroundRequests = useRef(new Set<number>());
+  const [contextRevision, setContextRevision] = useState(0);
   const sourceKey = (app: Snapshot['app']) =>
     `${app.serverURL}|${app.bank || ''}|${app.folder || ''}`;
   const notify = useCallback((message: string) => setToast(message), []);
   const busy = busyCount > 0;
   const run = useCallback(async (action: string, args: Row = {}) => {
+    const quiet = action === 'snapshot' || args.polling === true;
+    if (quiet && (foregroundRequests.current.size || contextTransition.current !== null))
+      return null;
     const sequence = ++requestSequence.current;
-    const quiet = action === 'snapshot';
-    if (!quiet) setBusyCount((count) => count + 1);
-    if (['bank.select', 'server.url', 'folder.choose'].includes(action)) {
+    const changesContext = ['bank.select', 'server.url', 'folder.choose'].includes(action);
+    if (changesContext) {
+      contextGeneration.current++;
+      contextTransition.current = sequence;
       sourcesCache.current = null;
       appliedSequence.current = sequence;
+      setSnapshot((old) => ({ ...old, data: {}, confirmations: [] }));
+    }
+    const generation = contextGeneration.current;
+    if (!quiet) {
+      foregroundRequests.current.add(sequence);
+      setBusyCount(foregroundRequests.current.size);
     }
     const sourceBase = sourcesCache.current;
     try {
@@ -262,7 +273,14 @@ export default function App() {
             background: true,
             sourceRevision: sourceBase?.data.catalogRevision,
           });
-      if (result?.app && result?.section && sequence >= appliedSequence.current) {
+      if (
+        result?.app &&
+        result?.section &&
+        sequence >= appliedSequence.current &&
+        generation === contextGeneration.current &&
+        (contextTransition.current === null || contextTransition.current === sequence) &&
+        (!quiet || foregroundRequests.current.size === 0)
+      ) {
         appliedSequence.current = sequence;
         if (result.section === 'sources') {
           result.data = mergeSourceSnapshot(
@@ -287,10 +305,17 @@ export default function App() {
       const message =
         (error instanceof Error ? error.message : typeof error === 'string' ? error : '') ||
         tr('L’action n’a pas abouti.', 'The action could not be completed.');
-      setToast(message);
+      if (generation === contextGeneration.current) setToast(message);
       return { error: nativeSystemMessage(message) };
     } finally {
-      if (!quiet) setBusyCount((count) => Math.max(0, count - 1));
+      if (!quiet) {
+        foregroundRequests.current.delete(sequence);
+        setBusyCount(foregroundRequests.current.size);
+      }
+      if (changesContext && contextTransition.current === sequence) {
+        contextTransition.current = null;
+        setContextRevision((value) => value + 1);
+      }
     }
   }, []);
   const refresh = useCallback(
@@ -315,6 +340,10 @@ export default function App() {
   }
   const changeDemo = useCallback((value: boolean) => {
     setReady(false);
+    contextGeneration.current++;
+    contextTransition.current = null;
+    foregroundRequests.current.clear();
+    setBusyCount(0);
     setDemo(value);
     demoRef.current = value;
     seenMessages.current.clear();
@@ -346,7 +375,16 @@ export default function App() {
   }, [demo, run]);
   useEffect(() => {
     if (ready && (demo || host !== 'Navigateur')) void refresh();
-  }, [route, snapshot.app.bank, demo, ready, refresh]);
+  }, [
+    route,
+    snapshot.app.bank,
+    snapshot.app.serverURL,
+    snapshot.app.folder,
+    contextRevision,
+    demo,
+    ready,
+    refresh,
+  ]);
   // Le suivi ne lance aucun traitement. La surveillance reste active si des plafonds sont autorisés.
   // Page Serveur : suit l’installation du modèle local et la connexion à un compte, sans recharger.
   const serverWork =
@@ -379,7 +417,7 @@ export default function App() {
         polling = true;
         try {
           if (route === 'settings' || serverWork || sourcesWork) await run('snapshot');
-          else await refresh();
+          else await refresh({ polling: true });
         } finally {
           polling = false;
         }
@@ -422,6 +460,7 @@ export default function App() {
   useEffect(() => {
     const changed = () => {
       const next = initialRoute();
+      if (location.hash.slice(1) !== next) history.replaceState(null, '', `#${next}`);
       if (next !== routeRef.current) {
         routeRef.current = next;
         setRoute(next);
@@ -436,6 +475,7 @@ export default function App() {
         setLastViews((old) => ({ ...old, [groupFor(next)]: next }));
       }
     };
+    changed();
     window.addEventListener('hashchange', changed);
     return () => window.removeEventListener('hashchange', changed);
   }, []);
@@ -544,7 +584,12 @@ export default function App() {
       case 'documents':
         return <Documents {...props} />;
       case 'coverage':
-        return <Coverage {...props} />;
+        return (
+          <Coverage
+            {...props}
+            data={{ ...props.data, catalogFolder: props.data.catalogFolder ?? snapshot.app.folder }}
+          />
+        );
       case 'consumption':
         return <Consumption {...props} />;
       case 'dashboard':
@@ -565,8 +610,6 @@ export default function App() {
         return <ServerSettings {...props} />;
       case 'model-settings':
         return <ModelChoices {...props} />;
-      case 'hermes':
-        return <Hermes {...props} />;
       case 'settings':
         return (
           <Settings
@@ -675,7 +718,7 @@ export default function App() {
                 {id === 'models' && demo ? (
                   <span className="nav-count">4</span>
                 ) : (
-                  <kbd>{i + 1}</kbd>
+                  <kbd>⌘{i + 1}</kbd>
                 )}
               </button>
             ))}
@@ -836,7 +879,9 @@ export default function App() {
               aria-labelledby={views ? `view-tab-${route}` : undefined}
               tabIndex={views ? 0 : undefined}
             >
-              <PageBoundary key={`${route}-${snapshot.app.bank}-${demo}`}>
+              <PageBoundary
+                key={`${route}-${snapshot.app.serverURL}-${snapshot.app.bank}-${route === 'sources' ? snapshot.app.folder : ''}-${contextGeneration.current}-${demo}`}
+              >
                 <Suspense fallback={<Loading />}>{page()}</Suspense>
               </PageBoundary>
             </div>
@@ -1127,7 +1172,7 @@ function Settings({
           </div>
           <div>
             <span>{t('Parcourir les vues principales', 'Browse the main views')}</span>
-            <kbd>⌘ 1…6</kbd>
+            <kbd>⌘ 1…7</kbd>
           </div>
         </div>
       </section>

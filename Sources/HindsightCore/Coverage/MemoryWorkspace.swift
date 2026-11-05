@@ -39,13 +39,33 @@ public final class MemoryWorkspace {
     private var loadedRoot: String?
     private var loadedServer: URL?
     private var refreshID = UUID()
+    private var preparationID = UUID()
+    private var actionInProgress = false
     public private(set) var revision = UUID()
     public private(set) var previousRevision: UUID?
     public private(set) var changedRecords: [[String: Any]] = []
     public var pauseGate: PauseGate?
 
+    private struct Context: Equatable {
+        let bank: String?
+        let root: URL?
+        let collection: URL?
+        let server: URL
+    }
+    private var context: Context {
+        Context(bank: bank(), root: folder.repository, collection: folder.collection, server: client().baseURL)
+    }
+    private func requireContext(_ expected: Context) throws {
+        guard !Task.isCancelled, context == expected else { throw failure("Le contexte a changé ; préparez un nouvel aperçu.") }
+    }
+    private func requireLoadedContext() throws {
+        guard loadedBank == bank(), loadedRoot == folder.repository?.path, loadedServer == client().baseURL else {
+            throw failure("Le contexte a changé ; actualisez les sources.")
+        }
+    }
+
     public func invalidate() {
-        refreshID = UUID(); revision = UUID()
+        refreshID = UUID(); preparationID = UUID(); revision = UUID()
         previousRevision = nil; changedRecords = []
         documents = [:]; records = []; readable = []; targets = [:]
         comparisonAvailable = false; loadedBank = nil; loadedRoot = nil; loadedServer = nil
@@ -94,23 +114,31 @@ public final class MemoryWorkspace {
             let state = value as? [String: Any] ?? [:]
             for key in ["enabled", "pending", "operations", "failures", "bindings"] where state[key] != nil {
                 guard state[key] is [String: Any] else { throw failure("Sélection mémoire invalide ; envoi suspendu.") }
+                guard key == "enabled" ? state[key] is [String: Bool] : state[key] is [String: String] else {
+                    throw failure("Suivi mémoire invalide ; envoi suspendu.")
+                }
+            }
+            if let value = state["server_url"] {
+                guard let server = value as? String else { throw failure("Suivi mémoire invalide ; envoi suspendu.") }
+                guard server == client().baseURL.absoluteString else { throw failure("Cette sélection mémoire appartient à un autre serveur ; envoi suspendu.") }
             }
             preferences = state["enabled"] as? [String: Bool] ?? [:]
             pending = state["pending"] as? [String: String] ?? [:]
             operations = state["operations"] as? [String: String] ?? [:]
             failures = state["failures"] as? [String: String] ?? [:]
             bindings = state["bindings"] as? [String: String] ?? [:]
+            guard Set(operations.keys).isSubset(of: Set(pending.keys)) else { throw failure("Suivi mémoire incomplet ; envoi suspendu.") }
             repairOldTracking = (state["tracking_version"] as? Int ?? 1) < 2 && !failures.isEmpty
         }
     }
     private func persist() throws {
         guard let url = ledgerURL, let bank = bank() else { throw failure("Choisissez un dossier et une banque.") }
         var ledger = FileManager.default.fileExists(atPath: url.path) ? try decode(url) : [:]
-        ledger[bank] = ["tracking_version": repairOldTracking ? 1 : 2, "enabled": preferences, "pending": pending, "operations": operations, "failures": failures, "bindings": bindings]
+        ledger[bank] = ["tracking_version": repairOldTracking ? 1 : 2, "server_url": client().baseURL.absoluteString, "enabled": preferences, "pending": pending, "operations": operations, "failures": failures, "bindings": bindings]
         try write(ledger, to: url)
     }
     /// Reconcile old false failures from the exact saved submissions, never by resending them.
-    private func recoverTracking(_ bank: String) async throws -> [String: OperationStatusResponse] {
+    private func recoverTracking(_ bank: String, refreshToken: UUID) async throws -> [String: OperationStatusResponse] {
         guard repairOldTracking, let root = folder.collection, let ledger = ledgerURL else { return [:] }
         let currentClient = client(), expectedRoot = loadedRoot
         let directory = root.appendingPathComponent(".memory-operations")
@@ -125,9 +153,10 @@ public final class MemoryWorkspace {
                   let data = try? Data(contentsOf: url), let packet = try? JSONDecoder().decode(RetainRequest.self, from: data), packet.operationId == id else { continue }
             let affected = packet.items.filter { item in item.documentId.map { failures[$0] != nil && operations[$0] == nil && !restored.contains($0) } ?? false }
             guard !affected.isEmpty else { continue }
-            guard let status = try? await currentClient.operation(bank, id: id) else { retryRecovery = true; continue }
-            guard !Task.isCancelled, self.bank() == bank, expectedRoot == folder.repository?.path,
+            let status = try? await currentClient.operation(bank, id: id)
+            guard !Task.isCancelled, refreshID == refreshToken, self.bank() == bank, expectedRoot == folder.repository?.path,
                   client().baseURL == currentClient.baseURL else { throw failure("Le contexte a changé ; actualisez la vue.") }
+            guard let status else { retryRecovery = true; continue }
             let backup = root.appendingPathComponent(".memory-workspace.pre-tracking-v2.json")
             if !FileManager.default.fileExists(atPath: backup.path) { try FileManager.default.copyItem(at: ledger, to: backup) }
             statuses[id] = status
@@ -139,10 +168,68 @@ public final class MemoryWorkspace {
         repairOldTracking = retryRecovery
         return statuses
     }
-    private func hasRetainWork(_ bank: String) async throws -> Bool {
+    /// A queue row can retain an old task status after its operation has finished. Read the
+    /// operation itself before blocking, and inspect every page before declaring the queue idle.
+    private struct QueueOperation: Sendable {
+        let id: String
+        let status: OperationStatusResponse
+    }
+    private func hasActiveStatus(_ rows: [OperationResponse], checked: [String: OperationStatusResponse], retainOnly: Bool) -> Bool {
+        rows.contains { row in
+            guard let operation = checked[row.operationId ?? row.id] else { return false }
+            let kind = operation.operationType ?? operation.taskType ?? row.operationType ?? row.taskType
+            if retainOnly && !["retain", "batch_retain"].contains(kind) { return false }
+            let state = OperationStatusKind(operation.status)
+            return state.isActive || state == .other || operation.childOperations?.contains(where: {
+                let state = OperationStatusKind($0.status)
+                return state.isActive || state == .other
+            }) == true
+        }
+    }
+    private func hasActiveWork(_ bank: String, client currentClient: HindsightClient, retainOnly: Bool = false) async throws -> Bool {
+        let expected = context
+        guard expected.bank == bank, expected.server == currentClient.baseURL else { throw failure("Le contexte a changé ; préparez un nouvel aperçu.") }
+        var checked: [String: OperationStatusResponse] = [:]
         for status in ["pending", "processing"] {
-            for type in ["retain", "batch_retain"] {
-                if try await client().listOperations(bank, status: status, type: type, limit: 1).total > 0 { return true }
+            let types: [String?] = retainOnly ? ["retain", "batch_retain"] : [nil]
+            for type in types {
+                var offset = 0
+                var seen = Set<String>()
+                while true {
+                    let page = try await currentClient.listOperations(bank, status: status, type: type, limit: 100, offset: offset)
+                    try requireContext(expected)
+                    var requested = Set<String>()
+                    var missing: [String] = []
+                    for row in page.operations {
+                        // Several task rows can legitimately share one parent operation.
+                        guard seen.insert(row.id).inserted else { throw failure("File d’opérations incomplète ; actualisez avant tout envoi.") }
+                        let id = row.operationId ?? row.id
+                        if checked[id] == nil, requested.insert(id).inserted { missing.append(id) }
+                    }
+                    if hasActiveStatus(page.operations, checked: checked, retainOnly: retainOnly) { return true }
+                    // Verify historical task rows without one network round trip per row in series.
+                    // Bound concurrency and retain only status metadata, never source text.
+                    for start in stride(from: 0, to: missing.count, by: 4) {
+                        let ids = Array(missing[start..<min(start + 4, missing.count)])
+                        let results = try await withThrowingTaskGroup(of: QueueOperation.self) { group in
+                            for id in ids {
+                                group.addTask { QueueOperation(id: id, status: try await currentClient.operation(bank, id: id)) }
+                            }
+                            var values: [QueueOperation] = []
+                            for try await value in group { values.append(value) }
+                            return values
+                        }
+                        try requireContext(expected)
+                        for result in results { checked[result.id] = result.status }
+                        if hasActiveStatus(page.operations, checked: checked, retainOnly: retainOnly) { return true }
+                    }
+                    for row in page.operations {
+                        guard checked[row.operationId ?? row.id] != nil else { throw failure("File d’opérations incomplète ; actualisez avant tout envoi.") }
+                    }
+                    offset += page.operations.count
+                    if offset >= page.total { break }
+                    guard !page.operations.isEmpty else { throw failure("File d’opérations incomplète ; actualisez avant tout envoi.") }
+                }
             }
         }
         return false
@@ -270,6 +357,16 @@ public final class MemoryWorkspace {
         let version = try FileVersion(url)
         if catalogVersion?.url != url || catalogVersion?.version != version {
             catalog = try decode(url)
+            guard catalog?["version"] as? Int == 1, catalog?["mode"] as? String == "collection_only" else {
+                catalog = nil; catalogVersion = nil
+                throw failure("Le format de ce catalogue n'est pas pris en charge.")
+            }
+            let ids = (catalog?["records"] as? [[String: Any]] ?? []).compactMap { $0["id"] as? String }
+            guard let rows = catalog?["records"] as? [[String: Any]], ids.count == rows.count,
+                  ids.allSatisfy({ !$0.isEmpty }), Set(ids).count == ids.count else {
+                catalog = nil; catalogVersion = nil
+                throw failure("Identifiants du catalogue invalides ou dupliqués ; envoi suspendu.")
+            }
             catalogVersion = try FileVersion(url) == version ? (url, version) : nil
         }
     }
@@ -280,7 +377,7 @@ public final class MemoryWorkspace {
             !Task.isCancelled && refreshID == token && bank() == currentBank
                 && folder.repository?.path == currentRoot && client().baseURL == currentClient.baseURL
         }
-        confirmation = nil; error = nil; folder.reload()
+        confirmation = nil; error = nil; message = nil; folder.reload()
         if loadedBank != currentBank || loadedRoot != currentRoot || loadedServer != currentClient.baseURL { documents = [:]; records = []; readable = []; targets = [:]; comparisonAvailable = false }
         loadedBank = currentBank; loadedRoot = currentRoot; loadedServer = currentClient.baseURL
         do {
@@ -301,7 +398,7 @@ public final class MemoryWorkspace {
             documents = fresh; comparisonAvailable = currentBank != nil
             if let bank = currentBank {
                 let wasRepairing = repairOldTracking
-                let recovered = try await recoverTracking(bank)
+                let recovered = try await recoverTracking(bank, refreshToken: token)
                 guard isCurrent() else { return }
                 let hadTracking = !operations.isEmpty
                 var checkedQueue = false
@@ -319,7 +416,7 @@ public final class MemoryWorkspace {
                         let failed = op.status != "completed" || childFailed
                         if !failed && childActive { continue }
                         if !failed && parent && !matches {
-                            if !checkedQueue { retainWork = try? await hasRetainWork(bank); checkedQueue = true }
+                            if !checkedQueue { retainWork = try? await hasActiveWork(bank, client: currentClient, retainOnly: true); checkedQueue = true }
                             guard isCurrent() else { return }
                             // A completed batch dispatcher is not a completed extraction. If the
                             // server cannot expose child status, wait until its retain queue drains.
@@ -403,7 +500,7 @@ public final class MemoryWorkspace {
             }
             if let matched { claimed.insert(matched) }
             record["memory"] = ["state": state, "enabled": enabled, "document_id": target, "stored": matched != nil,
-                                "can_remove": hold == nil || ownExclusion, "locked": (hold != nil && !ownExclusion) || digest == nil, "reason": hold ?? readError ?? failures[target] ?? "", "hash": hash ?? ""]
+                                "can_remove": hold == nil || ownExclusion, "locked": (hold != nil && !ownExclusion) || digest == nil, "reason": hold ?? readError ?? failures[target] ?? "", "hash": hash ?? "", "stored_hash": documents[target]?.contentHash ?? ""]
             records.append(record); if digest != nil { readable.insert(id) }; targets[id] = target
         }
         // Sources imported by other tools stay visible; do not infer that their file disappeared.
@@ -411,7 +508,7 @@ public final class MemoryWorkspace {
             let id = "bank:" + doc.id
             let hold = policyReason(id: doc.id, repo: doc.documentMetadata?["repo"]?.stringValue ?? "", path: doc.documentMetadata?["path"]?.stringValue ?? "")
             records.append(["id": id, "title": doc.id, "kind": "documents", "project": "", "project_name": "En mémoire", "repository": doc.documentMetadata?["repo"]?.stringValue ?? "", "files": [:], "source_updated_at": doc.updatedAt,
-                            "memory": ["state": hold == nil ? (doc.documentMetadata?["source_record_id"] == nil ? "unlinked" : "missing") : "excluded", "enabled": false, "stored": true, "can_remove": hold == nil || policyIndex.isWorkspaceExclusion(doc.id), "locked": hold != nil && !policyIndex.isWorkspaceExclusion(doc.id), "document_id": doc.id, "reason": hold ?? "Source à relier au catalogue"]])
+                            "memory": ["state": hold == nil ? (doc.documentMetadata?["source_record_id"] == nil ? "unlinked" : "missing") : "excluded", "enabled": false, "stored": true, "can_remove": hold == nil || policyIndex.isWorkspaceExclusion(doc.id), "locked": hold != nil && !policyIndex.isWorkspaceExclusion(doc.id), "document_id": doc.id, "stored_hash": doc.contentHash ?? "", "reason": hold ?? "Source à relier au catalogue"]])
             targets[id] = doc.id
         }
         changedRecords = records.filter { row in
@@ -422,6 +519,7 @@ public final class MemoryWorkspace {
     }
     public func setEnabled(_ id: String, enabled: Bool) throws { try setEnabled([id], enabled: enabled) }
     public func setEnabled(_ ids: [String], enabled: Bool) throws {
+        try requireLoadedContext()
         for id in ids {
             guard let row = records.first(where: { $0["id"] as? String == id }), let state = row["memory"] as? [String: Any], state["locked"] as? Bool != true, readable.contains(id) else { throw failure("Une source nécessite une revue ou une version texte.") }
         }
@@ -439,6 +537,7 @@ public final class MemoryWorkspace {
         try persist(); buildRows()
     }
     public func link(_ id: String, document: String) throws {
+        try requireLoadedContext()
         guard readable.contains(id), let row = records.first(where: { $0["id"] as? String == id }),
               let state = row["memory"] as? [String: Any], state["locked"] as? Bool != true,
               state["stored"] as? Bool != true, documents[document] != nil,
@@ -448,14 +547,15 @@ public final class MemoryWorkspace {
     }
 
     public func storedText(_ id: String) async throws -> String {
+        let expected = context, currentClient = client()
+        guard loadedBank == expected.bank, loadedRoot == expected.root?.path, loadedServer == expected.server else { throw failure("Actualisez les sources de cette banque.") }
         guard let bank = bank(), let target = targets[id] else { throw failure("Document inconnu.") }
-        return try await client().document(bank, id: target).originalText ?? ""
+        let document = try await currentClient.document(bank, id: target)
+        try requireContext(expected)
+        return document.originalText ?? ""
     }
-    private func checkQueue(_ bank: String) async throws {
-        for status in ["pending", "processing"] {
-            let queue = try await client().listOperations(bank, status: status, limit: 1)
-            guard queue.operations.isEmpty else { throw failure("Des opérations sont encore en cours. Consultez Opérations puis actualisez.") }
-        }
+    private func checkQueue(_ bank: String, client currentClient: HindsightClient) async throws {
+        if try await hasActiveWork(bank, client: currentClient) { throw failure("Des opérations sont encore en cours. Consultez Opérations puis actualisez.") }
     }
     /// Refreshes only the local archive. It does not require or contact Hindsight.
     public func refreshSources() async {
@@ -473,14 +573,20 @@ public final class MemoryWorkspace {
 
     /// Prepares the existing catalogue; collecting and sending are independent actions.
     public func prepareSend() async {
+        let preparation = UUID(); preparationID = preparation
         confirmation = nil; message = nil
         guard let bank = bank(), let root = folder.repository else { error = "Choisissez un dossier mémoire et une banque."; return }
         if let reason = pauseGate?(bank) { error = reason; return }
         folder.reload()
         guard folder.catalogURL != nil, folder.error == nil else { error = folder.error ?? "Choisissez un catalogue existant."; return }
+        let expected = context, currentClient = client()
         await refresh()
-        guard error == nil else { return }
-        do { try await checkQueue(bank) } catch { self.error = error.localizedDescription; return }
+        guard preparationID == preparation, context == expected, error == nil else { return }
+        do { try await checkQueue(bank, client: currentClient) } catch {
+            if preparationID == preparation, context == expected { self.error = error.localizedDescription }
+            return
+        }
+        guard preparationID == preparation, context == expected, !Task.isCancelled else { return }
         let selected = records.filter { row in
             let s = row["memory"] as? [String: Any] ?? [:]
             return s["enabled"] as? Bool == true && ["new", "modified", "error"].contains(s["state"] as? String ?? "")
@@ -504,11 +610,17 @@ public final class MemoryWorkspace {
                               tags: ["source:catalog", "project:" + (row["project"] as? String ?? ""), "repo:" + (row["repository"] as? String ?? "")], observationScopes: .string("shared"), strategy: "doc")
         }
         let chars = selected.reduce(0) { $0 + (texts[$1["id"] as? String ?? ""]?.count ?? 0) }
+        var consumed = false
         confirmation = ConfirmationRequest(title: "Envoyer les sources à Hindsight ?", message: "\(items.count) sources complètes vers « \(bank) », environ \(chars / 4) jetons de texte avant extraction.\n\n" + selected.map { "• " + ($0["title"] as? String ?? "") + " — " + (targets[$0["id"] as? String ?? ""] ?? "") }.joined(separator: "\n") + "\n\nLes sources modifiées remplacent leur version mémorisée. Aucune suppression d’autres documents. La consolidation dépend des réglages de la banque.", confirmTitle: "Envoyer") { [weak self] in
             guard let self else { return }
-            guard self.bank() == bank, self.folder.repository == root else { self.error = "Le contexte a changé ; préparez un nouvel aperçu."; return }
+            guard !consumed else { return }; consumed = true
+            guard self.context == expected else { self.error = "Le contexte a changé ; préparez un nouvel aperçu."; return }
             if let reason = self.pauseGate?(bank) { self.error = reason; return }
+            guard !self.actionInProgress else { return }
+            self.actionInProgress = true
+            defer { self.actionInProgress = false }
             await self.refresh()
+            guard self.context == expected, !Task.isCancelled else { return }
             let currentTexts = try? self.readTexts(selected)
             guard self.error == nil, self.preferences == frozenPreferences,
                   (try? JSONSerialization.data(withJSONObject: self.policy, options: .sortedKeys)) == frozenPolicy,
@@ -520,8 +632,11 @@ public final class MemoryWorkspace {
                 self.error = "Les sources, la sélection ou la banque ont changé. Préparez un nouvel aperçu."; return
             }
             do {
-                try await self.checkQueue(bank)
-                for batch in CodexImportViewModel.batches(items.map { ($0, (frozenTexts[$0.metadata?["source_record_id"] ?? ""]?.utf8.count ?? 0) + 2000) }, byteLimit: 8_000_000, itemLimit: 10) {
+                try await self.checkQueue(bank, client: currentClient)
+                try self.requireContext(expected)
+                for batch in RetainBatching.batches(items.map { ($0, (frozenTexts[$0.metadata?["source_record_id"] ?? ""]?.utf8.count ?? 0) + 2000) }, byteLimit: 8_000_000, itemLimit: 10) {
+                    try self.requireContext(expected)
+                    if let reason = self.pauseGate?(bank) { throw self.failure(reason) }
                     let operation = UUID().uuidString
                     for item in batch { if let id = item.documentId, let key = item.metadata?["source_record_id"], let text = frozenTexts[key] {
                         self.pending[id] = SHA256.hex(Data(text.utf8)); self.operations[id] = operation; self.failures[id] = nil
@@ -533,17 +648,23 @@ public final class MemoryWorkspace {
                     try JSONEncoder().encode(request).write(to: packet, options: .atomic)
                     try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: packet.path)
                     try self.persist()
-                    guard try await self.client().retain(bank, request).success else { throw self.failure("Le serveur n’a pas accepté l’envoi. Vérifiez son état avant toute reprise.") }
+                    guard try await currentClient.retain(bank, request).success else { throw self.failure("Le serveur n’a pas accepté l’envoi. Vérifiez son état avant toute reprise.") }
+                    try self.requireContext(expected)
                 }
                 self.message = "\(items.count) sources envoyées ; traitement à suivre dans cette liste."
-            } catch { self.error = error.localizedDescription }
+            } catch {
+                guard self.context == expected else { return }
+                self.error = error.localizedDescription
+            }
             self.buildRows()
         }
     }
     /// Reuses the exact request and operation UUID: a timeout must never create a second extraction.
     public func requestRetry(_ id: String) {
-        confirmation = nil
+        confirmation = nil; error = nil; message = nil
+        do { try requireLoadedContext() } catch { self.error = error.localizedDescription; return }
         guard let bank = bank(), let root = folder.repository, let target = targets[id], let operation = operations[target], UUID(uuidString: operation) != nil else { error = "Aucun envoi à vérifier pour cette source."; return }
+        let expected = context, currentClient = client()
         do {
             let path = root.appendingPathComponent("collection/.memory-operations/" + operation + ".json")
             let data = try Data(contentsOf: path)
@@ -552,40 +673,68 @@ public final class MemoryWorkspace {
                 guard let id = item.documentId, case .text(let text) = item.content else { return false }
                 return operations[id] == operation && pending[id] == SHA256.hex(Data(text.utf8))
             }) else { throw failure("Le lot initial ne correspond plus à la file locale.") }
+            let expectedPolicy = try JSONSerialization.data(withJSONObject: policy, options: .sortedKeys)
+            let expectedPreferences = preferences
+            var consumed = false
             confirmation = ConfirmationRequest(title: "Vérifier ou reprendre l’envoi initial ?", message: "Le même lot de \(request.items.count) sources sera présenté au serveur avec son identifiant initial. Un lot déjà accepté ne sera pas extrait deux fois. Le texte est celui de l’aperçu initial.\n\n" + request.items.compactMap(\.documentId).joined(separator: "\n"), confirmTitle: "Vérifier / reprendre", severity: .normal) { [weak self] in
-                guard let self, self.bank() == bank, self.folder.repository == root else { return }
+                guard let self, self.context == expected, !consumed else { return }; consumed = true
+                guard !self.actionInProgress else { return }
+                self.actionInProgress = true
+                defer { self.actionInProgress = false }
                 do {
                     if let reason = self.pauseGate?(bank) { throw self.failure(reason) }
                     guard try Data(contentsOf: path) == data else { throw self.failure("Le lot a changé depuis l’aperçu.") }
-                    guard try await self.client().retain(bank, request).success else { throw self.failure("Le serveur n’a pas accepté l’envoi. Vérifiez son état avant toute reprise.") }
+                    try self.loadPolicy()
+                    guard self.preferences == expectedPreferences,
+                          try JSONSerialization.data(withJSONObject: self.policy, options: .sortedKeys) == expectedPolicy else {
+                        throw self.failure("La sélection ou la politique a changé ; préparez un nouvel aperçu.")
+                    }
+                    guard request.items.allSatisfy({ item in
+                        guard let target = item.documentId, case .text(let text) = item.content else { return false }
+                        return self.operations[target] == operation && self.pending[target] == SHA256.hex(Data(text.utf8))
+                    }) else { throw self.failure("Le lot initial ne correspond plus à la file locale.") }
+                    try self.requireContext(expected)
+                    guard try await currentClient.retain(bank, request).success else { throw self.failure("Le serveur n’a pas accepté l’envoi. Vérifiez son état avant toute reprise.") }
+                    try self.requireContext(expected)
+                    self.error = nil
                     self.message = "Envoi initial retrouvé ou repris. Actualisez pour vérifier le résultat."
-                } catch { self.error = error.localizedDescription }
+                } catch { if self.context == expected { self.error = error.localizedDescription } }
             }
         } catch { self.error = error.localizedDescription }
     }
 
     public func requestRemove(_ id: String) {
-        confirmation = nil
+        confirmation = nil; error = nil; message = nil
+        do { try requireLoadedContext() } catch { self.error = error.localizedDescription; return }
         guard let bank = bank(), let root = folder.repository, let target = targets[id], let row = records.first(where: { $0["id"] as? String == id }), (row["memory"] as? [String: Any])?["can_remove"] as? Bool == true else { error = "Source indisponible ou en attente de revue."; return }
         if let reason = pauseGate?(bank) { error = reason; return }
         guard pending[target] == nil else { error = "Attendez la fin du traitement avant de retirer cette source."; return }
+        let expected = context, currentClient = client()
         let expectedHash = documents[target]?.contentHash
+        var consumed = false
         confirmation = ConfirmationRequest(title: "Retirer de la mémoire ?", message: "\(target)\n\nLe fichier local est conservé. Cette source sera exclue des prochains envois. Le document et ses faits seront retirés de Hindsight après sauvegarde locale du texte et des métadonnées.", confirmTitle: "Retirer", severity: .destructive) { [weak self] in
-            guard let self, self.bank() == bank, self.folder.repository == root else { return }
+            guard let self, self.context == expected, !consumed else { return }; consumed = true
+            guard !self.actionInProgress else { return }
+            self.actionInProgress = true
+            defer { self.actionInProgress = false }
             do {
                 if let reason = self.pauseGate?(bank) { throw self.failure(reason) }
-                try await self.checkQueue(bank)
+                try await self.checkQueue(bank, client: currentClient)
+                try self.requireContext(expected)
                 try self.loadPolicy(); self.buildRows()
+                guard self.pending[target] == nil else { throw self.failure("Attendez la fin du traitement avant de retirer cette source.") }
                 guard self.targets[id] == target, (self.records.first(where: { $0["id"] as? String == id })?["memory"] as? [String: Any])?["can_remove"] as? Bool == true else { throw self.failure("La sélection ou la politique a changé ; rechargez la vue.") }
                 guard self.policyReason(id: target, repo: "", path: "") == nil || (self.policy["excluded_document_ids"] as? [String: [String: Any]])?[target]?["origin"] as? String == "workspace" else { throw self.failure("La politique a changé ; rechargez la vue.") }
                 let backup = root.appendingPathComponent("archives/hindsight/retraits-app/" + UUID().uuidString, isDirectory: true)
                 try FileManager.default.createDirectory(at: backup, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
                 if self.documents[target] != nil {
-                    let doc = try await self.client().document(bank, id: target)
+                    let doc = try await currentClient.document(bank, id: target)
+                    try self.requireContext(expected)
                     try JSONEncoder().encode(doc).write(to: backup.appendingPathComponent("document.json"), options: .atomic)
                     if let expected = expectedHash, SHA256.hex(Data((doc.originalText ?? "").utf8)) != expected { throw self.failure("La version mémorisée a changé ; rechargez la vue.") }
                 }
                 // Persist exclusions before delete, so a failed request cannot cause a future re-send.
+                if let reason = self.pauseGate?(bank) { throw self.failure(reason) }
                 self.preferences[id] = false; try self.persist()
                 if let url = self.policyURL, self.policy.isEmpty || self.policy["bank_id"] as? String == bank {
                     var p = self.policy.isEmpty ? ["version": 1, "bank_id": bank, "excluded_document_ids": [:], "deferred_document_ids": [:]] : try self.decode(url)
@@ -593,9 +742,14 @@ public final class MemoryWorkspace {
                     excluded[target] = ["action": "archived", "origin": "workspace", "reason": "Retrait validé dans l’app", "archive": backup.path, "original_path": (row["context"] as? [String: Any])?["original_path"] as? String ?? ""]
                     p["excluded_document_ids"] = excluded; try self.write(p, to: url)
                 }
-                if self.documents[target] != nil { guard try await self.client().deleteDocument(bank, id: target).success else { throw self.failure("Le serveur n’a pas confirmé le retrait. La source reste exclue des futurs envois.") } }
-                self.pending[target] = nil; try self.persist(); self.message = "Source retirée et exclue. Fichier conservé."; await self.refresh()
-            } catch { let detail = error.localizedDescription; await self.refresh(); self.error = detail }
+                if self.documents[target] != nil { guard try await currentClient.deleteDocument(bank, id: target).success else { throw self.failure("Le serveur n’a pas confirmé le retrait. La source reste exclue des futurs envois.") } }
+                try self.requireContext(expected)
+                self.pending[target] = nil; try self.persist(); await self.refresh(); self.message = "Source retirée et exclue. Fichier conservé."
+            } catch {
+                guard self.context == expected else { return }
+                let detail = error.localizedDescription; await self.refresh()
+                if self.context == expected { self.error = detail }
+            }
         }
     }
 }

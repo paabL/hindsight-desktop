@@ -17,7 +17,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useI18n } from '../i18n';
-import { Button, Tabs } from '../ui';
+import { Button, ErrorNotice, Tabs } from '../ui';
 import type { PageProps, Row } from '../types';
 import { serviceModelField } from '../model-field-options';
 import './model-workflow.css';
@@ -212,6 +212,25 @@ export function ModelWorkflowSettings({
 }) {
   const { t } = useI18n();
   const [flow, setFlow] = useState<Flow>('reflect');
+  const pendingRequest = useRef(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState('');
+  const locked = busy || pending;
+  async function request(command: string, args: Row = {}) {
+    if (busy || pendingRequest.current) return;
+    pendingRequest.current = true;
+    setPending(true);
+    setError('');
+    try {
+      const result = await run(command, args);
+      if (result?.error) setError(String(result.error));
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
+    } finally {
+      pendingRequest.current = false;
+      setPending(false);
+    }
+  }
   const workflow = data.modelWorkflow;
   if (!workflow) return null;
   const role = (id: string): Row => data.roles?.find((r: Row) => r.id === id) || {};
@@ -224,7 +243,7 @@ export function ModelWorkflowSettings({
   const on = decision.enabled && !uncertain;
   const values: Record<string, string> = workflow.values;
   function prepare(changes: Record<string, string>) {
-    void run('server.models.prepare', { changes, revision: workflow.revision });
+    void request('server.models.prepare', { changes, revision: workflow.revision });
   }
   function changeToggle(enabled: boolean) {
     if (flow === 'recall') {
@@ -247,7 +266,7 @@ export function ModelWorkflowSettings({
       ? ['hindsight', 'typesafe', 'openai', 'cloudflare'].includes(globalProvider)
       : decision.configured;
   const toggleDisabled =
-    busy ||
+    locked ||
     !is120 ||
     uncertain ||
     (!on && !canEnable) ||
@@ -272,7 +291,7 @@ export function ModelWorkflowSettings({
         <select
           aria-label={title}
           value={field.value || ''}
-          disabled={busy || current.dynamic}
+          disabled={locked || current.dynamic}
           onChange={(e) => prepare({ [field.name]: e.target.value })}
         >
           <option value="">
@@ -296,7 +315,7 @@ export function ModelWorkflowSettings({
           <button
             type="button"
             className="mw-provider"
-            disabled={busy}
+            disabled={locked}
             onClick={() => configure(id)}
           >
             <Settings2 size={12} />
@@ -387,7 +406,7 @@ export function ModelWorkflowSettings({
               <>
                 <button
                   className="mw-model-button"
-                  disabled={busy}
+                  disabled={locked}
                   onClick={() => configure('reranker')}
                 >
                   {text || t('Classement du serveur', 'Server ranking')} <Settings2 size={14} />
@@ -410,11 +429,11 @@ export function ModelWorkflowSettings({
       <div className="mw-choice">
         <select
           aria-label={t('Modèle de décision', 'Decision model')}
-          disabled={busy || !is120}
+          disabled={locked || !is120}
           value={source}
           onChange={(e) => {
             if (e.target.value === 'advanced') configure('decision');
-            else void run('server.decision', { source: e.target.value });
+            else void request('server.decision', { source: e.target.value });
           }}
         >
           <option value="off">{t('Choisir un modèle…', 'Choose a model…')}</option>
@@ -487,7 +506,7 @@ export function ModelWorkflowSettings({
                     <input
                       type="checkbox"
                       checked={['true', '1', 'yes'].includes(values[name]?.toLowerCase())}
-                      disabled={busy || workflow.dynamicNames.includes(name)}
+                      disabled={locked || workflow.dynamicNames.includes(name)}
                       onChange={(e) => prepare({ [name]: String(e.target.checked) })}
                     />
                     {label}
@@ -689,7 +708,7 @@ export function ModelWorkflowSettings({
           <Button
             kind="ghost"
             icon={Settings2}
-            disabled={busy}
+            disabled={locked}
             onClick={() => configure('default')}
           >
             {t('Défaut', 'Default')}
@@ -702,6 +721,7 @@ export function ModelWorkflowSettings({
         items={Object.entries(labels).map(([id, label]) => ({ id, label }))}
       />
       <div className="mw-body">
+        <ErrorNotice message={error} />
         <div className="mw-decision-toggle">
           <Help
             title={t('Modèle de décision', 'Decision model')}
@@ -812,19 +832,22 @@ export function ModelWorkflowSettings({
         <div>
           {quick && data.needsRestart && !data.hasChanges && (
             <Button
-              disabled={busy}
-              onClick={() => (data.service?.installed ? void run('service.restart') : tools())}
+              disabled={locked}
+              onClick={() => (data.service?.installed ? void request('service.restart') : tools())}
             >
               {t('Appliquer au serveur…', 'Apply to server…')}
             </Button>
           )}
-          <Button disabled={busy || !data.hasChanges} onClick={() => void run('server.revert')}>
+          <Button
+            disabled={locked || !data.hasChanges}
+            onClick={() => void request('server.revert')}
+          >
             {t('Annuler', 'Cancel')}
           </Button>
           <Button
             kind="primary"
-            disabled={busy || !data.hasChanges}
-            onClick={() => void run('server.save')}
+            disabled={locked || !data.hasChanges}
+            onClick={() => void request('server.save')}
           >
             {t('Enregistrer', 'Save')}
           </Button>

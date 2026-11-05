@@ -240,14 +240,14 @@ const data: Partial<Record<Section, Row>> = {
     },
   },
   documents: { items: documents, total: documents.length },
-  coverage: {
-    roots: [{ path: '/Exemple/horizon-app', allFiles: false, autoSync: false }],
-    items: [],
-  },
   search: { hits: [], total: 0, serverIs120: true },
   facts: { facts, total: facts.length, truncated: false, query: '' },
   timeline: { facts, total: facts.length },
   graph: graphData(),
+  coverage: {
+    roots: [{ path: '/Exemple/horizon-app', allFiles: false, autoSync: false }],
+    items: [],
+  },
   operations: { items: operations, total: operations.length },
   dashboard: {
     snapshot: {
@@ -408,17 +408,12 @@ const data: Partial<Record<Section, Row>> = {
       },
     },
   },
-  hermes: {
-    items: [
-      { id: 'hermes-example', title: 'Session de recherche', sortDate: timestamp, taskCount: 4 },
-    ],
-    preview: null,
-  },
 };
 
 let selectedBank = 'horizon';
 let factQuery = '';
 let factType = 'all';
+let operationStatus = 'all';
 function factsData() {
   const matching = facts.filter(
     (fact) =>
@@ -432,6 +427,16 @@ function factsData() {
     query: factQuery,
     type: factType,
   };
+}
+function operationsData() {
+  const matching =
+    operationStatus === 'all'
+      ? operations
+      : operations.filter((operation) => operation.status === operationStatus);
+  const counts: Row = {};
+  for (const operation of operations)
+    counts[operation.status] = (counts[operation.status] || 0) + 1;
+  return { items: matching, total: matching.length, statusFilter: operationStatus, counts };
 }
 export function exampleSnapshot(section: Section): Snapshot {
   return {
@@ -450,11 +455,13 @@ export function exampleSnapshot(section: Section): Snapshot {
     data: structuredClone(
       section === 'graph'
         ? graphData()
-        : section === 'facts'
-          ? factsData()
-          : section === 'model-settings'
-            ? data.server || {}
-            : data[section] || {},
+        : section === 'operations'
+          ? operationsData()
+          : section === 'facts'
+            ? factsData()
+            : section === 'model-settings'
+              ? data.server || {}
+              : data[section] || {},
     ),
     messages: [],
     confirmations: [],
@@ -476,6 +483,8 @@ export async function exampleRequest(command: string, args: Row, section: Sectio
       ];
     return snapshot;
   }
+  if (command === 'section' && args.section === 'operations' && typeof args.status === 'string')
+    operationStatus = args.status;
   if (command === 'section' && args.section === 'graph' && args.mode) graphMode = args.mode;
   if (command === 'section' && args.section === 'facts') {
     factQuery = typeof args.query === 'string' ? args.query : '';
@@ -485,6 +494,7 @@ export async function exampleRequest(command: string, args: Row, section: Sectio
     selectedBank = args.id;
     factQuery = '';
     factType = 'all';
+    operationStatus = 'all';
   }
   const snapshot = exampleSnapshot((command === 'section' ? args.section : section) as Section);
   if (command === 'model.open') return { model: models.find((m) => m.id === args.id) || models[0] };

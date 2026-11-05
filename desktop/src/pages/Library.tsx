@@ -1,5 +1,5 @@
 import { useI18n } from '../i18n';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   ArrowDownToLine,
   ArrowRight,
@@ -929,17 +929,57 @@ export function Documents({ data, run, busy, refresh, navigate }: PageProps) {
   );
 }
 
-export function Coverage({ data, run, busy, notify }: PageProps) {
+export function Coverage({ data, run, busy }: PageProps) {
   const { t } = useI18n();
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [working, setWorking] = useState(false);
+  const [actionError, setActionError] = useState('');
+  const pending = useRef(false);
   const items: Row[] = data.items || [];
-  async function add() {
-    try {
-      const path = await pickDirectory();
-      if (path) await run('coverage.add', { paths: [path] });
-    } catch (e) {
-      notify((e as Error).message);
+  const roots: Row[] = Array.isArray(data.roots) ? data.roots : [];
+  const loading =
+    !Array.isArray(data.roots) || data.loaded === false || !!data.loading || !!data.refreshing;
+  const disabled = busy || working || loading;
+  const itemIDs = items.map((item, index) => item.id || item.key || String(index));
+  const currentSelection = new Set(itemIDs.filter((id) => selected.has(id)));
+  function normalizedPath(path: string) {
+    const parts: string[] = [];
+    for (const part of path.normalize('NFC').split('/')) {
+      if (!part || part === '.') continue;
+      if (part === '..') parts.pop();
+      else parts.push(part);
     }
+    return '/' + parts.join('/');
+  }
+  const catalogFolder = typeof data.catalogFolder === 'string' ? data.catalogFolder : '';
+  const offerCatalogFolder =
+    !loading &&
+    catalogFolder.startsWith('/') &&
+    !roots.some(
+      (root) =>
+        typeof root.path === 'string' &&
+        normalizedPath(root.path) === normalizedPath(catalogFolder),
+    );
+  async function perform(action: () => Promise<any>) {
+    if (disabled || pending.current) return;
+    pending.current = true;
+    setWorking(true);
+    setActionError('');
+    try {
+      const result = await action();
+      if (result?.error) setActionError(String(result.error));
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      pending.current = false;
+      setWorking(false);
+    }
+  }
+  async function add() {
+    await perform(async () => {
+      const path = await pickDirectory();
+      if (path) return run('coverage.add', { paths: [path] });
+    });
   }
   return (
     <>
@@ -950,16 +990,22 @@ export function Coverage({ data, run, busy, notify }: PageProps) {
           'Compare your files with what Hindsight has actually stored.',
         )}
         actions={
-          <Button icon={FolderPlus} kind="primary" onClick={() => void add()}>
+          <Button icon={FolderPlus} kind="primary" disabled={disabled} onClick={() => void add()}>
             {' '}
             {t('Suivre un dossier', 'Track a folder')}
           </Button>
         }
       />
       <ErrorNotice message={data.error} />
+      <ErrorNotice message={actionError} />
       <section className="card">
         <CardHeader title={t('Dossiers suivis', 'Tracked folders')} />
-        {(data.roots || []).map((root: Row) => (
+        {loading && !data.error && (
+          <p className="notice" role="status">
+            {t('Chargement des dossiers suivis…', 'Loading tracked folders…')}
+          </p>
+        )}
+        {roots.map((root: Row) => (
           <div className="root-row" key={root.path}>
             <FolderPlus size={19} />
             <strong>{root.path}</strong>
@@ -967,8 +1013,11 @@ export function Coverage({ data, run, busy, notify }: PageProps) {
               <input
                 type="checkbox"
                 checked={root.allFiles || false}
+                disabled={disabled}
                 onChange={(e) =>
-                  void run('coverage.allFiles', { id: root.path, enabled: e.target.checked })
+                  void perform(() =>
+                    run('coverage.allFiles', { id: root.path, enabled: e.target.checked }),
+                  )
                 }
               />{' '}
               {t('Tous les fichiers texte', 'All text files')}
@@ -977,9 +1026,11 @@ export function Coverage({ data, run, busy, notify }: PageProps) {
               <input
                 type="checkbox"
                 checked={root.autoSync || false}
-                disabled={!root.autoSync}
+                disabled={disabled || !root.autoSync}
                 onChange={(e) =>
-                  void run('coverage.auto', { id: root.path, enabled: e.target.checked })
+                  void perform(() =>
+                    run('coverage.auto', { id: root.path, enabled: e.target.checked }),
+                  )
                 }
               />{' '}
               {t(
@@ -990,11 +1041,32 @@ export function Coverage({ data, run, busy, notify }: PageProps) {
             <IconButton
               icon={Trash2}
               label={t('Retirer le dossier du suivi', 'Stop tracking this folder')}
-              onClick={() => void run('coverage.removeRoot', { id: root.path })}
+              disabled={disabled}
+              onClick={() => void perform(() => run('coverage.removeRoot', { id: root.path }))}
             />
           </div>
         ))}
-        {!data.roots?.length && (
+        {offerCatalogFolder && (
+          <div className="notice coverage-catalog-folder">
+            <div>
+              <strong>{t('Catalogue local déjà ouvert', 'Local catalog already open')}</strong>
+              <p>{catalogFolder}</p>
+              <p>
+                {t(
+                  'Ce dossier contient le catalogue local, mais il n’est pas suivi pour cette banque. Le suivi compare ses fichiers aux documents mémorisés ; chaque envoi reste à valider.',
+                  'This folder contains the local catalog, but it is not tracked for this bank. Tracking compares its files with stored documents; each upload still requires approval.',
+                )}
+              </p>
+            </div>
+            <Button
+              disabled={disabled}
+              onClick={() => void perform(() => run('coverage.add', { paths: [catalogFolder] }))}
+            >
+              {t('Suivre ce dossier', 'Track this folder')}
+            </Button>
+          </div>
+        )}
+        {!roots.length && !loading && !data.error && !offerCatalogFolder && (
           <Empty
             icon={FolderPlus}
             title={t('Choisissez un dossier à suivre', 'Choose a folder to track')}
@@ -1003,7 +1075,7 @@ export function Coverage({ data, run, busy, notify }: PageProps) {
               'Tracking compares files with bank documents. Sending is a separate step.',
             )}
             action={
-              <Button onClick={() => void add()}>
+              <Button disabled={disabled} onClick={() => void add()}>
                 {' '}
                 {t('Choisir un dossier', 'Choose a folder')}
               </Button>
@@ -1020,18 +1092,22 @@ export function Coverage({ data, run, busy, notify }: PageProps) {
               <div className="action-row">
                 <Button
                   icon={Send}
-                  disabled={busy || !selected.size}
-                  onClick={() => void run('coverage.send', { ids: [...selected] })}
+                  disabled={disabled || !currentSelection.size}
+                  onClick={() =>
+                    void perform(() => run('coverage.send', { ids: [...currentSelection] }))
+                  }
                 >
                   {' '}
                   {t('Envoyer (', 'Send (')}
-                  {selected.size})
+                  {currentSelection.size})
                 </Button>
                 <Button
                   icon={Trash2}
                   kind="danger"
-                  disabled={busy || !selected.size}
-                  onClick={() => void run('coverage.remove', { ids: [...selected] })}
+                  disabled={disabled || !currentSelection.size}
+                  onClick={() =>
+                    void perform(() => run('coverage.remove', { ids: [...currentSelection] }))
+                  }
                 >
                   {' '}
                   {t('Retirer de la mémoire', 'Remove from memory')}
@@ -1047,12 +1123,9 @@ export function Coverage({ data, run, busy, notify }: PageProps) {
                     <input
                       type="checkbox"
                       aria-label={t('Tout sélectionner', 'Select all')}
-                      checked={!!items.length && selected.size === items.length}
-                      onChange={(e) =>
-                        setSelected(
-                          e.target.checked ? new Set(items.map((i) => i.id || i.key)) : new Set(),
-                        )
-                      }
+                      checked={!!items.length && currentSelection.size === items.length}
+                      disabled={disabled}
+                      onChange={(e) => setSelected(e.target.checked ? new Set(itemIDs) : new Set())}
                     />
                   </th>
                   <th>Source</th>
@@ -1070,6 +1143,7 @@ export function Coverage({ data, run, busy, notify }: PageProps) {
                           type="checkbox"
                           aria-label={`${t('Sélectionner', 'Select')} ${item.title || id}`}
                           checked={selected.has(id)}
+                          disabled={disabled}
                           onChange={() =>
                             setSelected((old) => {
                               const next = new Set(old);

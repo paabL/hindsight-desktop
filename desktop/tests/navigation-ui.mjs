@@ -25,7 +25,6 @@ const routes = [
   { id: 'model-settings', group: 'Models' },
   { id: 'sources', group: 'Sources', list: 'Source views', tab: 'Catalog' },
   { id: 'coverage', group: 'Sources', list: 'Source views', tab: 'Tracked folders' },
-  { id: 'hermes', group: 'Sources', list: 'Source views', tab: 'Imports' },
   { id: 'operations', group: 'Activity', list: 'Activity views', tab: 'Processing' },
   { id: 'consumption', group: 'Activity', list: 'Activity views', tab: 'Usage' },
   { id: 'audit', group: 'Activity', list: 'Activity views', tab: 'Logs' },
@@ -111,12 +110,12 @@ try {
   await nav.getByRole('button', { name: /^Sources/ }).click();
   await page
     .getByRole('tablist', { name: 'Source views' })
-    .getByRole('tab', { name: 'Imports', exact: true })
+    .getByRole('tab', { name: 'Tracked folders', exact: true })
     .click();
-  await hasRoute(page, 'hermes');
+  await hasRoute(page, 'coverage');
   await nav.getByRole('button', { name: /^Overview/ }).click();
   await nav.getByRole('button', { name: /^Sources/ }).click();
-  await hasRoute(page, 'hermes');
+  await hasRoute(page, 'coverage');
   for (const [index, id] of [
     'dashboard',
     'facts',
@@ -294,7 +293,7 @@ try {
   await factsPage.close();
   expect(errors).toEqual([]);
   console.log(
-    'Navigation verified: seven groups, eighteen deep links, contextual tabs, history, remembered tabs, shortcuts and both languages.',
+    'Navigation verified: seven groups, seventeen deep links, contextual tabs, history, remembered tabs, shortcuts and both languages.',
   );
 } finally {
   await browser?.close();

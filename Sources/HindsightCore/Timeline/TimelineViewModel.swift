@@ -39,18 +39,21 @@ public final class TimelineViewModel {
     public private(set) var selectedPeriod: Date?
     public private(set) var selectedFact: FactDetailViewModel?
     @ObservationIgnored private var loadTask: Task<Void, Never>?
+    @ObservationIgnored private var loadID = UUID()
+    @ObservationIgnored private var loadedCap = 20_000
+    @ObservationIgnored private var detailTask: Task<Void, Never>?
 
     public init(client: HindsightClient, bank: String, pageSize: Int = 1000, calendar: Calendar = .current) {
         self.client = client
         self.bank = bank
-        self.pageSize = pageSize
+        self.pageSize = max(1, pageSize)
         self.calendar = calendar
     }
 
-    public var isTruncated: Bool { totalAvailable > facts.count && facts.count >= maxFacts }
+    public var isTruncated: Bool { totalAvailable > facts.count && facts.count >= loadedCap }
     public var progress: Double? {
-        guard state.isLoading, totalAvailable > 0 else { return nil }
-        return min(1, Double(facts.count) / Double(min(totalAvailable, maxFacts)))
+        guard state.isLoading, totalAvailable > 0, loadedCap > 0 else { return nil }
+        return min(1, Double(facts.count) / Double(min(totalAvailable, loadedCap)))
     }
 
     public func loadIfNeeded() async {
@@ -60,63 +63,86 @@ public final class TimelineViewModel {
     /// Recharge tous les faits correspondant aux filtres (annule un chargement en cours).
     public func reload() async {
         loadTask?.cancel()
-        let task = Task { await self.loadAll() }
+        let id = UUID()
+        loadID = id
+        let filter = filter, text = text, axis = axis, cap = max(0, maxFacts)
+        let task = Task { await self.loadAll(id: id, filter: filter, text: text, axis: axis, cap: cap) }
         loadTask = task
-        await task.value
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        if loadID == id { loadTask = nil }
     }
 
-    private func loadAll() async {
+    private func loadAll(id: UUID, filter: FactFilter, text: String, axis: TimeAxis, cap: Int) async {
+        guard loadID == id else { return }
+        loadedCap = cap
         state = .loading
         facts = []
+        periods = []
+        bars = []
+        undated = []
         totalAvailable = 0
         selectedPeriod = nil
         selectedFact = nil
+        detailTask?.cancel()
+        detailTask = nil
         var offset = 0
         do {
+            try Task.checkCancellation()
             var ahead: [Result<ListMemoryUnitsResponse, Error>] = []
-            while !Task.isCancelled {
+            while facts.count < cap {
                 let page = try await ahead.isEmpty
                     ? client.listMemories(bank, filter.memoryListQuery(q: text, axis: axis, limit: pageSize, offset: offset))
                     : ahead.removeFirst().get()
+                try Task.checkCancellation()
+                guard loadID == id else { return }
                 totalAvailable = page.total
                 let hits = page.items.map(FactHit.init)
-                facts += filter.needsLocalTypeFilter ? hits.filter { filter.matchesLocally($0, axis: axis) } : hits
+                // Les autres critères sont déjà appliqués par le serveur. En particulier, son entity_id
+                // est plus précis que le nom d'entité éventuellement absent ou différent dans une ligne.
+                let matching = filter.needsLocalTypeFilter ? hits.filter { $0.type.map { filter.types.contains($0) } == true } : hits
+                facts.append(contentsOf: matching.prefix(cap - facts.count))
                 offset += page.items.count
-                if page.items.isEmpty || offset >= page.total || facts.count >= maxFacts { break }
+                if page.items.isEmpty || offset >= page.total || facts.count >= cap { break }
                 // Une page incomplète décale la suite : on reprend page par page à partir du vrai décalage.
                 if page.items.count != pageSize { ahead = [] }
                 // Sans filtre local, les pages restantes sont connues d'avance : mêmes requêtes qu'en série,
                 // envoyées ensemble, puis traitées dans l'ordre avec les mêmes conditions d'arrêt.
                 else if ahead.isEmpty, !filter.needsLocalTypeFilter {
-                    ahead = await pages(at: Array(stride(from: offset, to: min(page.total, maxFacts), by: pageSize)))
+                    let offsets = Array(stride(from: offset, to: min(page.total, cap), by: pageSize).prefix(4))
+                    ahead = await pages(at: offsets, filter: filter, text: text, axis: axis)
+                    try Task.checkCancellation()
+                    guard loadID == id else { return }
                 }
             }
-            if Task.isCancelled { return }
-            if facts.count > maxFacts { facts = Array(facts.prefix(maxFacts)) }
+            try Task.checkCancellation()
             rebuild()
             state = .loaded(())
-        } catch is CancellationError {
         } catch {
-            state = .failed(error.userMessage)
+            guard loadID == id else { return }
+            rebuild()
+            state = Task.isCancelled || error is CancellationError ? .idle : .failed(error.userMessage)
         }
     }
 
-    /// Pages demandées quatre à la fois, rendues dans l'ordre des décalages. Un échec arrête les nouvelles
-    /// requêtes : les pages qui le précèdent sont traitées, puis l'erreur est levée à sa place, comme en série.
-    private func pages(at offsets: [Int]) async -> [Result<ListMemoryUnitsResponse, Error>] {
+    /// Au plus quatre pages temporairement préchargées / requêtes simultanées, rendues dans l'ordre.
+    /// Les lots se succèdent jusqu'au plafond demandé : les faits déjà chargés restent dans `facts`.
+    /// L'erreur est levée à sa place, comme en série ; le lot suivant attend le traitement de celui-ci.
+    private func pages(at offsets: [Int], filter: FactFilter, text: String, axis: TimeAxis) async -> [Result<ListMemoryUnitsResponse, Error>] {
         let client = client, bank = bank
         let queries = offsets.map { filter.memoryListQuery(q: text, axis: axis, limit: pageSize, offset: $0) }
         var results = [Result<ListMemoryUnitsResponse, Error>?](repeating: nil, count: queries.count)
         await withTaskGroup(of: PrefetchedPage.self) { group in
-            var failed = false
             for (i, query) in queries.enumerated() {
-                if i >= 4, let done = await group.next() {
-                    results[done.index] = done.page
-                    if case .failure = done.page { failed = true }
-                }
-                if failed { break }
+                if Task.isCancelled { break }
                 group.addTask {
-                    do { return PrefetchedPage(index: i, page: .success(try await client.listMemories(bank, query))) } catch {
+                    do {
+                        try Task.checkCancellation()
+                        return PrefetchedPage(index: i, page: .success(try await client.listMemories(bank, query)))
+                    } catch {
                         return PrefetchedPage(index: i, page: .failure(error))
                     }
                 }
@@ -155,12 +181,14 @@ public final class TimelineViewModel {
     }
 
     public func selectFact(_ hit: FactHit?) {
+        detailTask?.cancel()
+        detailTask = nil
         guard let hit else {
             selectedFact = nil
             return
         }
         let vm = FactDetailViewModel(client: client, bank: bank, hit: hit)
         selectedFact = vm
-        Task { await vm.load() }
+        detailTask = Task { await vm.load() }
     }
 }

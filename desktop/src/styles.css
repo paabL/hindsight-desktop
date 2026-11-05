@@ -3120,25 +3120,6 @@ tbody tr:hover {
   padding: 9px 0;
   border-bottom: 1px solid var(--line);
 }
-.hermes-row {
-  display: flex;
-  gap: 15px;
-  padding: 20px 25px;
-  align-items: center;
-  border-top: 1px solid var(--line);
-}
-.hermes-row > div {
-  flex: 1;
-  min-width: 0;
-}
-.hermes-row strong {
-  font-size: 12px;
-  font-weight: 500;
-}
-.hermes-row p {
-  font-size: 10px;
-  margin-top: 6px;
-}
 .settings-section-heading {
   display: flex;
   gap: 14px;
@@ -5190,6 +5171,20 @@ td {
 }
 .model-editor .form-stack {
   gap: 14px;
+}
+.model-editor > fieldset.model-editor-fields {
+  border: 0;
+  margin: 0;
+  padding: 2px 6px 4px 0;
+  min-width: 0;
+}
+.coverage-catalog-folder > div {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.coverage-catalog-folder .button {
+  flex-shrink: 0;
 }
 .model-editor .modal-actions {
   margin-top: 0;

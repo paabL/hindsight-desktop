@@ -170,4 +170,136 @@ final class LocalDecisionModelTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: e.paths.root.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: e.paths.plist.path))
     }
+
+    func testFailedStopAndUninstallKeepRunningModelAndFilesVisible() async throws {
+        let e = make(failing: "bootout")
+        await e.model.install()
+        let key = try Data(contentsOf: e.paths.keyFile)
+        let plist = try Data(contentsOf: e.paths.plist)
+        await e.model.stop()
+        XCTAssertEqual(e.model.phase, .running)
+        XCTAssertNotNil(e.model.problem)
+        XCTAssertFalse(e.model.problem?.contains("abcdefghijklmnopqrstuvwxyz") == true)
+        await e.model.uninstall()
+        XCTAssertEqual(e.model.phase, .running)
+        XCTAssertNotNil(e.model.problem)
+        XCTAssertTrue(e.model.isInstalled)
+        XCTAssertEqual(try Data(contentsOf: e.paths.keyFile), key)
+        XCTAssertEqual(try Data(contentsOf: e.paths.plist), plist)
+        XCTAssertFalse(e.model.isBusy)
+    }
+
+    func testFailedJobInspectionNeverAuthorizesDeletingTheModel() async throws {
+        let e = make()
+        await e.model.install()
+        let base = e.runner.handler
+        e.runner.handler = { invocation in
+            invocation.arguments.first == "print"
+                ? ProcessOutput(status: 0, stderr: "fixture timeout", timedOut: true) : base(invocation)
+        }
+        let before = e.runner.calls.count
+        await e.model.uninstall()
+        XCTAssertTrue(e.model.isInstalled)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: e.paths.keyFile.path))
+        XCTAssertEqual(e.model.phase, .unknown)
+        XCTAssertNotNil(e.model.problem)
+        XCTAssertTrue(e.runner.calls.dropFirst(before).allSatisfy { $0.arguments.first == "print" })
+    }
+
+    func testExternalHealthCannotMakeAnUnloadedDecisionServiceRunning() async {
+        let e = make()
+        await e.model.install()
+        e.loaded.value = false
+        e.running.value = false
+        e.healthy.value = true
+        await e.model.refresh()
+        XCTAssertEqual(e.model.phase, .stopped)
+    }
+
+    func testHealthRequiresTheLocalDecisionModelsResponseRatherThanAnyHTTP200() {
+        XCTAssertTrue(LocalDecisionModel.healthyResponse(Data(#"{"status":"ok","model":"hs-decide-1-flash","device":"mps"}"#.utf8), status: 200))
+        for text in ["{}", "<html>unrelated server</html>", #"{"status":"ok","model":"another-model"}"#, #"{"status":"loading","model":"hs-decide-1-flash"}"#] {
+            XCTAssertFalse(LocalDecisionModel.healthyResponse(Data(text.utf8), status: 200))
+        }
+        XCTAssertFalse(LocalDecisionModel.healthyResponse(Data(#"{"status":"ok","model":"hs-decide-1-flash"}"#.utf8), status: 503))
+    }
+
+    func testReinstallStopsThePreviousProcessBeforePreparingAndStartingTheModel() async {
+        let e = make()
+        await e.model.install()
+        let before = e.runner.calls.count
+        await e.model.install()
+        let calls = Array(e.runner.calls.dropFirst(before))
+        let bootout = calls.firstIndex { $0.arguments.first == "bootout" }
+        let install = calls.firstIndex { $0.arguments.first == "pip" }
+        let bootstrap = calls.firstIndex { $0.arguments.first == "bootstrap" }
+        XCTAssertNotNil(bootout)
+        XCTAssertNotNil(install)
+        XCTAssertNotNil(bootstrap)
+        if let bootout, let install, let bootstrap {
+            XCTAssertLessThan(bootout, install)
+            XCTAssertLessThan(install, bootstrap)
+        }
+        XCTAssertEqual(e.model.phase, .running)
+        XCTAssertNil(e.model.problem)
+    }
+
+    func testOutOfOrderRefreshCannotOverwriteStoppedPhase() async {
+        let e = make()
+        await e.model.install()
+        let gate = LifecycleGateRunner(e.runner)
+        let model = LocalDecisionModel(runner: gate, paths: e.paths, uid: 501, probe: { _ in e.healthy.value }, locate: { _ in nil })
+        await model.refresh()
+        await gate.holdNext("print")
+        let older = Task { await model.refresh() }
+        for _ in 0..<1000 { if await gate.blocked { break }; await Task.yield() }
+        e.running.value = false
+        e.healthy.value = false
+        await model.refresh()
+        XCTAssertEqual(model.phase, .stopped)
+        await gate.release()
+        await older.value
+        XCTAssertEqual(model.phase, .stopped)
+    }
+
+    func testStaleRefreshAfterUninstallCannotRestoreAnInstalledPhase() async {
+        let e = make()
+        await e.model.install()
+        let gate = LifecycleGateRunner(e.runner)
+        let model = LocalDecisionModel(runner: gate, paths: e.paths, uid: 501, probe: { _ in e.healthy.value }, locate: { _ in nil })
+        await model.refresh()
+        await gate.holdNext("print")
+        let older = Task { await model.refresh() }
+        for _ in 0..<1000 { if await gate.blocked { break }; await Task.yield() }
+        await model.uninstall()
+        XCTAssertEqual(model.phase, .notInstalled)
+        await gate.release()
+        await older.value
+        XCTAssertEqual(model.phase, .notInstalled)
+        XCTAssertFalse(model.isInstalled)
+    }
+
+    func testRepeatedControlsDuringStartDoNotStopOrDeleteTheModel() async {
+        let e = make()
+        await e.model.install()
+        await e.model.stop()
+        let gate = LifecycleGateRunner(e.runner)
+        let model = LocalDecisionModel(runner: gate, paths: e.paths, uid: 501, probe: { _ in e.healthy.value }, locate: { _ in nil })
+        await gate.holdNext("kickstart")
+        let start = Task { await model.start() }
+        for _ in 0..<1000 { if await gate.blocked { break }; await Task.yield() }
+        XCTAssertTrue(model.isBusy)
+        let count = e.runner.calls.count
+        for _ in 0..<100 {
+            await model.start(); await model.stop(); await model.uninstall()
+            model.requestStop(); model.requestUninstall(); model.requestInstall()
+        }
+        XCTAssertEqual(e.runner.calls.count, count)
+        XCTAssertNil(model.confirmation)
+        XCTAssertTrue(model.isInstalled)
+        await gate.release()
+        await start.value
+        XCTAssertEqual(model.phase, .running)
+        XCTAssertNil(model.problem)
+    }
 }

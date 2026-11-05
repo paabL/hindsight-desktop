@@ -167,11 +167,9 @@ public struct LibraryItem: Identifiable, Sendable {
 
     public var sourceModified: Date? { entry.map { $0.file.modified } }
     public var isConversation: Bool { entry?.session != nil }
-    /// Envoyable d'ici (les conversations passent par « Importer »).
+    /// Envoyable d'ici ; les conversations sont collectées dans le dossier commun.
     public var canSend: Bool { entry?.canSend ?? false }
-    /// Seul Hermes conserve un import natif ; Codex et Claude passent par le dossier commun.
-    public var canImport: Bool { entry?.session?.source == .hermes && (state == .notSent || state == .modified) }
-    /// Fichier sur ce Mac (pas pour une session Hermes, stockée dans une base).
+    /// Fichier sur ce Mac ; les conversations consultables sont des fichiers JSONL.
     public var sourceURL: URL? {
         guard let e = entry, e.session == nil || e.file.url.pathExtension == "jsonl" else { return nil }
         return e.file.url

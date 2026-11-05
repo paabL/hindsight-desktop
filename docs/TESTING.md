@@ -5,7 +5,7 @@
 From the repository root:
 
 ```sh
-swift test
+swift test --disable-sandbox -c release
 ```
 
 XCTest covers the API client, ViewModels, confirmations, files, cost estimates, and
@@ -74,7 +74,7 @@ search facts, filter sources, inspect the graph, exercise shortcuts, and check b
 themes. Language checks cover English and the optional French interface. Screenshots
 are written to `desktop/screenshots/`.
 
-The navigation regression checks the seven primary groups and all eighteen hash
+The navigation regression checks the seven primary groups and all seventeen hash
 routes, including existing links. It covers contextual tab selection, remembered
 tabs, browser back/forward, the command palette, `⌘1…7`, invalid numbered shortcuts,
 English/French labels, accent-insensitive group search and the minimum window
@@ -109,6 +109,46 @@ Run the native suite in release mode after changes to source caching or concurre
 loading. `MemoryWorkspaceTests` covers same-size edits with restored modification
 times, replaced symlinks, immediate manifest display and confirmation revalidation.
 The benchmark procedure and measured limits are in [SOURCES-PERFORMANCE.md](SOURCES-PERFORMANCE.md).
+
+### Concurrency and large-data stress
+
+From `desktop/`, run `npm run test:stress` with an installed Chrome. These tests
+use fake native hosts and synthetic data, and run sequentially to avoid competing
+for browser resources:
+
+- `app-state-stress.mjs`: 20,000 operations, progressive rendering, 12 reversed
+  status replies, two simultaneous details, bank and demo switches, and the
+  explicit catalog-folder tracking action. Nothing is tracked on navigation.
+- `sources-races-ui.mjs`: 12,002 sources, repeated inclusion changes, reversed
+  reader replies, deleted/changed files, server and bank changes, and archive
+  status filters.
+- `model-workflow-stress.mjs`: repeated preparation/save controls, rejected field
+  updates, stale dialogs, validation, keyboard behavior and 8,000 model choices.
+- `graph-stress.mjs`: dense graphs, rapid selections, replies delivered out of
+  order, selection failures, and source requests completed after closing a view.
+
+`operations-polling.test.mjs` checks the real native bridge against a fake 1.2 API:
+automatic refresh must retain the status filter and 200 opened operations, and
+all 225 operations remain accessible without duplicates. All requests are GET.
+
+Release-mode native regressions include delayed/out-of-order pages, 20,000 facts
+retained across bounded concurrent timeline reads, independent source-fact
+ordering, stale server connections, failed service controls, changed scripts
+after confirmation, and unchanged embedding configuration. Browser timings are
+diagnostics for these synthetic workloads, not model inference benchmarks or a
+guarantee about arbitrary servers and catalogs.
+
+Tracked-folder regressions reverse inventories and scans, switch between servers
+with the same bank name, and change files, roots, authorization or selection after
+an upload is reviewed. Repeated confirmations must produce one write; rejected
+retain/delete responses must not announce success. Historical task rows sharing
+a parent operation are valid, and queue verification uses at most four concurrent
+status reads, cached by operation ID.
+
+Rust process tests inject EOF, malformed JSON, missing data, mismatched response
+IDs and a response timeout. A broken bridge is discarded so a subsequent explicit
+connection can create a new process. The uncertain action is never replayed.
+Ordinary action errors preserve the working process and request sequence.
 
 ## Signed application updates
 

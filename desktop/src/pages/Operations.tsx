@@ -1,5 +1,5 @@
 import { translate as t, useI18n } from '../i18n';
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowRight,
   Check,
@@ -45,9 +45,50 @@ export default function Operations({ data, run, busy, refresh }: PageProps) {
     file_convert_retain: t('Conversion et extraction', 'Conversion and extraction'),
   };
 
-  const [filter, setFilter] = useState('all');
+  const [filter, setFilter] = useState(data.statusFilter || 'all');
+  useEffect(() => {
+    if (data.statusFilter) setFilter(data.statusFilter);
+  }, [data.statusFilter]);
   const [selected, setSelected] = useState<Row | null>(null);
-  const items: Row[] = data.items || [];
+  const detailRequest = useRef(0);
+  const [detailLoading, setDetailLoading] = useState(false);
+  useEffect(
+    () => () => {
+      detailRequest.current++;
+    },
+    [],
+  );
+  const allItems: Row[] = data.items || [];
+  const [visibleLimit, setVisibleLimit] = useState(100);
+  useEffect(() => {
+    setVisibleLimit(100);
+  }, [filter]);
+  const matching = useMemo(
+    () => (filter === 'all' ? allItems : allItems.filter((item) => item.status === filter)),
+    [allItems, filter],
+  );
+  const items = matching.slice(0, visibleLimit);
+  const loadedCounts = useMemo(() => {
+    const result: Record<string, number> = {};
+    for (const item of allItems) result[item.status] = (result[item.status] || 0) + 1;
+    return result;
+  }, [allItems]);
+  const count = (status: string) => data.counts?.[status] ?? loadedCounts[status] ?? 0;
+  async function loadMore() {
+    if (visibleLimit >= matching.length && data.canLoadMore) await run('operations.more');
+    setVisibleLimit((value) => value + 100);
+  }
+  async function openDetail(id: string) {
+    const request = ++detailRequest.current;
+    setSelected(null);
+    setDetailLoading(true);
+    try {
+      const result = await run('operation.open', { id });
+      if (request === detailRequest.current && result && !result.error) setSelected(result);
+    } finally {
+      if (request === detailRequest.current) setDetailLoading(false);
+    }
+  }
   return (
     <>
       <PageHeader
@@ -82,19 +123,22 @@ export default function Operations({ data, run, busy, refresh }: PageProps) {
       <div className="operations-summary">
         <div>
           <span className="status-dot warning" />
-          <strong>{items.filter((i) => i.status === 'pending').length}</strong>
+          <strong>{count('pending')}</strong>
           <span>{t('en attente', 'pending')}</span>
         </div>
         <div>
           <span className="status-dot green" />
-          <strong>{items.filter((i) => i.status === 'processing').length}</strong>
+          <strong>{count('processing')}</strong>
           <span>{t('en cours', 'processing')}</span>
         </div>
         <div>
           <span className="status-dot red" />
-          <strong>{items.filter((i) => i.status === 'failed').length}</strong>
+          <strong>{count('failed')}</strong>
           <span>{t('en échec', 'failed')}</span>
         </div>
+        {!data.counts && (
+          <small>{t('Parmi les opérations chargées', 'Among loaded operations')}</small>
+        )}
         <span className="spacer" />
         <Button
           kind="ghost"
@@ -120,6 +164,8 @@ export default function Operations({ data, run, busy, refresh }: PageProps) {
         ]}
       />
       <ErrorNotice message={data.error} />
+      {data.refreshing && <p role="status">{t('Actualisation…', 'Refreshing…')}</p>}
+      {detailLoading && <p role="status">{t('Chargement du détail…', 'Loading details…')}</p>}
       <section className="card operations-list">
         {items.length ? (
           items.map((item) => {
@@ -219,7 +265,7 @@ export default function Operations({ data, run, busy, refresh }: PageProps) {
                   <IconButton
                     icon={ArrowRight}
                     label={t('Détail de l’opération', 'Operation details')}
-                    onClick={() => void run('operation.open', { id: item.id }).then(setSelected)}
+                    onClick={() => void openDetail(item.id)}
                   />
                 </div>
               </article>
@@ -228,16 +274,23 @@ export default function Operations({ data, run, busy, refresh }: PageProps) {
         ) : (
           <Empty
             icon={ListTodo}
-            title={t('La file est vide', 'The queue is empty')}
+            title={
+              filter === 'all'
+                ? t('La file est vide', 'The queue is empty')
+                : t('Aucune opération dans ce filtre', 'No operations match this filter')
+            }
             description={t(
               'Les extractions, consolidations et générations de synthèses apparaîtront ici.',
               'Extractions, consolidations and knowledge-page generation will appear here.',
             )}
           />
         )}
-        {data.canLoadMore && (
+        {(items.length < matching.length || data.canLoadMore) && (
           <div className="card-footer">
-            <Button onClick={() => void run('operations.more')}>
+            <Button
+              disabled={busy || data.loadingMore || data.refreshing}
+              onClick={() => void loadMore()}
+            >
               {t('Afficher la suite', 'Load more')}
             </Button>
             <span>
@@ -249,7 +302,11 @@ export default function Operations({ data, run, busy, refresh }: PageProps) {
       {selected && (
         <Modal
           title={t('Détail de l’opération', 'Operation details')}
-          onClose={() => setSelected(null)}
+          onClose={() => {
+            detailRequest.current++;
+            setSelected(null);
+            setDetailLoading(false);
+          }}
           wide
         >
           <pre className="json-view">{JSON.stringify(selected, null, 2)}</pre>

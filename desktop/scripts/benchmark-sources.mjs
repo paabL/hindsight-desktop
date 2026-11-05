@@ -166,6 +166,20 @@ try {
       .update(await readFile(executable))
       .digest('hex'),
   };
+  // Optional state diff for synthetic fixtures only; never export document text.
+  if (!liveURL && process.env.HINDSIGHT_BENCH_STATE_OUTPUT) {
+    const stateFile = path.resolve(process.env.HINDSIGHT_BENCH_STATE_OUTPUT);
+    if (!stateFile.startsWith('/tmp/hindsight-sources-bench/'))
+      throw new Error('Synthetic state output must stay in the disposable benchmark directory');
+    await writeFile(
+      stateFile,
+      JSON.stringify(
+        rows.map((row) => ({ id: row.id, memory: row.memory })),
+        null,
+        2,
+      ),
+    );
+  }
   await writeFile(output, JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report));
 } finally {
