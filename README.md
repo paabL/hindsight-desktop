@@ -1,13 +1,17 @@
 # Hindsight Desktop
 
 **An independent macOS client for [Hindsight](https://github.com/vectorize-io/hindsight).**
-Browse local sources, search memories and manage your server in a simple desktop
-interface. A free community beta under the [MIT license](LICENSE), with no
+Browse local sources, search memories, choose models and manage your server in a
+simple desktop interface. A free community beta under the [MIT license](LICENSE), with no
 official affiliation with Vectorize AI, Inc.
 
 [Download](https://github.com/paabL/hindsight-desktop/releases) · [User guide](docs/USER_GUIDE.md) · [Privacy](PRIVACY.md) · [Report a bug](https://github.com/paabL/hindsight-desktop/issues)
 
-![Hindsight Desktop — example with fictional data](docs/images/hindsight-desktop.png)
+![Hindsight Desktop — model choices, decision toggle and memory workflow](docs/images/hindsight-desktop.png)
+
+The **Models** view: choose each model directly in the diagram, switch specialized
+decisions on or off, and follow the arrows through memory search and answers.
+Screenshot rendered from the current interface with fictional data.
 
 ## Install
 
@@ -32,9 +36,14 @@ For the everyday workflow, see the short [user guide](docs/USER_GUIDE.md).
    availability depends on your server.
 3. Choose a memory bank. **Overview** summarizes it; **Memory** shows its stored
    facts, documents, timeline and graph. **Knowledge** contains knowledge pages.
-4. Open **Sources** to browse a local folder, even without a server. Review the
-   sources and upload preview, then confirm what to send into Hindsight.
-5. Use **Activity** for processing, usage and logs. Related views appear as tabs;
+4. Open **Models** for quick choices and explanations. **Manage models** opens
+   provider, account and installation settings. Save prepared changes, then
+   restart the server separately when ready.
+5. Open **Sources** to browse a local folder, even without a server. Its catalog
+   appears first while version checks run in the background. Review the sources
+   and upload preview, then confirm what to send into Hindsight. Collection also
+   runs in the background so you can keep navigating.
+6. Use **Activity** for processing, usage and logs. Related views appear as tabs;
    connection and bank configuration stay in **Settings**.
 
 The app **does not include the server or model weights**. Follow the
@@ -83,4 +92,7 @@ npm run tauri:build -- --bundles app,dmg
 The bundle includes the native bridge. See the [technical guide](desktop/README.md),
 [testing guide](docs/TESTING.md), [interface notes](docs/UI.md) and
 [third-party notices](THIRD_PARTY_NOTICES.md).
+The [model workflow guide](docs/MODEL-SETTINGS.md) explains role selection and
+decision loops; the [Sources performance notes](docs/SOURCES-PERFORMANCE.md)
+describe loading, validation and measured results.
 API models are generated from `docs/openapi.json`.

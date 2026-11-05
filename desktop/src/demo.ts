@@ -1,4 +1,5 @@
 import type { Row, Section, Snapshot } from './types';
+import { changeModelWorkflowDemo, modelWorkflowDemo } from './model-workflow-demo';
 
 // Données entièrement fictives, accessibles uniquement par une activation explicite du mode exemple.
 const timestamp = '2026-10-29T18:30:00Z';
@@ -361,22 +362,31 @@ const data: Partial<Record<Section, Row>> = {
       canStop: true,
       log: 'Exemple : le serveur est prêt.',
     },
-    roles: ['Retain', 'Consolidation', 'Reflect', 'Embeddings'].map((title, i) => ({
-      id: String(i),
-      title,
-      effective: i === 3 ? 'local · embedding' : 'openai-codex · gpt-6.1',
-      fields: [
-        { name: `EXAMPLE_MODEL_${i}`, label: 'Modèle', value: i === 3 ? 'embedding' : 'gpt-6.1' },
-      ],
-      models: [],
-    })),
+    ...modelWorkflowDemo(),
     warnings: [],
     backups: [],
     accounts: [
       {
+        id: 'claude-code',
+        title: 'Claude Code',
+        status: 'Session OAuth disponible',
+        state: 'connected',
+        connected: true,
+        canDisconnect: false,
+      },
+      {
+        id: 'openai-codex',
+        title: 'ChatGPT / Codex',
+        status: 'Non connecté',
+        state: 'disconnected',
+        connected: false,
+        canDisconnect: false,
+      },
+      {
         id: 'hindsight',
         title: 'Hindsight Cloud',
         status: 'Connecté à Exemple',
+        state: 'connected',
         connected: true,
         canDisconnect: true,
       },
@@ -438,7 +448,13 @@ export function exampleSnapshot(section: Section): Snapshot {
     },
     section,
     data: structuredClone(
-      section === 'graph' ? graphData() : section === 'facts' ? factsData() : data[section] || {},
+      section === 'graph'
+        ? graphData()
+        : section === 'facts'
+          ? factsData()
+          : section === 'model-settings'
+            ? data.server || {}
+            : data[section] || {},
     ),
     messages: [],
     confirmations: [],
@@ -446,6 +462,20 @@ export function exampleSnapshot(section: Section): Snapshot {
 }
 export async function exampleRequest(command: string, args: Row, section: Section): Promise<any> {
   await new Promise((resolve) => setTimeout(resolve, 130));
+  if (data.server && changeModelWorkflowDemo(data.server, command, args)) {
+    const snapshot = exampleSnapshot(section);
+    if (command === 'server.save')
+      snapshot.confirmations = [
+        {
+          id: 'example-model-save',
+          title: 'Enregistrer les modèles ?',
+          message: 'Démonstration : aucune donnée réelle ne sera modifiée.',
+          confirmTitle: 'Enregistrer',
+          destructive: false,
+        },
+      ];
+    return snapshot;
+  }
   if (command === 'section' && args.section === 'graph' && args.mode) graphMode = args.mode;
   if (command === 'section' && args.section === 'facts') {
     factQuery = typeof args.query === 'string' ? args.query : '';

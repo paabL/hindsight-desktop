@@ -25,12 +25,16 @@ export class BridgeClient {
       }
     });
     // stderr est drainé, sans imprimer de contenu de documents ou de jetons dans la console.
-    this.#child.stderr.on('data', () => {});
+    this.#child.stderr.on('data', (data) => {
+      if (process.env.HINDSIGHT_TEST_DIAGNOSTICS === '1') process.stderr.write(data);
+    });
     this.#child.stdin.on('error', (error) => this.#fail(error));
     this.#child.on('error', (error) => this.#fail(error));
-    this.#child.on('exit', () =>
-      this.#fail(new Error('Le moteur Hindsight est arrêté. Rouvrez la fenêtre.')),
-    );
+    this.#child.on('exit', (code, signal) => {
+      if (process.env.HINDSIGHT_TEST_DIAGNOSTICS === '1')
+        process.stderr.write(`Bridge exit: ${code} ${signal}\n`);
+      this.#fail(new Error('Le moteur Hindsight est arrêté. Rouvrez la fenêtre.'));
+    });
   }
 
   request(command, args = {}) {
@@ -46,6 +50,8 @@ export class BridgeClient {
       return Promise.reject(new Error('Action invalide.'));
     }
     const id = ++this.#next;
+    if (process.env.HINDSIGHT_TEST_DIAGNOSTICS === '1')
+      process.stderr.write(`Request ${id}: ${command}\n`);
     const line = JSON.stringify({ id, command, args });
     if (Buffer.byteLength(line) > 16_000_000)
       return Promise.reject(new Error('Ce fichier dépasse la limite de 16 Mo.'));
@@ -78,5 +84,9 @@ export class BridgeClient {
   close() {
     this.#fail(new Error('Fenêtre fermée.'));
     this.#child.kill();
+  }
+
+  get pid() {
+    return this.#child.pid;
   }
 }

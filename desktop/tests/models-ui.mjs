@@ -68,6 +68,7 @@ try {
   await page.getByRole('switch', { name: /Retirer les doublons/ }).check();
   await expect(page.getByRole('switch', { name: /Retirer les doublons/ })).toBeChecked();
   await settings.getByRole('tab', { name: 'Serveur & modèles', exact: true }).click();
+  await page.getByText('Installation et services des modèles', { exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Modèles Hindsight', exact: true })).toBeVisible();
   await mkdir(path.join(root, 'screenshots'), { recursive: true });
   for (const width of [1440, 1000]) {

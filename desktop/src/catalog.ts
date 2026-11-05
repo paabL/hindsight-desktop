@@ -93,22 +93,26 @@ export function filterRecords(
   repository = 'all',
 ): Row[] {
   const q = normalized(query.trim());
-  return records
-    .filter(
-      (r) =>
-        (!q || fieldsOf(r).some((v) => v.includes(q))) &&
-        (kind === 'all' ||
-          (kind === 'research' && ['note', 'report', 'document'].includes(sourceKind(r.kind))) ||
-          sourceKind(r.kind) === kind) &&
-        (project === 'all' || r.project === project) &&
-        (repository === 'all' || r.repository === repository),
-    )
-    .sort((a, b) =>
+  let sorted = sortedRecords.get(records);
+  if (!sorted) {
+    sorted = [...records].sort((a, b) =>
       String(b.source_updated_at || b.collected_at || '').localeCompare(
         String(a.source_updated_at || a.collected_at || ''),
       ),
     );
+    sortedRecords.set(records, sorted);
+  }
+  return sorted.filter(
+    (r) =>
+      (kind === 'all' ||
+        (kind === 'research' && ['note', 'report', 'document'].includes(sourceKind(r.kind))) ||
+        sourceKind(r.kind) === kind) &&
+      (project === 'all' || r.project === project) &&
+      (repository === 'all' || r.repository === repository) &&
+      (!q || fieldsOf(r).some((v) => v.includes(q))),
+  );
 }
+const sortedRecords = new WeakMap<Row[], Row[]>();
 
 // Configured projects remain selectable before their first source is collected.
 export function catalogProjects(catalog: Row | null): [string, string][] {

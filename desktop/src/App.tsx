@@ -19,6 +19,7 @@ import {
   ChevronRight,
   CircleHelp,
   Command,
+  Cpu,
   Database,
   Eye,
   FileText,
@@ -61,6 +62,7 @@ import {
   shortName,
 } from './ui';
 import Sources from './pages/Sources';
+import { mergeSourceSnapshot } from './source-snapshot';
 import Updates from './pages/Updates';
 import { Coverage, Documents, Models, SearchPage } from './pages/Library';
 import Consumption from './pages/Consumption';
@@ -78,12 +80,14 @@ const MemoryDesign = lazy(() =>
 const ServerSettings = lazy(() =>
   import('./pages/Manage').then((m) => ({ default: m.ServerSettings })),
 );
+const ModelChoices = lazy(() => import('./pages/ModelChoices'));
 
 const basePrimary = [
   { id: 'dashboard', label: 'Vue d’ensemble', english: 'Overview', icon: LayoutDashboard },
   { id: 'facts', label: 'Mémoire', english: 'Memory', icon: Layers3 },
   { id: 'models', label: 'Connaissances', english: 'Knowledge', icon: BookOpen },
   { id: 'search', label: 'Recherche', icon: Search },
+  { id: 'model-settings', label: 'Modèles', english: 'Models', icon: Cpu },
   { id: 'sources', label: 'Sources', english: 'Sources', icon: Folder },
   { id: 'operations', label: 'Activité', english: 'Activity', icon: Activity },
 ] as const;
@@ -101,6 +105,7 @@ const baseSections = [
   { id: 'graph', label: 'Graphe', icon: Network },
   { id: 'hermes', label: 'Imports', icon: ArrowRight },
   { id: 'server', label: 'Serveur & modèles', icon: Server },
+  { id: 'model-settings', label: 'Modèles', icon: Cpu },
   { id: 'admin', label: 'Banque', icon: Database },
   { id: 'memory', label: 'Comportement de la mémoire', icon: Layers3 },
   { id: 'settings', label: 'Application', icon: Settings2 },
@@ -110,6 +115,7 @@ const englishLabels: Record<Section, string> = {
   sources: 'Catalog',
   facts: 'Facts',
   models: 'Knowledge',
+  'model-settings': 'Models',
   search: 'Search',
   consumption: 'Usage',
   documents: 'Documents',
@@ -126,7 +132,14 @@ const englishLabels: Record<Section, string> = {
   coverage: 'Tracked folders',
 };
 type NavigationGroup =
-  'overview' | 'memory' | 'knowledge' | 'search' | 'sources' | 'activity' | 'settings';
+  | 'overview'
+  | 'memory'
+  | 'knowledge'
+  | 'search'
+  | 'sources'
+  | 'activity'
+  | 'settings'
+  | 'model-settings';
 const viewGroups: Partial<
   Record<NavigationGroup, { label: string; english: string; views: readonly Section[] }>
 > = {
@@ -157,6 +170,7 @@ function groupFor(section: Section): NavigationGroup {
   if (['operations', 'consumption', 'audit'].includes(section)) return 'activity';
   if (['settings', 'admin', 'memory', 'server'].includes(section)) return 'settings';
   if (section === 'models') return 'knowledge';
+  if (section === 'model-settings') return 'model-settings';
   if (section === 'search') return 'search';
   return 'overview';
 }
@@ -224,15 +238,39 @@ export default function App() {
     () => localStorage.getItem('hindsight-desktop-theme-v2') || 'dark',
   );
   const seenMessages = useRef(new Set<string>());
+  const sourcesCache = useRef<{ key: string; data: Row } | null>(null);
+  const requestSequence = useRef(0);
+  const appliedSequence = useRef(0);
+  const sourceKey = (app: Snapshot['app']) =>
+    `${app.serverURL}|${app.bank || ''}|${app.folder || ''}`;
   const notify = useCallback((message: string) => setToast(message), []);
   const busy = busyCount > 0;
   const run = useCallback(async (action: string, args: Row = {}) => {
-    setBusyCount((count) => count + 1);
+    const sequence = ++requestSequence.current;
+    const quiet = action === 'snapshot';
+    if (!quiet) setBusyCount((count) => count + 1);
+    if (['bank.select', 'server.url', 'folder.choose'].includes(action)) {
+      sourcesCache.current = null;
+      appliedSequence.current = sequence;
+    }
+    const sourceBase = sourcesCache.current;
     try {
       const result = demoRef.current
         ? await exampleRequest(action, args, routeRef.current)
-        : await nativeRequest(action, args);
-      if (result?.app && result?.section) {
+        : await nativeRequest(action, {
+            ...args,
+            background: true,
+            sourceRevision: sourceBase?.data.catalogRevision,
+          });
+      if (result?.app && result?.section && sequence >= appliedSequence.current) {
+        appliedSequence.current = sequence;
+        if (result.section === 'sources') {
+          result.data = mergeSourceSnapshot(
+            sourceBase?.key === sourceKey(result.app) ? sourceBase.data : undefined,
+            result.data,
+          );
+          sourcesCache.current = { key: sourceKey(result.app), data: result.data };
+        }
         setSnapshot((old) => ({
           ...result,
           section: routeRef.current,
@@ -252,7 +290,7 @@ export default function App() {
       setToast(message);
       return { error: nativeSystemMessage(message) };
     } finally {
-      setBusyCount((count) => Math.max(0, count - 1));
+      if (!quiet) setBusyCount((count) => Math.max(0, count - 1));
     }
   }, []);
   const refresh = useCallback(
@@ -263,7 +301,14 @@ export default function App() {
     routeRef.current = section;
     setRoute(section);
     location.hash = section;
-    setSnapshot((old) => ({ ...old, section, data: {} }));
+    setSnapshot((old) => ({
+      ...old,
+      section,
+      data:
+        section === 'sources' && sourcesCache.current?.key === sourceKey(old.app)
+          ? sourcesCache.current.data
+          : {},
+    }));
     setLastViews((old) => ({ ...old, [groupFor(section)]: section }));
     setCommand(false);
     setBankMenu(false);
@@ -273,6 +318,7 @@ export default function App() {
     setDemo(value);
     demoRef.current = value;
     seenMessages.current.clear();
+    sourcesCache.current = null;
     setSnapshot(initial);
   }, []);
 
@@ -306,16 +352,19 @@ export default function App() {
   const serverWork =
     route === 'server' &&
     !!(snapshot.data?.connectingAccount || snapshot.data?.hindsightModels?.local?.busy);
+  const sourcesWork =
+    route === 'sources' && !!(snapshot.data?.refreshing || snapshot.data?.collecting);
   useEffect(() => {
     if (
       !ready ||
       demo ||
       host === 'Navigateur' ||
-      (!snapshot.app.connected && route !== 'settings' && !serverWork)
+      (!snapshot.app.connected && route !== 'settings' && !serverWork && !sourcesWork)
     )
       return;
-    const seconds =
-      route === 'settings' || serverWork
+    const seconds = sourcesWork
+      ? 0.3
+      : route === 'settings' || serverWork
         ? 2
         : route === 'operations'
           ? 20
@@ -323,14 +372,20 @@ export default function App() {
             ? 30
             : 0;
     if (!seconds) return;
-    const interval = setInterval(() => {
-      if (!document.hidden) {
-        if (route === 'settings' || serverWork) void run('snapshot');
-        else void refresh();
+    let polling = false;
+    const interval = setInterval(async () => {
+      if (!document.hidden && !polling) {
+        polling = true;
+        try {
+          if (route === 'settings' || serverWork || sourcesWork) await run('snapshot');
+          else await refresh();
+        } finally {
+          polling = false;
+        }
       }
     }, seconds * 1000);
     return () => clearInterval(interval);
-  }, [route, snapshot.app.connected, ready, demo, refresh, serverWork]);
+  }, [route, snapshot.app.connected, ready, demo, refresh, serverWork, sourcesWork]);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem('hindsight-desktop-theme-v2', theme);
@@ -369,7 +424,14 @@ export default function App() {
       if (next !== routeRef.current) {
         routeRef.current = next;
         setRoute(next);
-        setSnapshot((old) => ({ ...old, section: next, data: {} }));
+        setSnapshot((old) => ({
+          ...old,
+          section: next,
+          data:
+            next === 'sources' && sourcesCache.current?.key === sourceKey(old.app)
+              ? sourcesCache.current.data
+              : {},
+        }));
         setLastViews((old) => ({ ...old, [groupFor(next)]: next }));
       }
     };
@@ -400,7 +462,9 @@ export default function App() {
   const searchText = (value: string) =>
     value.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase();
   const confirmation = snapshot.confirmations[0];
-  const needsBank = !['sources', 'settings', 'server', 'consumption'].includes(route);
+  const needsBank = !['sources', 'settings', 'server', 'model-settings', 'consumption'].includes(
+    route,
+  );
   const disconnected =
     needsBank && !snapshot.app.bank && !demo && !(route === 'admin' && snapshot.app.connected);
 
@@ -465,6 +529,7 @@ export default function App() {
         return (
           <Sources
             {...props}
+            data={{ ...props.data, folder: props.data.folder ?? snapshot.app.folder }}
             serverConnected={snapshot.app.connected}
             onExploreExample={() => changeDemo(true)}
           />
@@ -497,6 +562,8 @@ export default function App() {
         return <Admin {...props} />;
       case 'server':
         return <ServerSettings {...props} />;
+      case 'model-settings':
+        return <ModelChoices {...props} />;
       case 'hermes':
         return <Hermes {...props} />;
       case 'settings':

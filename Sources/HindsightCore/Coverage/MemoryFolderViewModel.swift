@@ -18,6 +18,7 @@ public final class MemoryFolderViewModel {
     @ObservationIgnored private let settings: SettingsStore
     @ObservationIgnored private let runner: ProcessRunning
     @ObservationIgnored private let python: String
+    @ObservationIgnored private var validatedCatalog: (url: URL, version: FileVersion)?
 
     public init(settings: SettingsStore, runner: ProcessRunning = SystemProcessRunner(), home: URL = URL(fileURLWithPath: NSHomeDirectory()), python: String? = nil, discoverAutomatically: Bool = true) {
         self.settings = settings
@@ -65,6 +66,11 @@ public final class MemoryFolderViewModel {
             return
         }
         do {
+            let version = try FileVersion(catalog)
+            if let cached = validatedCatalog, cached.url == catalog, cached.version == version {
+                catalogURL = catalog
+                return
+            }
             let data = try Data(contentsOf: catalog)
             let header = try JSONDecoder().decode(CatalogHeader.self, from: data)
             guard header.version == 1, header.mode == "collection_only" else {
@@ -73,6 +79,7 @@ public final class MemoryFolderViewModel {
                 return
             }
             catalogURL = catalog
+            if try FileVersion(catalog) == version { validatedCatalog = (catalog, version) }
         } catch { self.error = "Catalogue illisible : \(error.localizedDescription)" }
         revision = UUID()
     }

@@ -15,8 +15,14 @@ test('le catalogue serveur traduit tous ses libellés français fixes', () => {
     'utf8',
   );
   for (const [, text] of swift.matchAll(/(?:title|help|label|caution): "((?:\\.|[^"\\])*)"/g)) {
+    if (text.includes('\\(')) continue; // Runtime labels with interpolation are checked below.
     if (/[àâçéèêëîïôùûüœ]/i.test(text))
       assert.notEqual(nativeCatalogText(text), text, `Traduction absente : ${text}`);
+  }
+  for (const operation of ['recall', 'reflect', 'consolidation']) {
+    assert.equal(nativeCatalogText(`${operation} : modèle`), `${operation}: model`);
+    assert.equal(nativeCatalogText(`${operation} : clé`), `${operation}: key`);
+    assert.equal(nativeCatalogText(`${operation} : fournisseur`), `${operation}: provider`);
   }
 });
 
@@ -87,6 +93,9 @@ test('la localisation des métadonnées serveur préserve valeurs, noms modèles
     'The local server is not responding: see /Exemple/mémoire.log.',
   );
   assert.equal(raw.data.roles[0].title, 'LLM par défaut');
+  const quick = localizeNativeSnapshot({ ...raw, section: 'model-settings' });
+  assert.equal(quick.data.roles[0].title, 'Default LLM');
+  assert.equal(quick.data.roles[0].fields[1].value, 'Modèle');
   assert.strictEqual(localizeNativeSnapshot({ ...raw, section: 'documents' }).data.roles, roles);
   setLanguage('fr');
   assert.strictEqual(localizeNativeSnapshot(raw), raw);
@@ -121,4 +130,21 @@ test('les marqueurs hérités sont traduits sans altérer les noms configurés',
     nativeRoleEffective(roles[1], roles),
     'openai · gpt-4o-mini (default) — inherited from Default LLM',
   );
+});
+
+test('les résumés spécialisés ne reprennent pas le modèle inactif du premier champ', () => {
+  setLanguage('en');
+  for (const id of ['reranker', 'embeddings']) {
+    const role = {
+      id,
+      effective: 'local · modèle par défaut',
+      fields: [
+        { name: `HINDSIGHT_API_${id.toUpperCase()}_PROVIDER`, value: 'local' },
+        { name: `HINDSIGHT_API_${id.toUpperCase()}_COHERE_MODEL`, value: 'inactive-cohere' },
+      ],
+    };
+    assert.equal(nativeRoleEffective(role, [role]), 'local · default model');
+    role.effective = 'local · selected-local';
+    assert.equal(nativeRoleEffective(role, [role]), role.effective);
+  }
 });

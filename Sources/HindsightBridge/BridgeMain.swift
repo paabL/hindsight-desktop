@@ -90,6 +90,9 @@ final class DesktopBridge {
     var updateTask: Task<Void, Never>?
     /// Installation ou démarrage du modèle de décision local : plusieurs minutes, hors du fil des commandes.
     var decisionTask: Task<Void, Never>?
+    var sourcesTask: Task<Void, Never>?
+    var sourcesGeneration = UUID()
+    var collectionTask: Task<Void, Never>?
     var graphMode = GraphViewModel.Mode.entities
     var graphLimit = 300
     var autoSyncConfirmation: UUID?
@@ -124,6 +127,7 @@ final class DesktopBridge {
             await app.connect()
             await connected()
         case "server.url":
+            cancelSourcesRefresh()
             clearConfirmations()
             guard await app.applyServerURL(str("url")) else { throw BridgeFailure(app.serverURLNotice ?? "Adresse invalide.") }
             await connected()
@@ -133,7 +137,7 @@ final class DesktopBridge {
             updateTask = Task { @MainActor in await self.updater.check(); self.updateTask = nil }
         case "updates.releaseReady":
             let ready = !updater.isWorking && updateTask == nil
-                && !app.memoryFolder.collecting && !app.memoryFolder.importing
+                && !app.memoryFolder.collecting && !app.memoryFolder.importing && collectionTask == nil
                 && !app.localDecision.isBusy && decisionTask == nil
                 && app.coverage.sending == nil && app.projectSync.running == nil
             return ["releaseUpdateReady": ready]
@@ -149,6 +153,7 @@ final class DesktopBridge {
         case "bank.select":
             guard app.banks.contains(where: { $0.bankId == str("id") }) else { throw BridgeFailure("Banque inconnue.") }
             clearConfirmations()
+            cancelSourcesRefresh()
             app.selectBank(str("id"))
             if !testing { await app.services.estimator.refreshProfile(bank: str("id")) }
         case "bank.create": app.requestCreateBank(id: str("id"), name: str("name"), mission: str("mission"))
@@ -160,10 +165,20 @@ final class DesktopBridge {
         case "folder.choose":
             let path = str("path")
             guard path.hasPrefix("/") else { throw BridgeFailure("Choisissez un dossier absolu.") }
+            guard collectionTask == nil else { throw BridgeFailure("Une collecte est en cours dans ce dossier.") }
+            cancelSourcesRefresh()
             app.memoryFolder.choose(URL(fileURLWithPath: path))
-            await workspace.refresh()
-        case "folder.refresh": await workspace.refreshSources()
-        case "folder.prepare": await workspace.prepareSend()
+            if p["background"] as? Bool == true { startSourcesRefresh() } else { await workspace.refresh() }
+        case "folder.refresh":
+            if p["background"] as? Bool == true {
+                guard collectionTask == nil else { break }
+                cancelSourcesRefresh(invalidate: false)
+                collectionTask = Task { @MainActor in await self.workspace.refreshSources(); self.collectionTask = nil }
+            } else { await workspace.refreshSources() }
+        case "folder.prepare":
+            guard collectionTask == nil else { throw BridgeFailure("Une collecte est en cours dans ce dossier.") }
+            cancelSourcesRefresh(invalidate: false)
+            await workspace.prepareSend()
         case "folder.enabled":
             if let ids = p["ids"] as? [String] { try workspace.setEnabled(ids, enabled: p["enabled"] as? Bool ?? false) }
             else { try workspace.setEnabled(str("id"), enabled: p["enabled"] as? Bool ?? false) }
@@ -330,6 +345,13 @@ final class DesktopBridge {
         case "server.variable":
             guard app.serverSettings.addVariable(str("name"), str("value")) else { throw BridgeFailure("Nom de variable invalide.") }
         case "server.provider": app.serverSettings.selectProvider(str("provider"), forRole: str("role"))
+        case "server.models.prepare":
+            guard let changes = p["changes"] as? [String: String] else { throw BridgeFailure("Réglages des modèles invalides.") }
+            let settings = app.serverSettings!
+            if !ServerCapabilities.is120(app.connection.version?.apiVersion), changes.keys.contains(where: { $0.contains("DECISION_MODEL") }) {
+                throw BridgeFailure("Serveur Hindsight 1.2.0 requis pour ces réglages de décision.")
+            }
+            try settings.prepareModelWorkflow(changes, revision: str("revision"))
         case "server.decision", "server.reranker":
             let settings = app.serverSettings!, source = str("source")
             // Un serveur 1.1.0 refuserait de démarrer avec un fournisseur `hindsight`.
@@ -407,16 +429,39 @@ final class DesktopBridge {
             let workspaceAction = workspace.confirmation?.id == request.id
             let backgroundUpdate = updater.confirmation?.id == request.id
             let backgroundDecision = app.localDecision.confirmation?.id == request.id
+            let backgroundCollection = app.memoryFolder.confirmation?.id == request.id && p["background"] as? Bool == true
             let activateSync = autoSyncConfirmation == request.id
             clearConfirmations()
             if backgroundUpdate { updateTask = Task { @MainActor in await request.perform(); self.updateTask = nil } }
             else if backgroundDecision { decisionTask = Task { @MainActor in await request.perform(); self.decisionTask = nil } }
+            else if backgroundCollection {
+                guard collectionTask == nil else { throw BridgeFailure("Une collecte est en cours dans ce dossier.") }
+                cancelSourcesRefresh(invalidate: false)
+                collectionTask = Task { @MainActor in
+                    await request.perform()
+                    await self.workspace.refresh()
+                    self.collectionTask = nil
+                }
+            }
             else { await request.perform(); if section == "sources" && !workspaceAction { await workspace.refresh() } }
             if activateSync { app.coverage.startAutoSync() }
         case "cancel": clearConfirmations()
         default: throw BridgeFailure("Action inconnue : \(command)")
         }
-        return snapshot()
+        return snapshot(sourceRevision: p["sourceRevision"] as? String)
+    }
+    func cancelSourcesRefresh(invalidate: Bool = true) {
+        sourcesGeneration = UUID(); sourcesTask?.cancel(); sourcesTask = nil
+        if invalidate { workspace.invalidate() }
+    }
+    func startSourcesRefresh() {
+        guard sourcesTask == nil, collectionTask == nil else { return }
+        workspace.prime()
+        let generation = UUID(); sourcesGeneration = generation
+        sourcesTask = Task { @MainActor in
+            await self.workspace.refresh()
+            if self.sourcesGeneration == generation { self.sourcesTask = nil }
+        }
     }
 
     func decode<T: Decodable>(_ type: T.Type, _ object: Any) throws -> T {
@@ -431,7 +476,10 @@ final class DesktopBridge {
     }
 
     func load(_ name: String, _ p: [String: Any]) async throws {
-        if name == "sources" { await workspace.refresh(); return }
+        if name == "sources" {
+            if p["background"] as? Bool == true { startSourcesRefresh() } else { await workspace.refresh() }
+            return
+        }
         if name == "consumption" {
             await app.consumption.poll()
             await app.consumption.loadServices(serverIs120: ServerCapabilities.is120(app.connection.version?.apiVersion))
@@ -440,6 +488,12 @@ final class DesktopBridge {
         if name == "server" {
             await app.serverSettings.loadIfNeeded(); await app.service.refresh(); await app.localDecision.refresh()
             await app.serverSettings.connections.refresh(app.serverSettings.connectionContext)
+            return
+        }
+        if name == "model-settings" {
+            await app.serverSettings.loadIfNeeded()
+            await app.service.refresh()
+            await app.localDecision.refresh()
             return
         }
         if name == "settings" { return }
@@ -498,7 +552,7 @@ final class DesktopBridge {
         app.session?.audit.confirmation = nil
     }
 
-    func snapshot() -> [String: Any] {
+    func snapshot(sourceRevision: String? = nil) -> [String: Any] {
         var connected = false, error: String?
         if case .connected = app.connection { connected = true }
         if case .failed(let text) = app.connection { error = text }
@@ -512,7 +566,7 @@ final class DesktopBridge {
                     "version": wire(app.connection.version), "banks": wire(app.banks), "bank": wire(app.selectedBankID),
                     "folder": wire(app.memoryFolder.repository?.path), "paused": wire(app.pause.heldBanks)],
             "updates": updateSnapshot(),
-            "section": section, "data": sectionData(), "messages": messages.map { SecretMasker.mask($0) },
+            "section": section, "data": sectionData(sourceRevision: sourceRevision), "messages": messages.map { SecretMasker.mask($0) },
             "confirmations": pending().map { ["id": $0.id.uuidString, "title": $0.title, "message": SecretMasker.mask($0.message),
                                                "confirmTitle": $0.confirmTitle, "destructive": $0.severity == .destructive,
                                                "requiredText": wire($0.requiredText)] }
@@ -538,17 +592,30 @@ final class DesktopBridge {
                 "checkedAt": wire(updater.lastChecked), "remote": wire(updater.remoteURL)]
     }
 
-    func sectionData() -> [String: Any] {
+    func sectionData(sourceRevision: String? = nil) -> [String: Any] {
         let s = app.session
         switch section {
         case "sources":
             let folder = app.memoryFolder!
+            let revision = workspace.revision.uuidString
+            var data: [String: Any] = ["folder": wire(folder.repository?.path), "error": wire(workspace.error ?? folder.error), "memoryMessage": wire(workspace.message),
+                "canCollect": folder.canCollect, "collecting": folder.collecting || collectionTask != nil, "importing": folder.importing,
+                "refreshing": sourcesTask != nil, "catalogRevision": revision, "output": folder.output]
+            if sourceRevision == revision { data["catalogUnchanged"] = true; return data }
+            if let sourceRevision, sourceRevision == workspace.previousRevision?.uuidString,
+               workspace.changedRecords.count < max(1, workspace.records.count / 2), var header = workspace.catalog {
+                header["records"] = nil
+                data["catalog"] = header
+                data["catalogDelta"] = ["baseRevision": sourceRevision, "records": workspace.changedRecords,
+                                        "ids": workspace.records.compactMap { $0["id"] as? String }]
+                return data
+            }
             var catalog: Any = NSNull()
-            if let url = folder.catalogURL, let header = catalogHeader(url) { catalog = header }
+            if let value = workspace.catalog { catalog = value }
             if var merged = catalog as? [String: Any] { merged["records"] = workspace.records; catalog = merged }
             else if !workspace.records.isEmpty { catalog = ["records": workspace.records, "sources": [], "projects": []] }
-            return ["catalog": catalog, "folder": wire(folder.repository?.path), "error": wire(workspace.error ?? folder.error), "memoryMessage": wire(workspace.message),
-                    "canCollect": folder.canCollect, "collecting": folder.collecting, "importing": folder.importing, "output": folder.output]
+            data["catalog"] = catalog
+            return data
         case "dashboard":
             return ["snapshot": wire(s?.dashboard.snapshot), "insights": wire(s?.dashboard.insights ?? []), "error": wire(s?.dashboard.state.errorMessage), "partialErrors": wire(s?.dashboard.partialErrors ?? [])]
         case "models", "admin":
@@ -594,7 +661,7 @@ final class DesktopBridge {
                     "detailError": wire(graph?.nodeFacts.errorMessage ?? graph?.selectedFact?.detail.errorMessage), "error": wire(graph?.state.errorMessage)]
         case "audit": return ["audit": wire(s?.audit.audit.value ?? []), "traces": wire(s?.audit.llm.value ?? []), "reads": wire(s?.reads.events ?? []), "error": wire(s?.audit.audit.errorMessage), "traceError": wire(s?.audit.llm.errorMessage)]
         case "memory": return ["draft": wire(s?.memoryDesign.draft), "config": wire(s?.admin.config.value), "error": wire(s?.memoryDesign.state.errorMessage), "trial": wire(s?.memoryDesign.trial.value), "trialError": wire(s?.memoryDesign.trial.errorMessage), "problems": s?.memoryDesign.problems ?? [], "serverIs120": s?.memoryDesign.serverIs120 ?? false]
-        case "server": return serverSnapshot()
+        case "server", "model-settings": return serverSnapshot()
         case "hermes": return ["items": wire(app.codexImport.filteredSessions), "preview": wire(app.codexImport.preview.value), "plan": wire(app.codexImport.plan.value), "error": wire(app.codexImport.scanState.errorMessage), "sendErrors": app.codexImport.sendErrors]
         default: return [:]
         }
@@ -621,11 +688,24 @@ final class DesktopBridge {
                           "value": wire($0.isSecret ? nil : $0.value), "configured": $0.value != nil, "changed": $0.isChanged, "dynamic": $0.isDynamic] }
         }
         return ["scriptPath": settings.scriptPath, "hasChanges": settings.hasChanges, "needsRestart": settings.needsRestart,
+                "modelWorkflow": wire(settings.modelWorkflow),
+                "providerChoices": settings.providerChoices.map { ["id": $0.id, "title": $0.title] },
+                "modelsByProvider": wire(settings.modelsByProvider),
                 "hindsightModels": hindsightModelsSnapshot(),
-                "roles": settings.roles.map { ["id": $0.role.id, "title": $0.role.title, "effective": $0.effective, "fields": fields($0.fields), "models": wire(settings.modelChoices(forRole: $0.role.id))] },
+                "roles": settings.roles.map { ["id": $0.role.id, "title": $0.role.title, "effective": $0.effective, "isModelRole": $0.role.isModelRole, "fallback": wire($0.role.fallback), "fields": fields($0.fields), "models": wire(settings.modelChoices(forRole: $0.role.id))] },
                 "otherVariables": fields(settings.otherVariables), "warnings": settings.actionableWarnings,
-                "accounts": LLMAccount.allCases.map { ["id": $0.rawValue, "title": $0.title, "status": settings.connections.status($0).summary,
-                                                       "connected": settings.connections.status($0).isConnected, "canDisconnect": $0.canDisconnect] },
+                "accounts": LLMAccount.allCases.map { account -> [String: Any] in
+                    let status = settings.connections.status(account)
+                    let state: String
+                    switch status {
+                    case .unchecked: state = "unknown"
+                    case .checking, .connecting: state = "pending"
+                    case .connected, .signedInTo: state = "connected"
+                    case .signedOut, .unavailable, .failed: state = "disconnected"
+                    }
+                    return ["id": account.rawValue, "title": account.title, "status": status.summary, "state": state,
+                            "connected": status.isConnected, "canDisconnect": account.canDisconnect]
+                },
                 // Lien de secours si le client n'a pas pu ouvrir le navigateur ; il ne contient aucune clé.
                 "connectingAccount": wire(settings.connections.activeAccount?.rawValue),
                 "authorizationURL": wire(settings.connections.authorizationURL?.absoluteString),

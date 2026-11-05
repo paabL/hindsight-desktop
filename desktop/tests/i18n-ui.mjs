@@ -1,6 +1,7 @@
 import { chromium, expect } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -49,7 +50,7 @@ try {
     .getByRole('navigation', { name: 'Navigation principale' })
     .getByRole('button', { name: /^Sources/ })
     .click();
-  await page.keyboard.press('Meta+5');
+  await page.keyboard.press('Meta+6');
   await expect(page.getByRole('heading', { name: 'Sources', exact: true })).toBeVisible();
   await page.locator('.source-row').first().click();
   await expect(page.locator('.modal .markdown')).toBeVisible();
@@ -173,8 +174,9 @@ try {
   await preview.goto('http://127.0.0.1:1426/');
   await expect(preview.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible();
   await expect(preview.locator('.source-row')).toHaveCount(5);
+  await mkdir(fileURLToPath(new URL('../screenshots/', import.meta.url)), { recursive: true });
   await preview.screenshot({
-    path: fileURLToPath(new URL('../../docs/images/hindsight-desktop.png', import.meta.url)),
+    path: fileURLToPath(new URL('../screenshots/overview-i18n.png', import.meta.url)),
   });
 
   // The native titlebar is absent in Chromium; verify its reserved area under

@@ -12,9 +12,10 @@ public enum ServerSettingsCatalog {
         public var account: LLMAccount? { LLMAccount(rawValue: id) }
     }
 
-    /// Choix usuels. Les fournisseurs déjà configurés et une saisie libre restent accessibles.
+    /// Choix usuels, complétés par les fournisseurs déjà configurés.
     public static let suggestedProviders: [Provider] = [
         Provider(id: "claude-code", title: "Claude Code"),
+        Provider(id: "anthropic", title: "Anthropic API"),
         Provider(id: "openai-codex", title: "ChatGPT / Codex"),
         Provider(id: "chatgpt", title: "ChatGPT (connexion du serveur, 1.1.0)"),
         Provider(id: "gemini", title: "Gemini"),
@@ -105,17 +106,38 @@ public enum ServerSettingsCatalog {
                 Field(
                     name: "HINDSIGHT_API_RECALL_DECISION_MODEL_DEDUP", label: "Recall : retirer les doublons",
                     help: "true / false (défaut) ; une requête de plus par recall. Serveur 1.2.0"),
+            ] + ["RECALL", "REFLECT", "CONSOLIDATION"].flatMap { operation in
+                (operation == "RECALL" ? [] : [Field(name: "HINDSIGHT_API_\(operation)_DECISION_MODEL_PROVIDER", label: "\(operation.lowercased()) : fournisseur", help: "Vide = héritage global ; none = désactivé")]) + [
+                    Field(name: "HINDSIGHT_API_\(operation)_DECISION_MODEL_MODEL", label: "\(operation.lowercased()) : modèle", help: "Modèle propre à cette opération"),
+                    Field(name: "HINDSIGHT_API_\(operation)_DECISION_MODEL_BASE_URL", label: "\(operation.lowercased()) : URL", help: "URL propre à cette opération"),
+                    Field(name: "HINDSIGHT_API_\(operation)_DECISION_MODEL_API_KEY", label: "\(operation.lowercased()) : clé", help: "Clé propre à cette opération, masquée"),
+                ]
+            } + [
+                Field(name: "HINDSIGHT_API_REFLECT_USE_DECISION_MODEL", label: "Réponses : utiliser la décision", help: "true (défaut) / false ; une banque peut remplacer ce réglage"),
+                Field(name: "HINDSIGHT_API_CONSOLIDATION_USE_DECISION_MODEL", label: "Consolidation : utiliser la décision", help: "true (défaut) / false"),
+                Field(name: "HINDSIGHT_API_MENTAL_MODEL_REFRESH_USE_DECISION_MODEL", label: "Pages : décision dans la réflexion", help: "true (défaut) / false ; parcours de repli"),
+                Field(name: "HINDSIGHT_API_MENTAL_MODEL_DELTA_USE_DECISION_MODEL", label: "Pages : filtrage des nouveautés", help: "true (défaut) / false ; actualisation incrémentale"),
             ], fallback: nil,
             caution: "Ignoré par un serveur 1.0.0. Le fournisseur hindsight et les options prune/dedup demandent un serveur 1.2.0 ; sans URL locale, il envoie le contenu des faits à Hindsight Inference (Vectorize)."),
         Role(id: "embeddings", title: "Embeddings", help: "Vectorisation des faits.",
             fields: [
                 Field(
                     name: "HINDSIGHT_API_EMBEDDINGS_PROVIDER", label: "Fournisseur",
-                    help: "local, hindsight (hs-embed-1, 1.2.0), gemini, openai, cohere, tei, litellm…"),
+                    help: "local, hindsight (hs-embed-1, 1.2.0), google (Gemini), openai, cohere, tei, litellm…"),
                 Field(name: "HINDSIGHT_API_EMBEDDINGS_GEMINI_MODEL", label: "Modèle Gemini", help: ""),
                 Field(name: "HINDSIGHT_API_EMBEDDINGS_GEMINI_API_KEY", label: "Clé Gemini", help: ""),
                 Field(name: "HINDSIGHT_API_EMBEDDINGS_GEMINI_OUTPUT_DIMENSIONALITY", label: "Dimensions Gemini", help: ""),
                 Field(name: "HINDSIGHT_API_EMBEDDINGS_OPENAI_MODEL", label: "Modèle OpenAI", help: ""),
+                Field(name: "HINDSIGHT_API_EMBEDDINGS_OPENAI_API_KEY", label: "Clé OpenAI", help: ""),
+                Field(name: "HINDSIGHT_API_EMBEDDINGS_OPENAI_BASE_URL", label: "URL OpenAI", help: ""),
+                Field(name: "HINDSIGHT_API_EMBEDDINGS_OPENAI_DIMENSIONS", label: "Dimensions OpenAI", help: ""),
+                Field(name: "HINDSIGHT_API_EMBEDDINGS_COHERE_MODEL", label: "Modèle Cohere", help: ""),
+                Field(name: "HINDSIGHT_API_EMBEDDINGS_COHERE_API_KEY", label: "Clé Cohere", help: ""),
+                Field(name: "HINDSIGHT_API_EMBEDDINGS_COHERE_BASE_URL", label: "URL Cohere", help: ""),
+                Field(name: "HINDSIGHT_API_EMBEDDINGS_TEI_URL", label: "URL TEI", help: ""),
+                Field(name: "HINDSIGHT_API_EMBEDDINGS_LITELLM_MODEL", label: "Modèle LiteLLM", help: ""),
+                Field(name: "HINDSIGHT_API_EMBEDDINGS_LITELLM_API_KEY", label: "Clé LiteLLM", help: ""),
+                Field(name: "HINDSIGHT_API_EMBEDDINGS_LITELLM_API_BASE", label: "URL LiteLLM", help: ""),
                 Field(
                     name: "HINDSIGHT_API_EMBEDDINGS_LOCAL_MODEL", label: "Modèle local",
                     help: "Vide = BAAI/bge-small-en-v1.5 ; hindsight-ai/hs-embed-1 (384 dimensions, multilingue, sur CPU)"),
@@ -131,6 +153,14 @@ public enum ServerSettingsCatalog {
                     help: "local, hindsight (hs-rerank-1, 1.2.0), cohere, tei, litellm, google…"),
                 Field(name: "HINDSIGHT_API_RERANKER_COHERE_MODEL", label: "Modèle Cohere", help: ""),
                 Field(name: "HINDSIGHT_API_RERANKER_COHERE_API_KEY", label: "Clé Cohere", help: ""),
+                Field(name: "HINDSIGHT_API_RERANKER_COHERE_BASE_URL", label: "URL Cohere", help: ""),
+                Field(name: "HINDSIGHT_API_RERANKER_TEI_URL", label: "URL TEI", help: ""),
+                Field(name: "HINDSIGHT_API_RERANKER_LITELLM_MODEL", label: "Modèle LiteLLM", help: ""),
+                Field(name: "HINDSIGHT_API_RERANKER_LITELLM_API_KEY", label: "Clé LiteLLM", help: ""),
+                Field(name: "HINDSIGHT_API_RERANKER_LITELLM_API_BASE", label: "URL LiteLLM", help: ""),
+                Field(name: "HINDSIGHT_API_RERANKER_GOOGLE_MODEL", label: "Modèle Google", help: ""),
+                Field(name: "HINDSIGHT_API_RERANKER_GOOGLE_PROJECT_ID", label: "Projet Google", help: ""),
+                Field(name: "HINDSIGHT_API_RERANKER_GOOGLE_SERVICE_ACCOUNT_KEY", label: "Clé du compte de service Google", help: ""),
                 Field(
                     name: "HINDSIGHT_API_RERANKER_LOCAL_MODEL", label: "Modèle local",
                     help: "Vide = hindsight-ai/hs-rerank-1 en 1.2.0 (cross-encoder/ms-marco-MiniLM-L-6-v2 avant), sur CPU"),

@@ -43,7 +43,7 @@ try {
   await page.evaluate(() => localStorage.setItem('hindsight-desktop-theme-v2', 'dark'));
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Vue d’ensemble', exact: true })).toBeVisible();
-  await page.keyboard.press('Meta+5');
+  await page.keyboard.press('Meta+6');
   await expect(page.getByRole('heading', { name: 'Sources', exact: true })).toBeVisible();
   await expect(page.getByText('12 sources dans 2 projets')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Actualiser la vue', exact: true })).toBeEnabled();
@@ -105,7 +105,7 @@ try {
       throw new Error(`Échec de rendu : ${route}`);
   }
   await page.getByRole('button', { name: 'Activer le thème clair' }).click();
-  await page.keyboard.press('Meta+5');
+  await page.keyboard.press('Meta+6');
   await expect(page.locator('.source-row')).toHaveCount(12);
   await page.screenshot({ path: path.join(root, 'screenshots/06-clair.png') });
   await page.keyboard.press('Meta+k');
@@ -118,7 +118,7 @@ try {
   await page.getByRole('textbox', { name: 'Rechercher dans le document' }).fill('décisions');
   await expect(page.locator('.markdown mark')).not.toHaveCount(0);
   await page.getByRole('button', { name: 'Fermer', exact: true }).click();
-  await page.keyboard.press('Meta+5');
+  await page.keyboard.press('Meta+6');
   await page
     .getByRole('tablist', { name: 'Vues des sources' })
     .getByRole('tab', { name: 'Dossiers suivis', exact: true })

@@ -4905,12 +4905,31 @@ td {
   padding: 0 22px 22px;
 }
 .account-rows > div {
+  --account-status: var(--faint);
   display: flex;
   gap: 12px;
   align-items: center;
   padding: 16px 0 0;
   border-top: 1px solid var(--line);
   color: var(--secondary);
+}
+.account-rows > [data-state='connected'] {
+  --account-status: var(--sage);
+}
+.account-rows > [data-state='disconnected'] {
+  --account-status: var(--red);
+}
+.account-rows > [data-state='pending'] {
+  --account-status: var(--amber);
+}
+.account-status-dot {
+  width: 10px;
+  height: 10px;
+  margin: 0 4px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--account-status);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--account-status) 13%, transparent);
 }
 .account-rows > div > div {
   flex: 1;
@@ -4922,6 +4941,7 @@ td {
   color: var(--ink);
 }
 .account-rows p {
+  color: color-mix(in srgb, var(--account-status) 75%, var(--ink));
   font-size: 10px;
   line-height: 1.8;
   margin-top: 5px;

@@ -22,6 +22,7 @@ const routes = [
   { id: 'graph', group: 'Memory', list: 'Memory views', tab: 'Graph' },
   { id: 'models', group: 'Knowledge' },
   { id: 'search', group: 'Search' },
+  { id: 'model-settings', group: 'Models' },
   { id: 'sources', group: 'Sources', list: 'Source views', tab: 'Catalog' },
   { id: 'coverage', group: 'Sources', list: 'Source views', tab: 'Tracked folders' },
   { id: 'hermes', group: 'Sources', list: 'Source views', tab: 'Imports' },
@@ -72,11 +73,12 @@ try {
   await page.goto(`${base}/?demo=1`);
   await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible();
   const nav = page.getByRole('navigation', { name: 'Main navigation' });
-  await expect(nav.getByRole('button')).toHaveCount(6);
+  await expect(nav.getByRole('button')).toHaveCount(7);
   await expect(nav).toContainText('Overview');
   await expect(nav).toContainText('Memory');
   await expect(nav).toContainText('Knowledge');
   await expect(nav).toContainText('Search');
+  await expect(nav).toContainText('Models');
   await expect(nav).toContainText('Sources');
   await expect(nav).toContainText('Activity');
   await expect(page.getByRole('button', { name: 'Advanced', exact: true })).toHaveCount(0);
@@ -120,6 +122,7 @@ try {
     'facts',
     'models',
     'search',
+    'model-settings',
     'sources',
     'operations',
   ].entries()) {
@@ -183,7 +186,7 @@ try {
   );
   await memory.getByRole('tab', { name: 'Chronologie', exact: true }).click();
   await hasRoute(page, 'timeline');
-  await page.keyboard.press('Meta+6');
+  await page.keyboard.press('Meta+7');
   await expect(page.getByRole('tablist', { name: 'Vues de l’activité' })).toBeVisible();
   await page.keyboard.press('Meta+,');
   await expect(page.getByRole('tablist', { name: 'Vues des réglages' })).toBeVisible();
@@ -197,7 +200,7 @@ try {
     await page.setViewportSize({ width, height: 680 });
     await expect(
       page.getByRole('navigation', { name: 'Navigation principale' }).getByRole('button'),
-    ).toHaveCount(6);
+    ).toHaveCount(7);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
       true,
     );
@@ -291,7 +294,7 @@ try {
   await factsPage.close();
   expect(errors).toEqual([]);
   console.log(
-    'Navigation verified: six groups, seventeen deep links, contextual tabs, history, remembered tabs, shortcuts and both languages.',
+    'Navigation verified: seven groups, eighteen deep links, contextual tabs, history, remembered tabs, shortcuts and both languages.',
   );
 } finally {
   await browser?.close();

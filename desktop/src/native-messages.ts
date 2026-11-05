@@ -6,6 +6,24 @@ import type { Confirmation, Row, Snapshot } from './types';
 // Seuls les champs système du pont sont localisés. Le contenu des documents, les noms,
 // les requêtes, les identifiants et le texte à retaper restent intacts.
 const exact: Record<string, string> = {
+  'Actualisez la liste des sources.': 'Refresh the source list.',
+  'Catalogue de sources incomplet ; actualisez la liste.':
+    'The source catalog is incomplete. Refresh the list.',
+  'Une collecte est en cours dans ce dossier.': 'A collection is in progress in this folder.',
+  'Source modifiée pendant sa lecture ; actualisez la vue.':
+    'The source changed while it was being read. Refresh the view.',
+  'Les sources ont changé ; préparez un nouvel aperçu.':
+    'The sources changed. Prepare a new preview.',
+  'Réglages des modèles invalides.': 'Invalid model settings.',
+  'Serveur Hindsight 1.2.0 requis pour ces réglages de décision.':
+    'Hindsight server 1.2.0 is required for these decision settings.',
+  'Les réglages ont changé. Actualisez avant de réessayer.':
+    'Settings have changed. Refresh before trying again.',
+  'Ce réglage doit être modifié dans les options avancées.':
+    'This setting must be changed in advanced options.',
+  "Valeur d'activation invalide.": 'Invalid activation value.',
+  'Fournisseur de décision inconnu.': 'Unknown decision provider.',
+  'Nom de modèle invalide.': 'Invalid model name.',
   "L'adresse du serveur enregistrée a été refusée. Vérifiez son adresse dans les réglages ; le serveur local est utilisé en attendant.":
     'The saved server address was rejected. Check it in Settings; the local server is used in the meantime.',
   Créer: 'Create',
@@ -551,13 +569,18 @@ export function localizeConfirmation(confirmation: Confirmation): Confirmation {
 export function localizeNativeSnapshot(snapshot: Snapshot): Snapshot {
   if (getLanguage() !== 'en') return snapshot;
   const data: Row = { ...snapshot.data };
-  if (snapshot.section === 'server') {
+  if (snapshot.section === 'server' || snapshot.section === 'model-settings') {
     const text = (value: unknown) => (typeof value === 'string' ? nativeCatalogText(value) : value);
     const fields = (items: Row[]) =>
       items.map((field) => ({
         ...field,
         label: text(field.label),
         help: text(field.help),
+      }));
+    if (Array.isArray(data.providerChoices))
+      data.providerChoices = data.providerChoices.map((choice: Row) => ({
+        ...choice,
+        title: choice.title === choice.id ? choice.title : text(choice.title),
       }));
     if (Array.isArray(data.roles))
       data.roles = data.roles.map((role: Row) => ({

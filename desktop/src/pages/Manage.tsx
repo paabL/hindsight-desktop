@@ -12,7 +12,6 @@ import {
   FolderOpen,
   HardDrive,
   Layers3,
-  LogIn,
   Pause,
   Play,
   Plus,
@@ -42,6 +41,13 @@ import {
   number,
 } from '../ui';
 import { saveExport } from '../transport';
+import {
+  chooseProvider,
+  modelOptions,
+  providerOptions,
+  visibleRoleFields,
+  isBooleanField,
+} from '../model-field-options';
 
 const memoryFields = {
   retainMission: 'retain_mission',
@@ -1101,19 +1107,29 @@ function HindsightModels({ models, run, busy }: Pick<PageProps, 'run' | 'busy'> 
   );
 }
 
-export function ServerSettings({ data, run, busy, notify }: PageProps) {
+export function ServerSettings({ data, run, busy, notify, navigate }: PageProps) {
   const { t } = useI18n();
   const [scriptPath, setScriptPath] = useState('');
   const [role, setRole] = useState<Row | null>(null);
   const [fields, setFields] = useState<Row>({});
+  const [customModels, setCustomModels] = useState<Set<string>>(new Set());
+  const [modelToolsOpen, setModelToolsOpen] = useState(false);
   const service = data.service || {};
   async function saveRole() {
-    for (const [name, value] of Object.entries(fields)) {
-      if (name.endsWith('_PROVIDER'))
+    // Changing provider can reset the model: apply explicit model choices afterwards.
+    for (const [name, value] of Object.entries(fields))
+      if (
+        role?.isModelRole &&
+        name === role.fields.find((field: Row) => field.name.endsWith('_PROVIDER'))?.name
+      )
         await run('server.provider', { role: role?.id, provider: value });
-      else if (!(
-        value === '' && role?.fields.some((field: Row) => field.name === name && field.secret)
-      ))
+    for (const [name, value] of Object.entries(fields)) {
+      if (
+        role?.isModelRole &&
+        name === role.fields.find((field: Row) => field.name.endsWith('_PROVIDER'))?.name
+      )
+        continue;
+      if (!(value === '' && role?.fields.some((field: Row) => field.name === name && field.secret)))
         await run('server.field', { name, value });
     }
     setRole(null);
@@ -1124,9 +1140,14 @@ export function ServerSettings({ data, run, busy, notify }: PageProps) {
         eyebrow={t('Le moteur de votre mémoire', 'The engine behind your memory')}
         title={t('Serveur & modèles', 'Server & models')}
         description={t(
-          'Vérifiez la connexion et choisissez les modèles adaptés à chaque usage.',
-          'Check the connection and choose the right models for each task.',
+          'Gérez les fournisseurs, les modèles installés et la connexion au serveur.',
+          'Manage providers, installed models and the server connection.',
         )}
+        actions={
+          <Button icon={Sparkles} onClick={() => navigate('model-settings')}>
+            {t('Choix rapide des modèles', 'Quick model selection')}
+          </Button>
+        }
       />
       <section className="card service-card">
         <div className="service-identity">
@@ -1223,8 +1244,11 @@ export function ServerSettings({ data, run, busy, notify }: PageProps) {
         />
         <div className="account-rows">
           {(data.accounts || []).map((account: Row) => (
-            <div key={account.id}>
-              <LogIn size={18} />
+            <div
+              key={account.id}
+              data-state={account.state || (account.connected ? 'connected' : 'unknown')}
+            >
+              <span className="account-status-dot" aria-hidden="true" />
               <div>
                 <strong>{account.title}</strong>
                 <p>{account.status}</p>
@@ -1252,7 +1276,7 @@ export function ServerSettings({ data, run, busy, notify }: PageProps) {
                   onClick={() => void run('account.connect', { account: account.id })}
                 >
                   {' '}
-                  {t('Se connecter', 'Connect')}
+                  {account.connected ? t('Reconnecter', 'Reconnect') : t('Se connecter', 'Connect')}
                 </Button>
               )}
             </div>
@@ -1260,9 +1284,22 @@ export function ServerSettings({ data, run, busy, notify }: PageProps) {
         </div>
       </section>
       {data.hindsightModels && (
-        <HindsightModels models={data.hindsightModels} run={run} busy={busy} />
+        <details
+          className="advanced-details"
+          data-model-tools
+          open={modelToolsOpen}
+          onToggle={(e) => setModelToolsOpen(e.currentTarget.open)}
+        >
+          <summary>
+            {t('Installation et services des modèles', 'Model installation and services')}
+          </summary>
+          <HindsightModels models={data.hindsightModels} run={run} busy={busy} />
+        </details>
       )}
-      <section>
+      <details className="card advanced-details" open>
+        <summary>
+          {t('Tous les rôles et réglages avancés', 'All roles and advanced settings')}
+        </summary>
         <div className="section-heading">
           <div>
             <h2>{t('Un modèle pour chaque usage', 'A model for each task')}</h2>
@@ -1287,6 +1324,7 @@ export function ServerSettings({ data, run, busy, notify }: PageProps) {
               onClick={() => {
                 setRole(item);
                 setFields({});
+                setCustomModels(new Set());
               }}
             >
               <span className="role-icon">
@@ -1313,7 +1351,7 @@ export function ServerSettings({ data, run, busy, notify }: PageProps) {
             )}
           />
         )}
-      </section>
+      </details>
       {data.hasChanges && (
         <section className="card settings-card">
           <CardHeader
@@ -1404,7 +1442,7 @@ export function ServerSettings({ data, run, busy, notify }: PageProps) {
         </div>
       </details>
       {role && (
-        <Modal title={role.title} subtitle={role.effective} onClose={() => setRole(null)}>
+        <Modal title={role.title} onClose={() => setRole(null)}>
           <form
             className="form-stack"
             onSubmit={(e) => {
@@ -1412,52 +1450,90 @@ export function ServerSettings({ data, run, busy, notify }: PageProps) {
               void saveRole();
             }}
           >
-            {role.fields.map((field: Row) => (
+            {visibleRoleFields(role, fields, data).map((field: Row) => (
               <label key={field.name}>
                 {field.label}
                 {field.secret && <Badge>Secret</Badge>}
                 {/PROVIDER$/.test(field.name) ? (
-                  <>
-                    <input
-                      list="providers"
-                      value={fields[field.name] ?? field.value ?? ''}
-                      onChange={(e) =>
-                        setFields((old) => ({ ...old, [field.name]: e.target.value }))
-                      }
-                    />
-                    <datalist id="providers">
-                      {[
-                        'openai-codex',
-                        'claude-code',
-                        'gemini',
-                        'openai',
-                        'anthropic',
-                        'ollama',
-                      ].map((provider) => (
-                        <option value={provider} key={provider} />
-                      ))}
-                    </datalist>
-                  </>
+                  <select
+                    aria-label={field.label}
+                    value={fields[field.name] ?? field.value ?? ''}
+                    onChange={(e) => {
+                      setCustomModels((old) => {
+                        const next = new Set(old);
+                        next.delete(field.name.replace(/PROVIDER$/, 'MODEL'));
+                        return next;
+                      });
+                      setFields((old) => chooseProvider(role, field, e.target.value, old, data));
+                    }}
+                  >
+                    <option value="">{t('Hériter des réglages', 'Inherit settings')}</option>
+                    {providerOptions(role, field, data).map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.title}
+                      </option>
+                    ))}
+                  </select>
+                ) : isBooleanField(field) ? (
+                  <select
+                    aria-label={field.label}
+                    value={fields[field.name] ?? field.value ?? ''}
+                    onChange={(e) => setFields((old) => ({ ...old, [field.name]: e.target.value }))}
+                  >
+                    <option value="">{t('Défaut du serveur', 'Server default')}</option>
+                    <option value="true">{t('Activé', 'Enabled')}</option>
+                    <option value="false">{t('Désactivé', 'Disabled')}</option>
+                    {field.value && !['true', 'false'].includes(field.value) && (
+                      <option value={field.value}>{field.value}</option>
+                    )}
+                  </select>
                 ) : /MODEL$/.test(field.name) ? (
                   <>
-                    <input
-                      list={`models-${role.id}`}
-                      value={fields[field.name] ?? field.value ?? ''}
-                      placeholder={t('Hérite du serveur', 'Inherits from server')}
-                      onChange={(e) =>
-                        setFields((old) => ({ ...old, [field.name]: e.target.value }))
+                    <select
+                      aria-label={field.label}
+                      value={
+                        customModels.has(field.name)
+                          ? '__custom_model__'
+                          : (fields[field.name] ?? field.value ?? '')
                       }
-                    />
-                    <datalist id={`models-${role.id}`}>
-                      {role.models?.map((model: Row) => (
-                        <option value={model.id || model.value} key={model.id || model.value}>
-                          {model.title || model.label || model.name}
+                      onChange={(e) => {
+                        if (e.target.value === '__custom_model__')
+                          setCustomModels((old) => new Set(old).add(field.name));
+                        else {
+                          setCustomModels((old) => {
+                            const next = new Set(old);
+                            next.delete(field.name);
+                            return next;
+                          });
+                          setFields((old) => ({ ...old, [field.name]: e.target.value }));
+                        }
+                      }}
+                    >
+                      <option value="">
+                        {t('Hérité / défaut du fournisseur', 'Inherited / provider default')}
+                      </option>
+                      {modelOptions(role, field, fields, data).map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.title}
                         </option>
                       ))}
-                    </datalist>
+                      <option value="__custom_model__">{t('Autre modèle…', 'Other model…')}</option>
+                    </select>
+                    {customModels.has(field.name) && (
+                      <input
+                        aria-label={`${field.label} · ${t('Nom personnalisé', 'Custom name')}`}
+                        value={fields[field.name] ?? field.value ?? ''}
+                        autoComplete="off"
+                        placeholder={t('Nom exact du modèle', 'Exact model name')}
+                        onChange={(e) =>
+                          setFields((old) => ({ ...old, [field.name]: e.target.value }))
+                        }
+                      />
+                    )}
                   </>
                 ) : (
                   <input
+                    aria-label={field.label}
                     type={field.secret ? 'password' : 'text'}
                     value={fields[field.name] ?? field.value ?? ''}
                     autoComplete="off"

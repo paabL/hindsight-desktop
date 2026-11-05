@@ -12,7 +12,17 @@ public final class MemoryWorkspace {
     private let client: () -> HindsightClient
     private let bank: () -> String?
     private var documents: [String: DocumentListItem] = [:]
-    private var texts: [String: String] = [:]
+    private var readable: Set<String> = []
+    private struct SourceDigest {
+        let url: URL
+        let version: FileVersion
+        let hash: String
+        let boardID: String?
+        let managedPath: String?
+    }
+    private var sourceDigests: [String: SourceDigest] = [:]
+    private var catalogVersion: (url: URL, version: FileVersion)?
+    public private(set) var catalog: [String: Any]?
     private var targets: [String: String] = [:]
     private var policy: [String: Any] = [:] { didSet { policyIndex = PolicyIndex(policy) } }
     /// Politique indexée une fois par changement : `buildRows` l'interroge pour chaque alias de chaque source.
@@ -27,7 +37,20 @@ public final class MemoryWorkspace {
     private var repairOldTracking = false
     private var loadedBank: String?
     private var loadedRoot: String?
+    private var loadedServer: URL?
+    private var refreshID = UUID()
+    public private(set) var revision = UUID()
+    public private(set) var previousRevision: UUID?
+    public private(set) var changedRecords: [[String: Any]] = []
     public var pauseGate: PauseGate?
+
+    public func invalidate() {
+        refreshID = UUID(); revision = UUID()
+        previousRevision = nil; changedRecords = []
+        documents = [:]; records = []; readable = []; targets = [:]
+        comparisonAvailable = false; loadedBank = nil; loadedRoot = nil; loadedServer = nil
+        confirmation = nil; error = nil; message = nil
+    }
 
     public init(folder: MemoryFolderViewModel, client: @escaping () -> HindsightClient, bank: @escaping () -> String?) {
         self.folder = folder; self.client = client; self.bank = bank
@@ -89,6 +112,7 @@ public final class MemoryWorkspace {
     /// Reconcile old false failures from the exact saved submissions, never by resending them.
     private func recoverTracking(_ bank: String) async throws -> [String: OperationStatusResponse] {
         guard repairOldTracking, let root = folder.collection, let ledger = ledgerURL else { return [:] }
+        let currentClient = client(), expectedRoot = loadedRoot
         let directory = root.appendingPathComponent(".memory-operations")
         let packets = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
         let sorted = packets.sorted { ((try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast) > ((try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast) }
@@ -101,8 +125,9 @@ public final class MemoryWorkspace {
                   let data = try? Data(contentsOf: url), let packet = try? JSONDecoder().decode(RetainRequest.self, from: data), packet.operationId == id else { continue }
             let affected = packet.items.filter { item in item.documentId.map { failures[$0] != nil && operations[$0] == nil && !restored.contains($0) } ?? false }
             guard !affected.isEmpty else { continue }
-            guard let status = try? await client().operation(bank, id: id) else { retryRecovery = true; continue }
-            guard self.bank() == bank, loadedRoot == folder.repository?.path else { throw failure("Le contexte a changé ; actualisez la vue.") }
+            guard let status = try? await currentClient.operation(bank, id: id) else { retryRecovery = true; continue }
+            guard !Task.isCancelled, self.bank() == bank, expectedRoot == folder.repository?.path,
+                  client().baseURL == currentClient.baseURL else { throw failure("Le contexte a changé ; actualisez la vue.") }
             let backup = root.appendingPathComponent(".memory-workspace.pre-tracking-v2.json")
             if !FileManager.default.fileExists(atPath: backup.path) { try FileManager.default.copyItem(at: ledger, to: backup) }
             statuses[id] = status
@@ -174,57 +199,117 @@ public final class MemoryWorkspace {
         if policyIndex.excluded.matches(repo: repo, path: path, original: original) { return contained }
         return nil
     }
-    private func sourceText(_ record: [String: Any], root: URL?) throws -> String {
+    private func sourceURL(_ record: [String: Any], root: URL?) throws -> URL {
         guard let root, let files = record["files"] as? [String: String] else { throw failure("Source locale indisponible.") }
         let chosen = files["document.md"] ?? files.keys.sorted().first(where: { ["md", "tex", "txt", "markdown"].contains(($0 as NSString).pathExtension.lowercased()) }).flatMap { files[$0] }
         guard let relative = chosen else { throw failure("Une source TeX ou Markdown est requise pour ce document.") }
         let url = root.appendingPathComponent(relative).standardizedFileURL.resolvingSymlinksInPath()
         guard !relative.hasPrefix("/"), !relative.split(separator: "/").contains(".."), url.path.hasPrefix(root.path + "/"),
               try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else { throw failure("Source hors du dossier commun.") }
-        return try String(contentsOf: url, encoding: .utf8)
+        return url
     }
-    private func originalKey(_ record: [String: Any], text: String?) -> String? {
+    private func sourceDigest(_ record: [String: Any], root: URL?) throws -> SourceDigest {
+        let url = try sourceURL(record, root: root)
+        let version = try FileVersion(url)
+        let key = record["id"] as? String ?? url.path
+        let managedPath = (record["context"] as? [String: Any])?["managed_path"] as? String
+        if let cached = sourceDigests[key], cached.url == url, cached.version == version, cached.managedPath == managedPath { return cached }
+        let text = try String(contentsOf: url, encoding: .utf8)
+        guard try FileVersion(url) == version else { throw failure("Source modifiée pendant sa lecture ; actualisez la vue.") }
+        var boardID: String?
+        if ((record["context"] as? [String: Any])?["managed_path"] as? String)?.hasPrefix("board/") == true,
+           let range = text.range(of: "(?m)^id: *([^\\n]+)", options: .regularExpression) {
+            boardID = String(text[range]).dropFirst(3).trimmingCharacters(in: .whitespaces)
+        }
+        let digest = SourceDigest(url: url, version: version, hash: SHA256.hex(Data(text.utf8)), boardID: boardID, managedPath: managedPath)
+        sourceDigests[key] = digest
+        return digest
+    }
+    private func readTexts(_ rows: [[String: Any]]) throws -> [String: String] {
+        let root = folder.collection?.resolvingSymlinksInPath()
+        return try Dictionary(uniqueKeysWithValues: rows.compactMap { row in
+            guard let id = row["id"] as? String else { return nil }
+            return (id, try String(contentsOf: sourceURL(row, root: root), encoding: .utf8))
+        })
+    }
+    private func originalKey(_ record: [String: Any], boardID: String?) -> String? {
         let context = record["context"] as? [String: Any] ?? [:]
         guard let path = context["managed_path"] as? String else { return nil }
         let repo = (record["repository"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? folder.repository?.lastPathComponent ?? ""
-        if path.hasPrefix("board/"), let text, let range = text.range(of: "(?m)^id: *([^\\n]+)", options: .regularExpression) {
-            let id = String(text[range]).dropFirst(3).trimmingCharacters(in: .whitespaces)
+        if path.hasPrefix("board/"), let id = boardID {
             if path.contains("/cards/") { return "card-" + id }
             if path.hasSuffix("chantier.md") { return "chantier-" + id }
         }
         if path == "board/project.md" { return "board-project" }
         return "doc:\(repo):\(path)"
     }
+    /// First paint uses only the manifest. No source is actionable until comparison finishes.
+    public func prime() {
+        if !records.isEmpty, loadedBank == bank(), loadedRoot == folder.repository?.path,
+           loadedServer == client().baseURL { return }
+        invalidate()
+        folder.reload()
+        do {
+            try loadCatalog()
+            records = (catalog?["records"] as? [[String: Any]] ?? []).compactMap { row in
+                guard let id = row["id"] as? String else { return nil }
+                var row = row
+                row["memory"] = ["state": "unknown", "enabled": false, "locked": true, "stored": false,
+                                 "can_remove": false, "document_id": "source:" + id, "reason": "", "hash": ""]
+                return row
+            }
+            revision = UUID()
+            loadedBank = bank(); loadedRoot = folder.repository?.path; loadedServer = client().baseURL
+        } catch {
+            catalog = nil; catalogVersion = nil
+            self.error = "Catalogue illisible : \(error.localizedDescription)"
+        }
+    }
+    private func loadCatalog() throws {
+        guard let url = folder.catalogURL else { catalog = nil; catalogVersion = nil; return }
+        let version = try FileVersion(url)
+        if catalogVersion?.url != url || catalogVersion?.version != version {
+            catalog = try decode(url)
+            catalogVersion = try FileVersion(url) == version ? (url, version) : nil
+        }
+    }
     public func refresh() async {
-        confirmation = nil; error = nil; comparisonAvailable = false; folder.reload()
-        if loadedBank != bank() || loadedRoot != folder.repository?.path { documents = [:]; records = []; texts = [:]; targets = [:] }
-        loadedBank = bank(); loadedRoot = folder.repository?.path
+        let token = UUID(); refreshID = token
+        let currentClient = client(), currentBank = bank(), currentRoot = folder.repository?.path
+        func isCurrent() -> Bool {
+            !Task.isCancelled && refreshID == token && bank() == currentBank
+                && folder.repository?.path == currentRoot && client().baseURL == currentClient.baseURL
+        }
+        confirmation = nil; error = nil; folder.reload()
+        if loadedBank != currentBank || loadedRoot != currentRoot || loadedServer != currentClient.baseURL { documents = [:]; records = []; readable = []; targets = [:]; comparisonAvailable = false }
+        loadedBank = currentBank; loadedRoot = currentRoot; loadedServer = currentClient.baseURL
         do {
             try loadPolicy()
             var fresh: [String: DocumentListItem] = [:]
-            if let bank = bank() {
+            if let bank = currentBank {
                 var offset = 0
                 while true {
                     // Le coût d'une page est surtout fixe côté serveur : 1 000 documents par requête au lieu de 100.
-                    let page = try await client().listDocuments(bank, limit: 1000, offset: offset)
-                    guard self.bank() == bank, loadedRoot == folder.repository?.path else { return }
+                    let page = try await currentClient.listDocuments(bank, limit: 1000, offset: offset)
+                    guard isCurrent() else { return }
                     for doc in page.items { fresh[doc.id] = doc }
                     offset += page.items.count
                     if offset >= page.total { break }
                     guard !page.items.isEmpty else { throw failure("Inventaire Hindsight incomplet.") }
                 }
             } else { error = "Connectez Hindsight pour comparer les versions." }
-            documents = fresh; comparisonAvailable = bank() != nil
-            if let bank = bank() {
+            documents = fresh; comparisonAvailable = currentBank != nil
+            if let bank = currentBank {
                 let wasRepairing = repairOldTracking
                 let recovered = try await recoverTracking(bank)
+                guard isCurrent() else { return }
                 let hadTracking = !operations.isEmpty
                 var checkedQueue = false
                 var retainWork: Bool?
                 for id in Set(operations.values) {
                     let op: OperationStatusResponse?
-                    if let cached = recovered[id] { op = cached } else { op = try? await client().operation(bank, id: id) }
-                    guard self.bank() == bank, loadedRoot == folder.repository?.path else { return }
+                    if let cached = recovered[id] { op = cached } else { op = try? await currentClient.operation(bank, id: id) }
+                    guard isCurrent() else { return }
                     guard let op, ["failed", "cancelled", "completed"].contains(op.status) else { continue }
                     let childFailed = op.childOperations?.contains { ["failed", "cancelled"].contains($0.status) } == true
                     let childActive = op.childOperations?.contains { ["pending", "processing"].contains($0.status) } == true
@@ -235,6 +320,7 @@ public final class MemoryWorkspace {
                         if !failed && childActive { continue }
                         if !failed && parent && !matches {
                             if !checkedQueue { retainWork = try? await hasRetainWork(bank); checkedQueue = true }
+                            guard isCurrent() else { return }
                             // A completed batch dispatcher is not a completed extraction. If the
                             // server cannot expose child status, wait until its retain queue drains.
                             if retainWork != false { continue }
@@ -246,23 +332,33 @@ public final class MemoryWorkspace {
                 }
                 if hadTracking || !recovered.isEmpty || wasRepairing { try persist() }
             }
-        } catch { self.error = error.localizedDescription; documents = [:]; comparisonAvailable = false }
+        } catch {
+            guard isCurrent() else { return }
+            self.error = error.localizedDescription; documents = [:]; comparisonAvailable = false
+        }
+        guard isCurrent() else { return }
         buildRows()
     }
     private func buildRows() {
-        records = []; texts = [:]; targets = [:]
-        let catalog = folder.catalogURL.flatMap { try? decode($0) } ?? [:]
-        let raw = catalog["records"] as? [[String: Any]] ?? []
+        let oldRevision = revision
+        let previous = Dictionary(records.compactMap { row in (row["id"] as? String).map { ($0, row) } }, uniquingKeysWith: { _, last in last })
+        records = []; readable = []; targets = [:]
+        do {
+            try loadCatalog()
+        } catch { self.error = "Catalogue illisible : \(error.localizedDescription)"; catalog = nil; catalogVersion = nil }
+        let raw = catalog?["records"] as? [[String: Any]] ?? []
+        let ids = Set(raw.compactMap { $0["id"] as? String })
+        sourceDigests = sourceDigests.filter { ids.contains($0.key) }
         var claimed = Set<String>()
         let root = folder.collection?.resolvingSymlinksInPath()
         // Index des documents, dans l'ordre de parcours de `documents` : le premier porteur de chaque
         // `source_record_id` et le suffixe « /dépôt/chemin » de chacun, au lieu de deux parcours par source.
         var bySourceRecord: [String: String] = [:]
-        var pathSuffixes: [(id: String, suffix: String)] = []
+        var pathSuffixes: [String: [String]] = [:]
         for doc in documents.values {
             if case .string(let source)? = doc.documentMetadata?["source_record_id"], bySourceRecord[source] == nil { bySourceRecord[source] = doc.id }
             if let repo = doc.documentMetadata?["repo"]?.stringValue, let path = doc.documentMetadata?["path"]?.stringValue, !repo.isEmpty, !path.isEmpty {
-                pathSuffixes.append((doc.id, ("/" + repo + "/" + path).precomposedStringWithCanonicalMapping))
+                pathSuffixes[("/" + repo + "/" + path).precomposedStringWithCanonicalMapping, default: []].append(doc.id)
             }
         }
         for var record in raw {
@@ -271,13 +367,19 @@ public final class MemoryWorkspace {
             let path = context["managed_path"] as? String ?? ""
             let repo = (record["repository"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? folder.repository?.lastPathComponent ?? ""
             var readError: String?
-            let text: String?
-            do { text = try sourceText(record, root: root) } catch { text = nil; readError = error.localizedDescription }
+            let digest: SourceDigest?
+            do { digest = try sourceDigest(record, root: root) } catch { digest = nil; readError = error.localizedDescription }
             let canonical = "source:" + id
-            let aliases = [bindings[id], canonical, id, originalKey(record, text: text)].compactMap { $0 }
+            let aliases = [bindings[id], canonical, id, originalKey(record, boardID: digest?.boardID)].compactMap { $0 }
             let original = (context["original_path"] as? String)?.precomposedStringWithCanonicalMapping
-            let byPath = original.map { original in pathSuffixes.filter { original.hasSuffix($0.suffix) } } ?? []
-            let matched = aliases.first(where: { documents[$0] != nil }) ?? bySourceRecord[id] ?? (byPath.count == 1 ? byPath.first?.id : nil)
+            let byAlias = aliases.first(where: { documents[$0] != nil }) ?? bySourceRecord[id]
+            var byPath: [String] = []
+            if byAlias == nil, let original {
+                for index in original.indices where original[index] == "/" {
+                    byPath.append(contentsOf: pathSuffixes[String(original[index...])] ?? [])
+                }
+            }
+            let matched = byAlias ?? (byPath.count == 1 ? byPath.first : nil)
             let target = matched ?? bindings[id] ?? canonical
             var policyAliases = aliases + [target]
             if record["kind"] as? String == "conversations", let source = record["source_id"] as? String,
@@ -289,8 +391,8 @@ public final class MemoryWorkspace {
             let hold = policyAliases.compactMap { policyReason(id: $0, repo: repo, path: path, original: original) }.first ?? (gitHeld ? "Commit déjà classé hors mémoire" : nil)
             let aside = ["internal_review", "empty_export"].contains(context["conversation_kind"] as? String ?? "")
             let ownExclusion = policyIndex.isWorkspaceExclusion(target)
-            let enabled = hold == nil && text != nil && (preferences[id] ?? !aside)
-            let hash = text.map { SHA256.hex(Data($0.utf8)) }
+            let enabled = hold == nil && digest != nil && (preferences[id] ?? !aside)
+            let hash = digest?.hash
             var state = !enabled ? "excluded" : documents[target] == nil ? "new" : documents[target]?.contentHash == hash ? "current" : "modified"
             if enabled && failures[target] != nil { state = "error" }
             if enabled && !comparisonAvailable { state = "unknown" }
@@ -301,8 +403,8 @@ public final class MemoryWorkspace {
             }
             if let matched { claimed.insert(matched) }
             record["memory"] = ["state": state, "enabled": enabled, "document_id": target, "stored": matched != nil,
-                                "can_remove": hold == nil || ownExclusion, "locked": (hold != nil && !ownExclusion) || text == nil, "reason": hold ?? readError ?? failures[target] ?? "", "hash": hash ?? ""]
-            records.append(record); texts[id] = text; targets[id] = target
+                                "can_remove": hold == nil || ownExclusion, "locked": (hold != nil && !ownExclusion) || digest == nil, "reason": hold ?? readError ?? failures[target] ?? "", "hash": hash ?? ""]
+            records.append(record); if digest != nil { readable.insert(id) }; targets[id] = target
         }
         // Sources imported by other tools stay visible; do not infer that their file disappeared.
         for doc in documents.values.sorted(by: { $0.id < $1.id }) where !claimed.contains(doc.id) {
@@ -312,11 +414,16 @@ public final class MemoryWorkspace {
                             "memory": ["state": hold == nil ? (doc.documentMetadata?["source_record_id"] == nil ? "unlinked" : "missing") : "excluded", "enabled": false, "stored": true, "can_remove": hold == nil || policyIndex.isWorkspaceExclusion(doc.id), "locked": hold != nil && !policyIndex.isWorkspaceExclusion(doc.id), "document_id": doc.id, "reason": hold ?? "Source à relier au catalogue"]])
             targets[id] = doc.id
         }
+        changedRecords = records.filter { row in
+            guard let id = row["id"] as? String, let old = previous[id] else { return true }
+            return !NSDictionary(dictionary: old).isEqual(to: row)
+        }
+        previousRevision = oldRevision; revision = UUID()
     }
     public func setEnabled(_ id: String, enabled: Bool) throws { try setEnabled([id], enabled: enabled) }
     public func setEnabled(_ ids: [String], enabled: Bool) throws {
         for id in ids {
-            guard let row = records.first(where: { $0["id"] as? String == id }), let state = row["memory"] as? [String: Any], state["locked"] as? Bool != true, texts[id] != nil else { throw failure("Une source nécessite une revue ou une version texte.") }
+            guard let row = records.first(where: { $0["id"] as? String == id }), let state = row["memory"] as? [String: Any], state["locked"] as? Bool != true, readable.contains(id) else { throw failure("Une source nécessite une revue ou une version texte.") }
         }
         confirmation = nil
         if enabled, let url = policyURL, FileManager.default.fileExists(atPath: url.path) {
@@ -332,7 +439,7 @@ public final class MemoryWorkspace {
         try persist(); buildRows()
     }
     public func link(_ id: String, document: String) throws {
-        guard texts[id] != nil, let row = records.first(where: { $0["id"] as? String == id }),
+        guard readable.contains(id), let row = records.first(where: { $0["id"] as? String == id }),
               let state = row["memory"] as? [String: Any], state["locked"] as? Bool != true,
               state["stored"] as? Bool != true, documents[document] != nil,
               records.contains(where: { $0["id"] as? String == "bank:" + document && ($0["memory"] as? [String: Any])?["locked"] as? Bool != true })
@@ -354,10 +461,10 @@ public final class MemoryWorkspace {
     public func refreshSources() async {
         confirmation = nil; message = nil; error = nil
         await folder.collectSources()
-        if loadedBank != bank() || loadedRoot != folder.repository?.path {
+        if loadedBank != bank() || loadedRoot != folder.repository?.path || loadedServer != client().baseURL {
             documents = [:]; comparisonAvailable = false
         }
-        loadedBank = bank(); loadedRoot = folder.repository?.path
+        loadedBank = bank(); loadedRoot = folder.repository?.path; loadedServer = client().baseURL
         do { try loadPolicy() } catch { self.error = error.localizedDescription }
         if let collectionError = folder.error { error = collectionError }
         buildRows()
@@ -380,6 +487,12 @@ public final class MemoryWorkspace {
         }
         guard !records.contains(where: { ($0["memory"] as? [String: Any])?["state"] as? String == "queued" }) else { error = "Un envoi est encore en cours. Actualisez après son traitement."; return }
         guard !selected.isEmpty else { message = "Toutes les sources activées sont à jour."; return }
+        let texts: [String: String]
+        do { texts = try readTexts(selected) } catch { self.error = error.localizedDescription; return }
+        guard selected.allSatisfy({ row in
+            guard let id = row["id"] as? String, let text = texts[id] else { return false }
+            return SHA256.hex(Data(text.utf8)) == (row["memory"] as? [String: Any])?["hash"] as? String
+        }) else { error = "Les sources ont changé ; préparez un nouvel aperçu."; return }
         let frozenTexts = texts, frozenTargets = targets, frozenPreferences = preferences
         let frozenPolicy = try? JSONSerialization.data(withJSONObject: policy, options: .sortedKeys)
         let frozenRows = selected.map { try? JSONSerialization.data(withJSONObject: $0, options: .sortedKeys) }
@@ -396,13 +509,14 @@ public final class MemoryWorkspace {
             guard self.bank() == bank, self.folder.repository == root else { self.error = "Le contexte a changé ; préparez un nouvel aperçu."; return }
             if let reason = self.pauseGate?(bank) { self.error = reason; return }
             await self.refresh()
+            let currentTexts = try? self.readTexts(selected)
             guard self.error == nil, self.preferences == frozenPreferences,
                   (try? JSONSerialization.data(withJSONObject: self.policy, options: .sortedKeys)) == frozenPolicy,
                   selected.enumerated().allSatisfy({ index, row in
                     let current = self.records.first(where: { $0["id"] as? String == row["id"] as? String })
                     return current.flatMap { try? JSONSerialization.data(withJSONObject: $0, options: .sortedKeys) } == frozenRows[index]
                   }), self.documents.mapValues(\.contentHash) == baseline,
-                  selected.allSatisfy({ row in let id = row["id"] as? String ?? ""; return self.texts[id] == frozenTexts[id] && self.targets[id] == frozenTargets[id] && (self.records.first(where: { $0["id"] as? String == id })?["memory"] as? [String: Any])?["enabled"] as? Bool == true }) else {
+                  selected.allSatisfy({ row in let id = row["id"] as? String ?? ""; return currentTexts?[id] == frozenTexts[id] && self.targets[id] == frozenTargets[id] && (self.records.first(where: { $0["id"] as? String == id })?["memory"] as? [String: Any])?["enabled"] as? Bool == true }) else {
                 self.error = "Les sources, la sélection ou la banque ont changé. Préparez un nouvel aperçu."; return
             }
             do {

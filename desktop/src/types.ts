@@ -2,6 +2,7 @@ export type Row = Record<string, any>;
 export type Section =
   | 'sources'
   | 'models'
+  | 'model-settings'
   | 'search'
   | 'facts'
   | 'documents'

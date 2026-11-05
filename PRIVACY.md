@@ -9,6 +9,12 @@ Hindsight server you configure and does not host your memories.
 - **Local files.** Your selected memory folder contains source files, catalogs
   and upload state. Configured collectors may read conversations, repositories
   and documents. Review the preview before sending.
+- **Source browsing.** Opening the catalog reads its local manifest, then checks
+  files and the selected bank's document inventory. It does not run collectors or
+  upload sources. File fingerprints are cached in memory; full source texts are
+  reread for upload preparation and confirmation. **Refresh folder** explicitly
+  runs the configured collectors in the background; these may contact their own
+  source services.
 - **Uploads and queries.** The server receives the documents and queries needed
   for your requested actions. It may send them to its configured model
   providers, whose fees and retention policies apply. A local server does not

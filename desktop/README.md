@@ -9,7 +9,7 @@ The app uses **Tauri 2 + React / TypeScript** on macOS 15 or newer. React is the
 only frontend. The existing `HindsightCore` engine is reused through a private
 Swift bridge; the Rust shell provides the native connection and file dialogs.
 The interface offers English and French, light and dark themes. Overview is the
-initial view. Memory, Knowledge, Search, Sources and Activity are visible in the
+initial view. Memory, Knowledge, Search, Models, Sources and Activity are visible in the
 sidebar; contextual tabs organize related views, and Settings stays at the bottom.
 
 ## Development
@@ -46,6 +46,7 @@ opens explicitly labeled fictional data. Native file and server access uses Taur
 | Knowledge | Read, create, refresh and delete knowledge pages and mental models with confirmation |
 | Sources → Catalog | Local sources, version status, selection, collection and upload previews |
 | Search | Recall, exact text and confirmed reflect; filters and links to original documents |
+| Models | Direct model selectors, per-function decision switches, explanatory arrows and tooltips |
 | Memory → Documents | Stored text, facts, history, attachments, tags, scopes, reprocessing and deletion |
 | Sources → Tracked folders | File coverage, selection and confirmed uploads; automatic folder sync is suspended |
 | Activity → Processing | Queued and completed work, errors and confirmed processing controls |
@@ -107,7 +108,12 @@ file confinement and URL validation. Browser checks use fictional data without
 native access and write screenshots to `screenshots/`. They do not run real
 collection, consolidation, deletion, sign-in or service control.
 
-Run the Swift suite with `swift test` from the repository root.
+Run the Swift suite with `swift test --disable-sandbox -c release` from the repository root,
+especially after changes to caching or asynchronous work.
+
+`npm run docs:screenshots` regenerates the public images from the current frontend
+with fictional data and a mocked native host. It never connects to a user's bank
+or source folder. The regular rendering tests keep their captures in `screenshots/`.
 
 ## Updates
 
@@ -141,13 +147,22 @@ reads the chosen folder's catalog. Optional collection is driven by a separately
 `collect.py` and `projects.toml`. Filters cover project, repository, source type
 and text, including original identifiers and provenance.
 
+The manifest is displayed immediately with unchecked, locked source states.
+Inventory comparison then runs in the background. Reopening Sources reuses its
+displayed catalog while checking it again; initial display is not proof that the
+comparison has finished. `⌘R` refreshes this comparison without collecting.
+Loads and cached display data are scoped to server, bank and folder; late results
+from an old context cannot replace the new view.
+
 `internal_review` and `empty_export` records stay under **Separate archives**,
 collapsed by default. They are excluded from the project's active source count.
 A conversation title does not determine its classification. Filters also apply
 to these readable archives.
 
-**Refresh folder** runs collection and updates the local catalog without
-contacting Hindsight. Collection requires confirmation. Codex and Claude Code
+**Refresh folder** explicitly starts collection and updates the local catalog without
+contacting Hindsight. It runs in the background, with status and output available
+while the user navigates. Configured collectors may contact their own source services.
+Codex and Claude Code
 exports use Agent Dump; Hermes imports are separate. Source dates take priority
 over archive dates, and collection-date fallbacks are labeled.
 
@@ -191,3 +206,27 @@ new preview. Its queue must be readable and empty at preparation and confirmatio
 Folder uploads and Hermes imports also display their selection before approval.
 Automatic folder sync is suspended, including previously enabled settings.
 These protections do not govern other clients or direct Hindsight API calls.
+
+Catalog parsing and source fingerprints are cached using file identity, size,
+modification time and change time. Browsing does not retain every source's full
+text; upload preparation and confirmation reread the selected texts. Unchanged
+snapshots reuse the catalog, while incremental snapshots update changed rows,
+ordering and removals. See [Sources performance and validation](../docs/SOURCES-PERFORMANCE.md).
+
+## Model choices and account status
+
+The sidebar **Models** view and **Settings → Server & models** share the native
+launch-script draft. Quick selection supports Answer, Remember, Pages and Search;
+provider management, installation, sign-in and advanced fields stay in Settings.
+Saving uses the existing diff, confirmation and backup flow. Restarting is separate.
+
+Provider and Model dropdowns use the native catalog and configured identifiers;
+Codex can also use its local public model list. The advanced **Other model…**
+option allows an explicit custom identifier. Provider-specific fields appear only
+for the selected provider, and cancelling the dialog leaves the draft untouched.
+Account indicators use native state values: connected, disconnected, pending or
+unknown; localized status text remains alongside the color.
+
+The diagram explains roles on hover, keyboard focus and tap. Answer's return loop
+requests more evidence; Search ranking and Answer decisions are independent.
+Embeddings are read-only in the quick view. See the [model workflow guide](../docs/MODEL-SETTINGS.md).

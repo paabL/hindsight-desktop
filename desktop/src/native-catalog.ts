@@ -3,6 +3,20 @@ import type { Row } from './types';
 
 // Catalogue des seuls libellés fixes du serveur ; jamais appliqué aux valeurs ou aux journaux.
 const catalog: Record<string, string> = {
+  'Vide = héritage global ; none = désactivé': 'Empty = global inheritance; none = disabled',
+  'Modèle propre à cette opération': 'Model specific to this operation',
+  'URL propre à cette opération': 'URL specific to this operation',
+  'Clé propre à cette opération, masquée': 'Operation-specific key, hidden',
+  'Réponses : utiliser la décision': 'Answers: use decision model',
+  'Consolidation : utiliser la décision': 'Consolidation: use decision model',
+  'Pages : décision dans la réflexion': 'Pages: decisions during reflection',
+  'Pages : filtrage des nouveautés': 'Pages: filter new memories',
+  'true (défaut) / false ; une banque peut remplacer ce réglage':
+    'true (default) / false; a bank can override this setting',
+  'true (défaut) / false': 'true (default) / false',
+  'true (défaut) / false ; parcours de repli': 'true (default) / false; fallback workflow',
+  'true (défaut) / false ; actualisation incrémentale':
+    'true (default) / false; incremental refresh',
   'ChatGPT (connexion du serveur, 1.1.0)': 'ChatGPT (server sign-in, 1.1.0)',
   Fournisseur: 'Provider',
   'ex. claude-code, gemini, openai, anthropic, ollama…':
@@ -73,6 +87,13 @@ const catalog: Record<string, string> = {
   'Clé Gemini': 'Gemini key',
   'Dimensions Gemini': 'Gemini dimensions',
   'Modèle OpenAI': 'OpenAI model',
+  'Clé OpenAI': 'OpenAI key',
+  'Dimensions OpenAI': 'OpenAI dimensions',
+  'Modèle LiteLLM': 'LiteLLM model',
+  'Clé LiteLLM': 'LiteLLM key',
+  'Modèle Google': 'Google model',
+  'Projet Google': 'Google project',
+  'Clé du compte de service Google': 'Google service account key',
   'Modèle local': 'Local model',
   'Vide = BAAI/bge-small-en-v1.5 ; hindsight-ai/hs-embed-1 (384 dimensions, multilingue, sur CPU)':
     'Empty = BAAI/bge-small-en-v1.5; hindsight-ai/hs-embed-1 (384 dimensions, multilingual, on CPU)',
@@ -140,6 +161,16 @@ const catalog: Record<string, string> = {
 };
 
 export function nativeCatalogText(fr: string): string {
+  const operationField = /^(recall|reflect|consolidation) : (fournisseur|modèle|URL|clé)$/.exec(fr);
+  if (getLanguage() === 'en' && operationField) {
+    const labels: Record<string, string> = {
+      fournisseur: 'provider',
+      modèle: 'model',
+      URL: 'URL',
+      clé: 'key',
+    };
+    return `${operationField[1]}: ${labels[operationField[2]]}`;
+  }
   if (getLanguage() !== 'en') return fr;
   if (Object.hasOwn(catalog, fr)) return catalog[fr];
   const connected = /^Connecté à ([\s\S]+)$/.exec(fr);
@@ -211,7 +242,9 @@ export function nativeRoleEffective(role: Row, roles: Row[]): string {
   const base = suffix ? original.slice(0, -suffix.length) : original;
   const prefix = `${provider} · `;
   if (!base.startsWith(prefix)) return original;
-  const configuredModel = configuredValue(role, 'MODEL');
+  const configuredModel = ['reranker', 'embeddings'].includes(role.id)
+    ? null
+    : configuredValue(role, 'MODEL');
   const model =
     configuredModel ??
     (base.slice(prefix.length) === 'modèle par défaut'

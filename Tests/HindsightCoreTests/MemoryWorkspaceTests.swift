@@ -102,6 +102,63 @@ final class MemoryWorkspaceTests: XCTestCase {
         XCTAssertFalse(s.transport.requests.contains { $0.method == "POST" })
         XCTAssertTrue(s.vm.error?.contains("changé") == true)
     }
+    func testPrimingDisplaysManifestWithoutReadingSourcesOrClaimingAComparison() async throws {
+        let s = try setup()
+        try FileManager.default.removeItem(at: s.text)
+        s.vm.prime()
+        XCTAssertEqual(s.vm.records.count, 1)
+        XCTAssertEqual(state(s.vm)["state"] as? String, "unknown")
+        XCTAssertEqual(state(s.vm)["locked"] as? Bool, true)
+        XCTAssertEqual(state(s.vm)["enabled"] as? Bool, false)
+        XCTAssertEqual(state(s.vm)["hash"] as? String, "")
+        XCTAssertNil(s.vm.error)
+        XCTAssertTrue(s.transport.requests.isEmpty)
+        XCTAssertTrue(s.runner.calls.isEmpty)
+        await s.vm.refresh()
+        XCTAssertEqual(state(s.vm)["state"] as? String, "error")
+    }
+    func testCachedSourceDetectsSameSizeEditWithRestoredModificationDate() async throws {
+        let s = try setup()
+        await s.vm.refresh()
+        let original = try String(contentsOf: s.text, encoding: .utf8)
+        let oldHash = state(s.vm)["hash"] as? String
+        let modified = try s.text.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate!
+        let changed = original.replacingOccurrences(of: "Full", with: "True")
+        try Data(changed.utf8).write(to: s.text)
+        try FileManager.default.setAttributes([.modificationDate: modified], ofItemAtPath: s.text.path)
+        await s.vm.refresh()
+        XCTAssertNotEqual(state(s.vm)["hash"] as? String, oldHash)
+        XCTAssertEqual(state(s.vm)["hash"] as? String, SHA256.hex(Data(changed.utf8)))
+        XCTAssertTrue(s.runner.calls.isEmpty)
+    }
+    func testCachedSourceDoesNotFollowReplacementSymlinkOutsideCollection() async throws {
+        let s = try setup()
+        await s.vm.refresh()
+        let outside = s.root.appendingPathComponent("private.md")
+        try Data("private".utf8).write(to: outside)
+        try FileManager.default.removeItem(at: s.text)
+        try FileManager.default.createSymbolicLink(at: s.text, withDestinationURL: outside)
+        await s.vm.refresh()
+        XCTAssertEqual(state(s.vm)["state"] as? String, "error")
+        XCTAssertEqual(state(s.vm)["locked"] as? Bool, true)
+        XCTAssertEqual(state(s.vm)["hash"] as? String, "")
+        await s.vm.prepareSend()
+        XCTAssertNil(s.vm.confirmation)
+    }
+    func testServerChangeDoesNotReuseDocumentsFromThePreviousServer() async throws {
+        let s = try setup()
+        s.server.docs = [DocumentListItem(id: "only-on-first")]
+        var activeClient = makeClient(s.transport)
+        let workspace = MemoryWorkspace(folder: s.folder, client: { activeClient }, bank: { testBank })
+        await workspace.refresh()
+        XCTAssertTrue(workspace.records.contains { $0["id"] as? String == "bank:only-on-first" })
+        let offline = MockTransport()
+        offline.on("GET", "\(bankPath)/documents", json: "{}", status: 503)
+        activeClient = HindsightClient(baseURL: URL(string: "http://localhost:9999")!, transport: offline)
+        await workspace.refresh()
+        XCTAssertFalse(workspace.records.contains { $0["id"] as? String == "bank:only-on-first" })
+        XCTAssertEqual(state(workspace)["state"] as? String, "unknown")
+    }
     func testChangedPolicyCannotUsePreviousApproval() async throws {
         let s = try setup(); await s.vm.prepareSend(); let approval = try XCTUnwrap(s.vm.confirmation)
         let p = s.root.appendingPathComponent("memory-policy.json")

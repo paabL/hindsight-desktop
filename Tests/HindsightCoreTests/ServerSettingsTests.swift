@@ -225,6 +225,33 @@ final class ServerSettingsViewModelTests: XCTestCase {
         XCTAssertEqual(vm.rerankerSource, .other)
     }
 
+    func testServiceSummariesSelectOnlyTheActiveProvidersModel() async throws {
+        let (vm, file, _) = make()
+        await vm.load()
+        let saved = try String(contentsOf: file, encoding: .utf8)
+        func summary(_ id: String) -> String { vm.roles.first { $0.id == id }!.effective }
+        vm.setValue("HINDSIGHT_API_RERANKER_COHERE_MODEL", "saved-cohere")
+        vm.setValue("HINDSIGHT_API_RERANKER_LOCAL_MODEL", "saved-local")
+        vm.setValue("HINDSIGHT_API_RERANKER_GOOGLE_MODEL", "google-ranking")
+        for (provider, model) in [("local", "saved-local"), ("hindsight", "hs-rerank-1"), ("cohere", "saved-cohere"), ("google", "google-ranking")] {
+            vm.setValue("HINDSIGHT_API_RERANKER_PROVIDER", provider)
+            XCTAssertEqual(summary("reranker"), "\(provider) · \(model)")
+        }
+        vm.setValue("HINDSIGHT_API_EMBEDDINGS_GEMINI_MODEL", "saved-gemini")
+        vm.setValue("HINDSIGHT_API_EMBEDDINGS_GEMINI_OUTPUT_DIMENSIONALITY", "1536")
+        vm.setValue("HINDSIGHT_API_EMBEDDINGS_OPENAI_MODEL", "saved-openai")
+        for (provider, model) in [("openai", "saved-openai"), ("hindsight", "hs-embed-1"), ("google", "saved-gemini")] {
+            vm.setValue("HINDSIGHT_API_EMBEDDINGS_PROVIDER", provider)
+            XCTAssertEqual(summary("embeddings"), "\(provider) · \(model)")
+            XCTAssertEqual(vm.modelWorkflow?.embeddings, model + (provider == "google" ? " · 1536" : ""))
+        }
+        vm.setValue("HINDSIGHT_API_EMBEDDINGS_PROVIDER", "litellm")
+        XCTAssertEqual(summary("embeddings"), "litellm · modèle par défaut", "Do not borrow a text-generation model default")
+        vm.setValue("HINDSIGHT_API_RERANKER_PROVIDER", nil)
+        XCTAssertEqual(summary("reranker"), "local · saved-local")
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), saved)
+    }
+
     func testDecisionModelPresetsSwitchBetweenCloudLocalAndOff() async throws {
         let (vm, _, _) = make()
         await vm.load()
@@ -360,6 +387,22 @@ final class ServerSettingsViewModelTests: XCTestCase {
         XCTAssertTrue(gemini.contains { $0.id == "custom-gemini-model" })
         XCTAssertTrue(gemini.contains { $0.id == "gemini-3.8-flash" })
         XCTAssertFalse(gemini.contains { $0.id == "haiku" })
+    }
+
+    func testModelMenusPreviewEachProviderWithoutChangingDraft() async throws {
+        let (vm, file, _) = make()
+        await vm.load()
+        let originalFile = try String(contentsOf: file, encoding: .utf8)
+        vm.setValue("HINDSIGHT_API_REFLECT_LLM_PROVIDER", "custom-proxy")
+        vm.setValue("HINDSIGHT_API_REFLECT_LLM_MODEL", "custom-model")
+        let before = vm.draft
+        let menus = vm.modelsByProvider
+        XCTAssertTrue(menus["claude-code"]!.contains { $0.id == "claude-sonnet-4-5-20250929" })
+        XCTAssertTrue(menus["openai-codex"]!.contains { $0.id.hasPrefix("gpt-") })
+        XCTAssertFalse(menus["openai-codex"]!.contains { $0.id.contains("claude") || $0.id == "custom-model" })
+        XCTAssertEqual(menus["custom-proxy"]?.map(\.id), ["custom-model"])
+        XCTAssertEqual(vm.draft, before, "ouvrir un menu ne prépare aucun changement")
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), originalFile)
     }
 
     func testEmbeddingChangeWarns() async {

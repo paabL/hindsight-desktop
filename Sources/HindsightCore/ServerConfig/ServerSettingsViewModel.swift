@@ -154,6 +154,23 @@ public final class ServerSettingsViewModel {
             ? context.codexHome.map(LLMModelCatalog.readCodexModels(home:)) ?? [] : []
     }
 
+    /// Menu previews for an uncommitted provider choice. Never changes the launch-script draft.
+    public var modelsByProvider: [String: [LLMModelCatalog.Choice]] {
+        var configured: [String: [String]] = [:]
+        for script in [draft, original].compactMap({ $0 }) {
+            for role in ServerSettingsCatalog.roles where role.isModelRole {
+                guard let provider = configuredValue(role, suffix: "PROVIDER", in: script),
+                      let model = configuredValue(role, suffix: "MODEL", in: script),
+                      !provider.contains("$"), !model.contains("$") else { continue }
+                configured[provider, default: []].append(model)
+            }
+        }
+        let providers = Set(providerChoices.map(\.id)).union(configured.keys)
+        return Dictionary(uniqueKeysWithValues: providers.map { provider in
+            (provider, LLMModelCatalog.choices(for: provider, configured: configured[provider] ?? [], codexModels: codexModelChoices))
+        })
+    }
+
     public func modelChoices(forRole id: String) -> [LLMModelCatalog.Choice] {
         guard let provider = resolvedValue(for: id, suffix: "PROVIDER") else { return [] }
         var configured: [String] = []
@@ -182,6 +199,16 @@ public final class ServerSettingsViewModel {
     }
 
     private func configuredValue(_ role: ServerSettingsCatalog.Role, suffix: String, in script: LaunchScript) -> String? {
+        if ["reranker", "embeddings"].contains(role.id) {
+            let prefix = "HINDSIGHT_API_\(role.id.uppercased())_"
+            let provider = script.value(prefix + "PROVIDER").flatMap { $0.isEmpty ? nil : $0 } ?? "local"
+            if suffix == "PROVIDER" { return provider }
+            if suffix == "MODEL" {
+                if provider == "hindsight" { return role.id == "reranker" ? "hs-rerank-1" : "hs-embed-1" }
+                let owner = role.id == "embeddings" && provider == "google" ? "GEMINI" : provider.uppercased()
+                return script.value(prefix + owner + "_MODEL").flatMap { $0.isEmpty ? nil : $0 }
+            }
+        }
         if let field = role.fields.first(where: { $0.name.hasSuffix("_" + suffix) }),
            let value = script.value(field.name), !value.isEmpty { return value }
         if let fallback = ServerSettingsCatalog.roles.first(where: { $0.id == role.fallback }) {
@@ -242,7 +269,8 @@ public final class ServerSettingsViewModel {
         guard let p = provider, !p.isEmpty else {
             return inherited || role.fallback != nil ? "hérite du défaut du serveur" : "non configuré (défaut du serveur)"
         }
-        let m = model.flatMap { $0.isEmpty ? nil : $0 } ?? ServerSettingsCatalog.defaultModel(for: p).map { "\($0) (défaut)" } ?? "modèle par défaut"
+        let defaultModel = role.isModelRole ? ServerSettingsCatalog.defaultModel(for: p) : nil
+        let m = model.flatMap { $0.isEmpty ? nil : $0 } ?? defaultModel.map { "\($0) (défaut)" } ?? "modèle par défaut"
         let source = role.fallback == "reflect" ? "Reflect" : "LLM par défaut"
         return "\(p) · \(m)" + (inherited ? " — hérité du \(source)" : "")
     }
@@ -253,7 +281,7 @@ public final class ServerSettingsViewModel {
         guard let s = original, let role = ServerSettingsCatalog.roles.first(where: { $0.id == id }) else { return (nil, nil) }
         let p = configuredValue(role, suffix: "PROVIDER", in: s)
         var m = configuredValue(role, suffix: "MODEL", in: s)
-        if m == nil, let p { m = ServerSettingsCatalog.defaultModel(for: p) }
+        if m == nil, role.isModelRole, let p { m = ServerSettingsCatalog.defaultModel(for: p) }
         return (p, m)
     }
 

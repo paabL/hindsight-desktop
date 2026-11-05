@@ -8,7 +8,8 @@ Tauri. The former SwiftUI targets and stub-based UI checks have been removed.
 - Cool surfaces with petroleum blue, eucalyptus, and indigo accents distinguish
   navigation, categories, and status.
 - System typography, clear hierarchy, subtle borders, and restrained corner radii.
-- No orange accents, playful decoration, marketing illustrations, or slogans.
+- Amber identifies decision steps and pending states; color communicates function
+  or status rather than decoration. Status text remains available alongside color.
 - Dark and light themes, with the choice saved on the device.
 - Source data, provenance, and processing status take priority.
 
@@ -17,8 +18,8 @@ errors, dialogs, and typography live in `desktop/src/ui.tsx`.
 
 ## Navigation and language
 
-The sidebar has six primary groups: **Overview**, **Memory**, **Knowledge**,
-**Search**, **Sources**, and **Activity**. Overview is the initial view. Settings
+The sidebar has seven primary groups: **Overview**, **Memory**, **Knowledge**,
+**Search**, **Models**, **Sources**, and **Activity**. Overview is the initial view. Settings
 stays at the bottom of the sidebar. All views are visible through these groups;
 there is no Advanced navigation section.
 
@@ -28,6 +29,7 @@ there is no Advanced navigation section.
 | Memory | Facts, Documents, Timeline, Graph |
 | Knowledge | Knowledge pages and mental models |
 | Search | Recall, exact text and confirmed reflect |
+| Models | Quick model selection and explanatory workflows; management stays in Settings |
 | Sources | Catalog, Tracked folders, Imports |
 | Activity | Processing, Usage, Logs |
 | Settings | Application, Memory bank, Memory behavior, Server & models |
@@ -35,7 +37,7 @@ there is no Advanced navigation section.
 Groups with several views show a named tab bar above the page heading. A group
 click returns to its last selected tab. The Settings shortcut opens Application. Existing hash links remain valid; in
 particular, `#memory` still opens Memory behavior, while `#facts` opens the
-bank's facts. Browser back and forward update the view and active group together.
+bank's facts. `#model-settings` opens quick model selection without requiring a bank; `#models` still opens Knowledge. Browser back and forward update the view and active group together.
 The command palette lists every view and searches group and view names without
 requiring accents.
 
@@ -48,6 +50,31 @@ presents the local catalog before processing: projects, collectors, source
 families, filters, and a reader with provenance. The local catalog is independent
 of the selected bank and remains readable offline. Upload previews explain what
 will be sent from Sources into Hindsight.
+
+Sources first displays its manifest with unchecked, locked entries, then compares
+the existing files with the bank in the background. Cached navigation keeps the
+list visible on return. Collection also runs in the background with progress and
+output available. **Refresh folder** collects; the top-bar refresh only rechecks
+the catalog and memory. A reader stays open when inclusion changes, and late text
+responses cannot replace the newly selected source.
+
+## Models and accounts
+
+**Models** is the quick selection surface. Its Answer, Remember, Pages and Search
+tabs show colored roles connected by arrows, including the return path when more
+evidence is needed. Each role explains itself on hover, focus or tap. Model menus
+and the decision switch prepare changes in a shared draft. Embeddings remain
+read-only here. Save and server restart are separate actions.
+
+**Manage models** opens Settings for providers, model installation, accounts and
+advanced configuration. Provider and Model use dropdowns, and changing the
+provider updates the model choices. Custom identifiers require the explicit
+advanced **Other model…** option. Cancelling a dialog discards its local edits.
+
+Account indicators show green for an available session or signed-in account,
+red for disconnected/unavailable/failed, amber for checking or connecting, and
+gray for unchecked. Availability is distinct from a successful model call or a
+quota check. The adjacent text describes the state without relying on color.
 
 Documents open a reader with text, facts, history, and management controls.
 Attachments appear in the corresponding content blocks. Reader search highlights
@@ -66,7 +93,8 @@ confirmation is consumed before its action runs. Changing banks or servers
 invalidates pending requests. Account quota checks require an explicit, confirmed
 request and do not enable automatic OAuth access.
 
-Slow requests show activity and disable relevant controls. Errors remain readable,
+Slow requests show activity and disable relevant controls without locking unrelated
+navigation. Errors remain readable,
 empty lists explain how to start, and missing information is shown as unknown.
 
 ## Accessibility and shortcuts
@@ -74,10 +102,19 @@ empty lists explain how to start, and missing information is shown as unknown.
 - Named buttons and fields, keyboard navigation, and visible focus.
 - Focus stays inside dialogs; Escape closes the topmost dialog.
 - Reduced-motion preferences are respected.
-- `⌘K`: quick navigation; `⌘R`: refresh; `⌘,`: settings; `⌘1…6`: primary group defaults.
+- `⌘K`: quick navigation; `⌘R`: refresh; `⌘,`: settings; `⌘1…7`: primary group defaults.
 
 Example mode is explicitly enabled and visibly marks its data as fictional. It
 does not replace error states from a real connection.
+
+## Documentation captures
+
+Run `npm run docs:screenshots` from `desktop/` to capture the current frontend with
+a mocked native host and fictional data. The README shows Models in the dark
+theme; the guide shows Sources and account indicators in the light theme.
+The capture script cannot access a native bridge and blocks external page requests.
+Language/layout regression checks write separate images under `desktop/screenshots/`
+so they cannot silently replace the public README image.
 
 ## Integrations
 

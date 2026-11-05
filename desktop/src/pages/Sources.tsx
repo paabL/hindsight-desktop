@@ -1,6 +1,6 @@
 import { useI18n } from '../i18n';
 import { translate as t, getLocale } from '../i18n-core';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDownToLine,
   RefreshCw,
@@ -108,7 +108,7 @@ export default function Sources({
   const [asideOpen, setAsideOpen] = useState(false);
   const [asideLimit, setAsideLimit] = useState(30);
   const [limit, setLimit] = useState(30);
-  const [selected, setSelected] = useState<Row | null>(null);
+  const [selection, setSelected] = useState<Row | null>(null);
   const [text, setText] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
   const [readError, setReadError] = useState<string | null>(null);
@@ -120,6 +120,8 @@ export default function Sources({
   useEffect(() => {
     readRequest.current++;
     setQuery('');
+    setMemoryFilter('all');
+    setLinkSource('');
     setKind('all');
     setProject('all');
     setRepository('all');
@@ -130,19 +132,28 @@ export default function Sources({
     setImportFiles([]);
     setImportError(null);
   }, [data.folder]);
+  useEffect(
+    () => () => {
+      readRequest.current++;
+    },
+    [],
+  );
+  const searchQuery = useDeferredValue(query);
   const allRecords = useMemo(() => catalogRecords(data.catalog), [data.catalog]);
+  const byID = useMemo(() => new Map(allRecords.map((r) => [r.id, r])), [allRecords]);
+  const selected = selection && (byID.get(selection.id) || selection);
   const records = useMemo(() => allRecords.filter((r) => !isAsideRecord(r)), [allRecords]);
   const archives = useMemo(() => allRecords.filter(isAsideRecord), [allRecords]);
   const filteredArchives = useMemo(
-    () => filterRecords(archives, query, kind, project, repository),
-    [archives, query, kind, project, repository],
+    () => (asideOpen ? filterRecords(archives, searchQuery, kind, project, repository) : []),
+    [archives, searchQuery, kind, project, repository, asideOpen],
   );
   const filtered = useMemo(
     () =>
-      filterRecords(records, query, kind, project, repository).filter(
+      filterRecords(records, searchQuery, kind, project, repository).filter(
         (r) => memoryFilter === 'all' || r.memory?.state === memoryFilter,
       ),
-    [records, query, kind, project, repository, memoryFilter],
+    [records, searchQuery, kind, project, repository, memoryFilter],
   );
   // Comptes et listes dérivés du catalogue : recalculés à chaque réponse du moteur, pas à chaque rendu.
   const projects = useMemo(() => catalogProjects(data.catalog), [data.catalog]);
@@ -213,14 +224,20 @@ export default function Sources({
       setLimit(30);
     }
   }
-  async function open(record: Row) {
+  function closeSource() {
+    readRequest.current++;
+    setSelected(null);
+    setText(null);
+    setReading(false);
+  }
+  async function open(record: Row, stored = false) {
     const request = ++readRequest.current;
     setSelected(record);
     setText(null);
     setReadError(null);
     setReading(false);
     const path = sourceTextPath(record);
-    if (!path && record.memory?.stored) {
+    if (stored || (!path && record.memory?.stored)) {
       setReading(true);
       try {
         const result = await run('folder.stored', { id: record.id });
@@ -255,6 +272,17 @@ export default function Sources({
       if (request === readRequest.current) setReading(false);
     }
   }
+
+  if (
+    !demo &&
+    !data.catalog &&
+    (data.refreshing || busy || (data.folder && data.catalog === undefined))
+  )
+    return (
+      <div className="loading-state" role="status">
+        {t('Chargement des sources…', 'Loading sources…')}
+      </div>
+    );
 
   if (!demo && !data.folder && !data.catalog)
     return (
@@ -360,6 +388,22 @@ export default function Sources({
         }
       />
       <ErrorNotice message={data.error} />
+      {data.refreshing && (
+        <p className="form-hint" role="status">
+          {t(
+            'Vérification des sources avec la banque…',
+            'Checking sources against the memory bank…',
+          )}
+        </p>
+      )}
+      {data.collecting && (
+        <p className="form-hint" role="status">
+          {t(
+            'Collecte en cours. Vous pouvez continuer à parcourir l’app.',
+            'Collection in progress. You can keep browsing the app.',
+          )}
+        </p>
+      )}
       {data.memoryMessage && (
         <p role="status" className="form-hint">
           {data.memoryMessage}
@@ -516,7 +560,7 @@ export default function Sources({
               {t(' modifiables dans ce filtre', ' editable in this filter')}
             </span>
             <Button
-              disabled={busy || demo || !toggleable.length}
+              disabled={busy || data.collecting || demo || !toggleable.length}
               onClick={() =>
                 void run('folder.enabled', { ids: toggleable.map((r) => r.id), enabled: true })
               }
@@ -524,7 +568,7 @@ export default function Sources({
               {t('Inclure ce filtre', 'Include matching sources')}
             </Button>
             <Button
-              disabled={busy || demo || !toggleable.length}
+              disabled={busy || data.collecting || demo || !toggleable.length}
               onClick={() =>
                 void run('folder.enabled', { ids: toggleable.map((r) => r.id), enabled: false })
               }
@@ -832,7 +876,7 @@ export default function Sources({
           title={selected.title || t('Source', 'Source')}
           subtitle={`${selected.project_name || selected.project} · ${kindLabels[sourceKind(selected.kind)]}`}
           wide
-          onClose={() => setSelected(null)}
+          onClose={closeSource}
         >
           <div className="reader-meta">
             <Badge>{kindLabels[sourceKind(selected.kind)]}</Badge>
@@ -899,10 +943,9 @@ export default function Sources({
                   <input
                     type="checkbox"
                     checked={!!selected.memory.enabled}
-                    disabled={busy || selected.memory.locked || demo}
+                    disabled={busy || data.collecting || selected.memory.locked || demo}
                     onChange={async (e) => {
                       await run('folder.enabled', { id: selected.id, enabled: e.target.checked });
-                      setSelected(null);
                     }}
                   />{' '}
                   {t('Inclure dans les mises à jour', 'Include in updates')}
@@ -920,16 +963,7 @@ export default function Sources({
                 </Button>
               )}
               {selected.memory.stored && (
-                <Button
-                  disabled={busy || demo}
-                  onClick={async () => {
-                    setReading(true);
-                    const result = await run('folder.stored', { id: selected.id });
-                    setReading(false);
-                    setText(result.text || null);
-                    setReadError(result.error || null);
-                  }}
-                >
+                <Button disabled={busy || demo} onClick={() => void open(selected, true)}>
                   {t('Version mémorisée', 'Stored version')}
                 </Button>
               )}
