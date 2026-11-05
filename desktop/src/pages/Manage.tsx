@@ -1115,7 +1115,18 @@ export function ServerSettings({ data, run, busy, notify, navigate }: PageProps)
   const [customModels, setCustomModels] = useState<Set<string>>(new Set());
   const [modelToolsOpen, setModelToolsOpen] = useState(false);
   const service = data.service || {};
+  const serviceBusy = busy || service.busy;
+  const [decisionTab, setDecisionTab] = useState('general');
+  const [decisionLocation, setDecisionLocation] = useState<string | null>(null);
+  useEffect(() => {
+    setDecisionTab('general');
+    setDecisionLocation(null);
+  }, [role?.id]);
   async function saveRole() {
+    if (role?.id === 'decision' && decisionLocation) {
+      const result = await run('server.decision', { source: decisionLocation });
+      if (result?.error) return;
+    }
     // Changing provider can reset the model: apply explicit model choices afterwards.
     for (const [name, value] of Object.entries(fields))
       if (
@@ -1124,6 +1135,16 @@ export function ServerSettings({ data, run, busy, notify, navigate }: PageProps)
       )
         await run('server.provider', { role: role?.id, provider: value });
     for (const [name, value] of Object.entries(fields)) {
+      if (
+        role?.id === 'decision' &&
+        decisionLocation &&
+        [
+          'HINDSIGHT_API_DECISION_MODEL_PROVIDER',
+          'HINDSIGHT_API_DECISION_MODEL_BASE_URL',
+          'HINDSIGHT_API_DECISION_MODEL_API_KEY',
+        ].includes(name)
+      )
+        continue;
       if (
         role?.isModelRole &&
         name === role.fields.find((field: Row) => field.name.endsWith('_PROVIDER'))?.name
@@ -1157,18 +1178,33 @@ export function ServerSettings({ data, run, busy, notify, navigate }: PageProps)
           <div>
             <h2>{t('Service Hindsight', 'Hindsight service')}</h2>
             <p>
-              {service.running
-                ? t('Le serveur fonctionne sur ce Mac', 'The server is running on this Mac')
-                : service.reachable
-                  ? t('Le serveur est accessible', 'The server is reachable')
-                  : service.installed
-                    ? t('Le service est installé et arrêté', 'The service is installed and stopped')
-                    : t('Le service n’est pas installé', 'The service is not installed')}
+              {service.busy
+                ? t('Démarrage ou arrêt en cours…', 'Starting or stopping…')
+                : service.error
+                  ? t('Le démarrage a échoué', 'Startup failed')
+                  : service.running
+                    ? t('Le serveur fonctionne sur ce Mac', 'The server is running on this Mac')
+                    : service.reachable
+                      ? t('Le serveur est accessible', 'The server is reachable')
+                      : service.installed
+                        ? t(
+                            'Le service est installé et arrêté',
+                            'The service is installed and stopped',
+                          )
+                        : t('Le service n’est pas installé', 'The service is not installed')}
             </p>
           </div>
-          <Badge tone={service.reachable ? 'sage' : 'amber'}>
-            <span className={`status-dot ${service.reachable ? 'green' : 'warning'}`} />
-            {service.reachable ? t('Accessible', 'Reachable') : t('Hors connexion', 'Offline')}
+          <Badge tone={service.error ? 'rose' : service.reachable ? 'sage' : 'amber'}>
+            <span
+              className={`status-dot ${service.error ? 'red' : service.reachable ? 'green' : 'warning'}`}
+            />
+            {service.busy
+              ? t('En cours…', 'Working…')
+              : service.error
+                ? t('Échec', 'Failed')
+                : service.reachable
+                  ? t('Accessible', 'Reachable')
+                  : t('Hors connexion', 'Offline')}
           </Badge>
         </div>
         <div className="service-actions">
@@ -1176,7 +1212,7 @@ export function ServerSettings({ data, run, busy, notify, navigate }: PageProps)
             <>
               <Button
                 icon={Play}
-                disabled={busy || !service.canStart}
+                disabled={serviceBusy || !service.canStart}
                 onClick={() => void run('service.start')}
               >
                 {' '}
@@ -1184,13 +1220,17 @@ export function ServerSettings({ data, run, busy, notify, navigate }: PageProps)
               </Button>
               <Button
                 icon={Pause}
-                disabled={busy || !service.canStop}
+                disabled={serviceBusy || !service.canStop}
                 onClick={() => void run('service.stop')}
               >
                 {' '}
                 {t('Arrêter', 'Stop')}
               </Button>
-              <Button icon={RefreshCw} disabled={busy} onClick={() => void run('service.restart')}>
+              <Button
+                icon={RefreshCw}
+                disabled={serviceBusy}
+                onClick={() => void run('service.restart')}
+              >
                 {' '}
                 {t('Redémarrer', 'Restart')}
               </Button>
@@ -1206,6 +1246,7 @@ export function ServerSettings({ data, run, busy, notify, navigate }: PageProps)
             <label className="checkbox-label">
               <input
                 type="checkbox"
+                disabled={serviceBusy}
                 checked={service.atLogin || false}
                 onChange={(e) => void run('service.atLogin', { enabled: e.target.checked })}
               />{' '}
@@ -1213,6 +1254,7 @@ export function ServerSettings({ data, run, busy, notify, navigate }: PageProps)
             </label>
           )}
         </div>
+        <ErrorNotice message={service.error} />
         {service.frozen && (
           <div className="notice">
             {' '}
@@ -1225,6 +1267,9 @@ export function ServerSettings({ data, run, busy, notify, navigate }: PageProps)
         <ErrorNotice message={service.scriptWarning} />
       </section>
       <ErrorNotice message={data.error} />
+      {(data.configurationProblems || []).map((problem: string) => (
+        <ErrorNotice key={problem} message={problem} />
+      ))}
       {data.needsRestart && (
         <div className="notice">
           {' '}
@@ -1442,120 +1487,241 @@ export function ServerSettings({ data, run, busy, notify, navigate }: PageProps)
         </div>
       </details>
       {role && (
-        <Modal title={role.title} onClose={() => setRole(null)}>
+        <Modal
+          title={role.id === 'decision' ? t('Modèle de décision', 'Decision model') : role.title}
+          onClose={() => {
+            setRole(null);
+            setDecisionTab('general');
+          }}
+        >
           <form
-            className="form-stack"
+            className="form-stack model-editor"
             onSubmit={(e) => {
               e.preventDefault();
               void saveRole();
             }}
           >
-            {visibleRoleFields(role, fields, data).map((field: Row) => (
-              <label key={field.name}>
-                {field.label}
-                {field.secret && <Badge>Secret</Badge>}
-                {/PROVIDER$/.test(field.name) ? (
-                  <select
-                    aria-label={field.label}
-                    value={fields[field.name] ?? field.value ?? ''}
-                    onChange={(e) => {
-                      setCustomModels((old) => {
-                        const next = new Set(old);
-                        next.delete(field.name.replace(/PROVIDER$/, 'MODEL'));
-                        return next;
-                      });
-                      setFields((old) => chooseProvider(role, field, e.target.value, old, data));
-                    }}
-                  >
-                    <option value="">{t('Hériter des réglages', 'Inherit settings')}</option>
-                    {providerOptions(role, field, data).map((option) => (
-                      <option key={option.id} value={option.id}>
-                        {option.title}
-                      </option>
-                    ))}
-                  </select>
-                ) : isBooleanField(field) ? (
-                  <select
-                    aria-label={field.label}
-                    value={fields[field.name] ?? field.value ?? ''}
-                    onChange={(e) => setFields((old) => ({ ...old, [field.name]: e.target.value }))}
-                  >
-                    <option value="">{t('Défaut du serveur', 'Server default')}</option>
-                    <option value="true">{t('Activé', 'Enabled')}</option>
-                    <option value="false">{t('Désactivé', 'Disabled')}</option>
-                    {field.value && !['true', 'false'].includes(field.value) && (
-                      <option value={field.value}>{field.value}</option>
-                    )}
-                  </select>
-                ) : /MODEL$/.test(field.name) ? (
-                  <>
-                    <select
-                      aria-label={field.label}
-                      value={
-                        customModels.has(field.name)
-                          ? '__custom_model__'
-                          : (fields[field.name] ?? field.value ?? '')
-                      }
-                      onChange={(e) => {
-                        if (e.target.value === '__custom_model__')
-                          setCustomModels((old) => new Set(old).add(field.name));
-                        else {
-                          setCustomModels((old) => {
-                            const next = new Set(old);
-                            next.delete(field.name);
-                            return next;
-                          });
-                          setFields((old) => ({ ...old, [field.name]: e.target.value }));
-                        }
-                      }}
-                    >
-                      <option value="">
-                        {t('Hérité / défaut du fournisseur', 'Inherited / provider default')}
-                      </option>
-                      {modelOptions(role, field, fields, data).map((option) => (
-                        <option key={option.id} value={option.id}>
-                          {option.title}
-                        </option>
-                      ))}
-                      <option value="__custom_model__">{t('Autre modèle…', 'Other model…')}</option>
-                    </select>
-                    {customModels.has(field.name) && (
-                      <input
-                        aria-label={`${field.label} · ${t('Nom personnalisé', 'Custom name')}`}
-                        value={fields[field.name] ?? field.value ?? ''}
-                        autoComplete="off"
-                        placeholder={t('Nom exact du modèle', 'Exact model name')}
-                        onChange={(e) =>
-                          setFields((old) => ({ ...old, [field.name]: e.target.value }))
-                        }
-                      />
-                    )}
-                  </>
-                ) : (
-                  <input
-                    aria-label={field.label}
-                    type={field.secret ? 'password' : 'text'}
-                    value={fields[field.name] ?? field.value ?? ''}
-                    autoComplete="off"
-                    placeholder={
-                      field.secret && field.configured
-                        ? t(
-                            'Secret configuré · laisser vide pour le conserver',
-                            'Secret configured · leave empty to keep it',
-                          )
-                        : t('Hérite du serveur', 'Inherits from server')
-                    }
-                    onChange={(e) => setFields((old) => ({ ...old, [field.name]: e.target.value }))}
-                  />
-                )}
-                <small>
-                  {field.help}
-                  {field.dynamic
-                    ? t(' Valeur définie par l’environnement.', ' Value set by the environment.')
-                    : ''}
-                </small>
-              </label>
-            ))}
+            {role.id === 'decision' && (
+              <Tabs
+                value={decisionTab}
+                onChange={setDecisionTab}
+                items={[
+                  { id: 'general', label: t('Modèle', 'Model') },
+                  { id: 'recall', label: t('Recherche', 'Search') },
+                  { id: 'reflect', label: t('Réponse', 'Answer') },
+                  { id: 'consolidation', label: t('Consolidation', 'Consolidation') },
+                  { id: 'pages', label: t('Pages', 'Pages') },
+                ]}
+              />
+            )}
+            <div className="model-editor-fields">
+              {(() => {
+                const all = visibleRoleFields(role, fields, data);
+                const selected =
+                  role.id !== 'decision'
+                    ? all
+                    : all.filter((field: Row) =>
+                        decisionTab === 'general'
+                          ? field.name.startsWith('HINDSIGHT_API_DECISION_MODEL_')
+                          : decisionTab === 'pages'
+                            ? field.name.startsWith('HINDSIGHT_API_MENTAL_MODEL_')
+                            : field.name.startsWith(`HINDSIGHT_API_${decisionTab.toUpperCase()}_`),
+                      );
+                const essential = (field: Row) =>
+                  /_(PROVIDER|MODEL|PRUNE|DEDUP)$|_USE_DECISION_MODEL$/.test(field.name);
+                const groups = [
+                  { advanced: false, fields: selected.filter(essential) },
+                  { advanced: true, fields: selected.filter((field: Row) => !essential(field)) },
+                ];
+                return groups
+                  .filter((group) => group.fields.length)
+                  .map((group) => {
+                    const content = (
+                      <div className="form-stack">
+                        {group.fields.map((field: Row) => (
+                          <label key={field.name}>
+                            {field.label}
+                            {field.secret && <Badge>Secret</Badge>}
+                            {/PROVIDER$/.test(field.name) ? (
+                              <select
+                                aria-label={field.label}
+                                value={
+                                  field.name === 'HINDSIGHT_API_DECISION_MODEL_PROVIDER' &&
+                                  (fields[field.name] ?? field.value) === 'hindsight' &&
+                                  (decisionLocation === 'local' ||
+                                    (!decisionLocation &&
+                                      (fields.HINDSIGHT_API_DECISION_MODEL_BASE_URL ??
+                                        role.fields.find(
+                                          (f: Row) =>
+                                            f.name === 'HINDSIGHT_API_DECISION_MODEL_BASE_URL',
+                                        )?.value) === 'http://127.0.0.1:8766'))
+                                    ? '__hindsight_local__'
+                                    : (fields[field.name] ?? field.value ?? '')
+                                }
+                                onChange={(e) => {
+                                  if (field.name === 'HINDSIGHT_API_DECISION_MODEL_PROVIDER') {
+                                    const location =
+                                      e.target.value === '__hindsight_local__'
+                                        ? 'local'
+                                        : e.target.value === 'hindsight'
+                                          ? 'cloud'
+                                          : null;
+                                    setDecisionLocation(location);
+                                    if (location) {
+                                      setFields((old) =>
+                                        chooseProvider(role, field, 'hindsight', old, data),
+                                      );
+                                      return;
+                                    }
+                                  }
+                                  setCustomModels((old) => {
+                                    const next = new Set(old);
+                                    next.delete(field.name.replace(/PROVIDER$/, 'MODEL'));
+                                    return next;
+                                  });
+                                  setFields((old) =>
+                                    chooseProvider(role, field, e.target.value, old, data),
+                                  );
+                                }}
+                              >
+                                <option value="">
+                                  {t('Hériter des réglages', 'Inherit settings')}
+                                </option>
+                                {field.name === 'HINDSIGHT_API_DECISION_MODEL_PROVIDER' && (
+                                  <option value="__hindsight_local__">
+                                    {t('Sur ce Mac · Hindsight', 'On this Mac · Hindsight')}
+                                  </option>
+                                )}
+                                {providerOptions(role, field, data).map((option) => (
+                                  <option key={option.id} value={option.id}>
+                                    {option.id === 'local'
+                                      ? t('Local · sur ce Mac', 'Local · on this Mac')
+                                      : option.id === 'hindsight' &&
+                                          field.name === 'HINDSIGHT_API_DECISION_MODEL_PROVIDER'
+                                        ? 'Hindsight Cloud'
+                                        : option.title}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : isBooleanField(field) ? (
+                              <select
+                                aria-label={field.label}
+                                value={fields[field.name] ?? field.value ?? ''}
+                                onChange={(e) =>
+                                  setFields((old) => ({ ...old, [field.name]: e.target.value }))
+                                }
+                              >
+                                <option value="">{t('Défaut du serveur', 'Server default')}</option>
+                                <option value="true">{t('Activé', 'Enabled')}</option>
+                                <option value="false">{t('Désactivé', 'Disabled')}</option>
+                                {field.value && !['true', 'false'].includes(field.value) && (
+                                  <option value={field.value}>{field.value}</option>
+                                )}
+                              </select>
+                            ) : /MODEL$/.test(field.name) ? (
+                              <>
+                                <select
+                                  aria-label={field.label}
+                                  value={
+                                    customModels.has(field.name)
+                                      ? '__custom_model__'
+                                      : (fields[field.name] ?? field.value ?? '')
+                                  }
+                                  onChange={(e) => {
+                                    if (e.target.value === '__custom_model__')
+                                      setCustomModels((old) => new Set(old).add(field.name));
+                                    else {
+                                      setCustomModels((old) => {
+                                        const next = new Set(old);
+                                        next.delete(field.name);
+                                        return next;
+                                      });
+                                      setFields((old) => ({
+                                        ...old,
+                                        [field.name]: e.target.value,
+                                      }));
+                                    }
+                                  }}
+                                >
+                                  <option value="">
+                                    {t(
+                                      'Hérité / défaut du fournisseur',
+                                      'Inherited / provider default',
+                                    )}
+                                  </option>
+                                  {modelOptions(role, field, fields, data).map((option) => (
+                                    <option key={option.id} value={option.id}>
+                                      {option.id === 'local'
+                                        ? t('Local · sur ce Mac', 'Local · on this Mac')
+                                        : option.title}
+                                    </option>
+                                  ))}
+                                  <option value="__custom_model__">
+                                    {t('Autre modèle…', 'Other model…')}
+                                  </option>
+                                </select>
+                                {customModels.has(field.name) && (
+                                  <input
+                                    aria-label={`${field.label} · ${t('Nom personnalisé', 'Custom name')}`}
+                                    value={fields[field.name] ?? field.value ?? ''}
+                                    autoComplete="off"
+                                    placeholder={t('Nom exact du modèle', 'Exact model name')}
+                                    onChange={(e) =>
+                                      setFields((old) => ({ ...old, [field.name]: e.target.value }))
+                                    }
+                                  />
+                                )}
+                              </>
+                            ) : (
+                              <input
+                                aria-label={field.label}
+                                type={field.secret ? 'password' : 'text'}
+                                value={fields[field.name] ?? field.value ?? ''}
+                                autoComplete="off"
+                                placeholder={
+                                  field.secret && field.configured
+                                    ? t(
+                                        'Secret configuré · laisser vide pour le conserver',
+                                        'Secret configured · leave empty to keep it',
+                                      )
+                                    : t('Hérite du serveur', 'Inherits from server')
+                                }
+                                onChange={(e) => {
+                                  if (field.name === 'HINDSIGHT_API_DECISION_MODEL_BASE_URL')
+                                    setDecisionLocation(null);
+                                  setFields((old) => ({ ...old, [field.name]: e.target.value }));
+                                }}
+                              />
+                            )}
+                            {(field.help || field.dynamic) && (
+                              <details className="field-explanation">
+                                <summary>{t('À propos', 'About')}</summary>
+                                <small>
+                                  {field.help}
+                                  {field.dynamic
+                                    ? t(
+                                        ' Valeur définie par l’environnement.',
+                                        ' Value set by the environment.',
+                                      )
+                                    : ''}
+                                </small>
+                              </details>
+                            )}
+                          </label>
+                        ))}
+                      </div>
+                    );
+                    return group.advanced ? (
+                      <details key="advanced" className="model-advanced">
+                        <summary>{t('Options avancées', 'Advanced options')}</summary>
+                        {content}
+                      </details>
+                    ) : (
+                      <div key="essential">{content}</div>
+                    );
+                  });
+              })()}
+            </div>
             <div className="modal-actions">
               <Button type="button" onClick={() => setRole(null)}>
                 {' '}

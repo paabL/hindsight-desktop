@@ -87,6 +87,36 @@ export function modelWorkflowDemo() {
     ],
     models: [],
   });
+  const decisionRole = roles.find((role) => role.id === 'decision')!;
+  decisionRole.fields.push(
+    { name: P + 'RECALL_DECISION_MODEL_PROVIDER', label: 'Fournisseur pour recall', value: '' },
+    {
+      name: P + 'RECALL_DECISION_MODEL_PRUNE',
+      label: 'Recall : écarter les faits inutiles',
+      value: 'false',
+    },
+    {
+      name: P + 'RECALL_DECISION_MODEL_DEDUP',
+      label: 'Recall : retirer les doublons',
+      value: 'false',
+    },
+    {
+      name: P + 'MENTAL_MODEL_DELTA_USE_DECISION_MODEL',
+      label: 'Pages : filtrage des nouveautés',
+      value: 'true',
+    },
+    {
+      name: P + 'MENTAL_MODEL_REFRESH_USE_DECISION_MODEL',
+      label: 'Pages : décision dans la réflexion',
+      value: 'true',
+    },
+    { name: P + 'DECISION_MODEL_BASE_URL', label: 'URL de base', value: 'http://127.0.0.1:8766' },
+    {
+      name: P + 'DECISION_MODEL_MAX_REQUEST_TOKENS',
+      label: 'Jetons max par requête',
+      value: '7000',
+    },
+  );
   roles.push({
     id: 'embeddings',
     title: 'Embeddings',

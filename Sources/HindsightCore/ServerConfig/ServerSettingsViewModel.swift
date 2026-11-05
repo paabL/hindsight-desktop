@@ -459,8 +459,29 @@ public final class ServerSettingsViewModel {
 
     // MARK: Enregistrement / restauration (confirmés)
 
+    /// Validate newly selected Cloud endpoints without running shell or reading account tokens.
+    public var configurationProblems: [String] {
+        guard let draft, let original, !connections.status(.hindsightCloud).isConnected else { return [] }
+        let targets = [
+            ("RERANKER", "RERANKER_HINDSIGHT_API_KEY", "RERANKER_BASE_URL"),
+            ("EMBEDDINGS", "EMBEDDINGS_HINDSIGHT_API_KEY", "EMBEDDINGS_BASE_URL"),
+            ("DECISION_MODEL", "DECISION_MODEL_API_KEY", "DECISION_MODEL_BASE_URL"),
+        ]
+        return targets.compactMap { role, key, url in
+            let provider = "HINDSIGHT_API_" + role + "_PROVIDER"
+            let keyName = "HINDSIGHT_API_" + key
+            let urlName = "HINDSIGHT_API_" + url
+            guard draft.value(provider) == "hindsight", (draft.value(keyName) ?? "").isEmpty else { return nil }
+            if role == "DECISION_MODEL", let address = draft.value(urlName), !address.isEmpty, address != HindsightInference.url { return nil }
+            // Existing external credential arrangements are left alone; validate an actual change.
+            guard [provider, keyName, urlName].contains(where: { draft.value($0) != original.value($0) }) else { return nil }
+            return "Hindsight Cloud : connectez votre compte ou configurez \(keyName). Pour un modèle local, choisissez « Sur ce Mac »."
+        }
+    }
+
     public func requestSave() {
         guard hasChanges, let draft else { return }
+        guard configurationProblems.isEmpty else { actionMessage = configurationProblems.joined(separator: "\n"); confirmation = nil; return }
         let summary = changeSummary
         confirmation = ConfirmationRequest(
             title: "Enregistrer le script de lancement ?",
@@ -474,6 +495,12 @@ public final class ServerSettingsViewModel {
     }
 
     private func save(_ text: String) async {
+        // Recheck the exact confirmed draft; a newer draft cannot authorize different text.
+        let current = draft
+        draft = LaunchScript(text: text)
+        let problems = configurationProblems
+        draft = current
+        guard problems.isEmpty else { actionMessage = problems.joined(separator: "\n"); return }
         do {
             let backup = try store.save(text, expecting: originalText)
             actionMessage = "Enregistré. Sauvegarde : \(backup.lastPathComponent). Redémarrez le serveur pour appliquer."
@@ -502,6 +529,13 @@ public final class ServerSettingsViewModel {
                 self.actionMessage = "Échec : \(error)"
             }
         }
+    }
+
+    /// A completed managed restart applies only the script that was actually started.
+    public func acknowledgeStartedScript(_ hash: String?) {
+        guard let hash, hash == SHA256.hex(Data(originalText.utf8)),
+              let disk = try? store.read(), hash == SHA256.hex(Data(disk.utf8)) else { return }
+        needsRestart = false
     }
 
     // MARK: Redémarrage (confirmé) et vérification

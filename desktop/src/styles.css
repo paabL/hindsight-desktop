@@ -5169,3 +5169,48 @@ td {
   font-size: 12px;
   color: var(--muted);
 }
+
+/* The model editor keeps its actions in view; only the fields scroll. */
+.modal-body:has(.model-editor) {
+  overflow: hidden;
+  display: flex;
+  padding-bottom: 16px;
+}
+.model-editor {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  gap: 14px;
+}
+.model-editor-fields {
+  overflow-y: auto;
+  min-height: 0;
+  max-height: 52vh;
+  padding: 2px 6px 4px 0;
+}
+.model-editor .form-stack {
+  gap: 14px;
+}
+.model-editor .modal-actions {
+  margin-top: 0;
+  padding-top: 14px;
+  flex-shrink: 0;
+}
+.model-advanced {
+  margin-top: 16px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+.model-advanced > summary {
+  color: var(--secondary);
+  cursor: pointer;
+  margin-bottom: 12px;
+}
+.field-explanation {
+  font-size: 11px;
+  color: var(--secondary);
+  margin-top: 4px;
+}
+.field-explanation > summary {
+  cursor: pointer;
+}

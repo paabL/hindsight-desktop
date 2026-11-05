@@ -187,3 +187,9 @@ data loading without unnecessary native layout simulation.
 
 The visual test also includes a dense synthetic map of 100 nodes: group aggregation,
 exact connection counts, opening group members, and expanding nodes on zoom.
+
+`npm run test:service` checks offline startup polling, disabled duplicate actions,
+inline failure and recovery, and the compact model editor at 1000 × 760, using a
+mock host. It never starts or stops a real service. Native service tests exercise
+redirected startup logs, exclusion of historical failures, credential validation,
+and the default LLM diagnostic environment with fake process runners.

@@ -27,6 +27,7 @@ export type Confirmation = {
   requiredText?: string | null;
 };
 export type Snapshot = {
+  serviceBusy?: boolean;
   updates?: Row;
   app: {
     connected: boolean;

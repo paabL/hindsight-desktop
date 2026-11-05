@@ -93,6 +93,7 @@ final class DesktopBridge {
     var sourcesTask: Task<Void, Never>?
     var sourcesGeneration = UUID()
     var collectionTask: Task<Void, Never>?
+    var serviceTask: Task<Void, Never>?
     var graphMode = GraphViewModel.Mode.entities
     var graphLimit = 300
     var autoSyncConfirmation: UUID?
@@ -127,6 +128,7 @@ final class DesktopBridge {
             await app.connect()
             await connected()
         case "server.url":
+            guard serviceTask == nil, !app.service.isBusy else { throw BridgeFailure("Le service est déjà en cours de modification.") }
             cancelSourcesRefresh()
             clearConfirmations()
             guard await app.applyServerURL(str("url")) else { throw BridgeFailure(app.serverURLNotice ?? "Adresse invalide.") }
@@ -139,6 +141,7 @@ final class DesktopBridge {
             let ready = !updater.isWorking && updateTask == nil
                 && !app.memoryFolder.collecting && !app.memoryFolder.importing && collectionTask == nil
                 && !app.localDecision.isBusy && decisionTask == nil
+                && !app.service.isBusy && serviceTask == nil
                 && app.coverage.sending == nil && app.projectSync.running == nil
             return ["releaseUpdateReady": ready]
         case "updates.install":
@@ -356,7 +359,7 @@ final class DesktopBridge {
             let settings = app.serverSettings!, source = str("source")
             // Un serveur 1.1.0 refuserait de démarrer avec un fournisseur `hindsight`.
             if source != "off", !(command == "server.reranker" && source == "local"),
-               !ServerCapabilities.is120(app.connection.version?.apiVersion) {
+               let version = app.connection.version?.apiVersion, !ServerCapabilities.is120(version) {
                 throw BridgeFailure("Serveur Hindsight 1.2.0 requis pour les modèles Hindsight.")
             }
             switch (command, source) {
@@ -392,7 +395,9 @@ final class DesktopBridge {
             ownConfirmation = ConfirmationRequest(title: "Se déconnecter de \(account.title) ?", message: "La clé enregistrée sur ce Mac (~/.hindsight/cloud/credentials.json) sera effacée : les modèles Hindsight Cloud du serveur n'auront plus de clé. Elle reste valide jusqu'à sa révocation sur \(HindsightInference.apiKeysPage).", confirmTitle: "Se déconnecter") { [app] in await app.serverSettings.connections.disconnect(account, context: context) }
         case "service.start": app.service.requestStart()
         case "service.stop": app.service.requestStop()
-        case "service.restart": app.service.requestRestart()
+        case "service.restart":
+            guard serviceTask == nil, !app.service.isBusy else { throw BridgeFailure("Le service est déjà en cours de modification.") }
+            app.service.requestRestart()
         case "service.install": app.service.requestInstall(startAtLogin: p["atLogin"] as? Bool ?? false)
         case "service.uninstall": app.service.requestUninstall()
         case "service.atLogin": app.service.setStartAtLogin(p["enabled"] as? Bool ?? false)
@@ -429,11 +434,21 @@ final class DesktopBridge {
             let workspaceAction = workspace.confirmation?.id == request.id
             let backgroundUpdate = updater.confirmation?.id == request.id
             let backgroundDecision = app.localDecision.confirmation?.id == request.id
+            let backgroundService = p["background"] as? Bool == true &&
+                (app.service.confirmation?.id == request.id ||
+                 (app.serverSettings.confirmation?.id == request.id && request.title == "Redémarrer le serveur Hindsight ?"))
+            if backgroundService, serviceTask != nil || app.service.isBusy { throw BridgeFailure("Le service est déjà en cours de modification.") }
             let backgroundCollection = app.memoryFolder.confirmation?.id == request.id && p["background"] as? Bool == true
             let activateSync = autoSyncConfirmation == request.id
             clearConfirmations()
             if backgroundUpdate { updateTask = Task { @MainActor in await request.perform(); self.updateTask = nil } }
             else if backgroundDecision { decisionTask = Task { @MainActor in await request.perform(); self.decisionTask = nil } }
+            else if backgroundService {
+                serviceTask = Task { @MainActor in
+                    await request.perform()
+                    self.serviceTask = nil
+                }
+            }
             else if backgroundCollection {
                 guard collectionTask == nil else { throw BridgeFailure("Une collecte est en cours dans ce dossier.") }
                 cancelSourcesRefresh(invalidate: false)
@@ -565,6 +580,7 @@ final class DesktopBridge {
             "app": ["connected": connected, "connectionError": wire(error), "serverURLNotice": wire(app.serverURLNotice), "serverURL": app.serverURL.absoluteString,
                     "version": wire(app.connection.version), "banks": wire(app.banks), "bank": wire(app.selectedBankID),
                     "folder": wire(app.memoryFolder.repository?.path), "paused": wire(app.pause.heldBanks)],
+            "serviceBusy": serviceTask != nil || app.service.isBusy,
             "updates": updateSnapshot(),
             "section": section, "data": sectionData(sourceRevision: sourceRevision), "messages": messages.map { SecretMasker.mask($0) },
             "confirmations": pending().map { ["id": $0.id.uuidString, "title": $0.title, "message": SecretMasker.mask($0.message),
@@ -689,6 +705,7 @@ final class DesktopBridge {
         }
         return ["scriptPath": settings.scriptPath, "hasChanges": settings.hasChanges, "needsRestart": settings.needsRestart,
                 "modelWorkflow": wire(settings.modelWorkflow),
+                "configurationProblems": settings.configurationProblems,
                 "providerChoices": settings.providerChoices.map { ["id": $0.id, "title": $0.title] },
                 "modelsByProvider": wire(settings.modelsByProvider),
                 "hindsightModels": hindsightModelsSnapshot(),
@@ -712,6 +729,8 @@ final class DesktopBridge {
                 "diff": wire(settings.compactDiff), "backups": wire(settings.backups), "error": wire(settings.state.errorMessage),
                 "diagnostic": wire(app.session?.dashboard.snapshot?.llmHealth), "diagnosticError": wire(app.session?.dashboard.llmTestMessage),
                 "service": ["installed": service.isInstalled, "running": service.job.running, "reachable": service.apiReachable,
+                            "busy": service.isBusy || serviceTask != nil, "phase": serviceTask != nil && !service.isBusy ? "starting" : service.phase,
+                            "error": wire(service.failure), "message": wire(service.message), "lastExitCode": wire(service.job.lastExitCode),
                             "canStart": service.canStart, "canStop": service.canStop, "atLogin": service.installed?.runAtLoad ?? false,
                             "log": service.logTail, "scriptWarning": wire(service.scriptWarning), "frozen": service.isWorkerPaused]]
     }

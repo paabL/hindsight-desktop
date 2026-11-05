@@ -231,6 +231,7 @@ export function Tabs({
     <div className="tabs" role="tablist">
       {items.map((item) => (
         <button
+          type="button"
           key={item.id}
           role="tab"
           aria-selected={value === item.id}

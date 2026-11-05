@@ -327,6 +327,8 @@ final class HindsightServiceTests: XCTestCase {
         let spec = try XCTUnwrap(LaunchAgentSpec.parse(Data(contentsOf: e.paths.plist)))
         XCTAssertEqual(spec.scriptPath, e.script.path)
         XCTAssertTrue(spec.runAtLoad)
+        let plist = try XCTUnwrap(PropertyListSerialization.propertyList(from: Data(contentsOf: e.paths.plist), format: nil) as? [String: Any])
+        XCTAssertEqual((plist["EnvironmentVariables"] as? [String: String])?["HINDSIGHT_API_ENABLE_BANK_LLM_HEALTH"], "true")
         XCTAssertEqual(e.store.string(forKey: SettingsKey.serviceScriptHash), SHA256.hex(try Data(contentsOf: e.script)))
 
         e.vm.setStartAtLogin(false)
@@ -405,6 +407,52 @@ final class HindsightServiceTests: XCTestCase {
         XCTAssertTrue(e.vm.message?.contains("ne répond pas") == true)
         XCTAssertTrue(e.vm.logTail.contains("Traceback"))
         XCTAssertFalse(e.vm.logTail.contains("abcdefghijklmnop"))
+    }
+
+    func testStartPublishesBusyBeforeReturningAndIgnoresRepeatedClicks() async throws {
+        let e = make()
+        await e.vm.refresh()
+        e.vm.requestInstall(startAtLogin: false)
+        await e.vm.confirmation!.perform()
+        await e.vm.stop()
+        e.vm.requestStart()
+        XCTAssertTrue(e.vm.isBusy)
+        XCTAssertEqual(e.vm.phase, "starting")
+        e.vm.requestStart()
+        for _ in 0..<100 where e.vm.isBusy { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertFalse(e.vm.isBusy)
+        XCTAssertTrue(e.vm.apiReachable)
+    }
+
+    func testFailedStartReadsRedirectedLogAndIgnoresEarlierFailure() async throws {
+        let e = make()
+        await e.vm.refresh()
+        e.vm.requestInstall(startAtLogin: false)
+        await e.vm.confirmation!.perform()
+        await e.vm.stop()
+        let redirected = dir.appendingPathComponent("actual-api.log")
+        try Data("ValueError: obsolete failure\n".utf8).write(to: redirected)
+        let original = try String(contentsOf: e.script, encoding: .utf8)
+        try (original + "\nexec server >> \"\(redirected.path)\" 2>&1\n").write(to: e.script, atomically: true, encoding: .utf8)
+        let base = e.runner.handler
+        e.runner.handler = { invocation in
+            if invocation.arguments.first == "kickstart" {
+                do {
+                    let file = try FileHandle(forWritingTo: redirected)
+                    try file.seekToEnd()
+                    try file.write(contentsOf: Data("ValueError: missing reranker credential\n".utf8))
+                    try file.close()
+                    return ProcessOutput(status: 0)
+                } catch { return ProcessOutput(status: 1, stderr: "Fixture log failed") }
+            }
+            return base(invocation)
+        }
+        await e.vm.start()
+        XCTAssertEqual(e.vm.phase, "failed")
+        XCTAssertTrue(e.vm.failure?.contains("missing reranker credential") == true)
+        XCTAssertFalse(e.vm.failure?.contains("obsolete failure") == true)
+        XCTAssertTrue(e.vm.logTail.contains("actual-api.log"))
+        XCTAssertFalse(e.vm.isBusy)
     }
 
     func testUninstallRemovesAgent() async throws {

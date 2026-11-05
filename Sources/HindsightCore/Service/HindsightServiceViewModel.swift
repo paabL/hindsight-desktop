@@ -64,6 +64,19 @@ public final class HindsightServiceViewModel {
     public private(set) var isBusy = false
     public var confirmation: ConfirmationRequest?
     public var message: String?
+    public private(set) var failure: String?
+    public private(set) var startedScriptHash: String?
+    @ObservationIgnored private var attemptScriptHash: String?
+    @ObservationIgnored private var logOffsets: [URL: UInt64] = [:]
+
+    public var phase: String {
+        if failure != nil && !isBusy { return "failed" }
+        switch status {
+        case .starting: return "starting"
+        case .stopping: return "stopping"
+        default: return apiReachable ? "ready" : "stopped"
+        }
+    }
     /// Appelé quand le serveur vient de (re)démarrer et répond : l'app se reconnecte.
     @ObservationIgnored public var onServerStarted: (@MainActor @Sendable () async -> Void)?
 
@@ -104,7 +117,7 @@ public final class HindsightServiceViewModel {
         job = installed == nil ? .notLoaded : await jobStatus()
         apiReachable = await probeAPI()
         inspectScript()
-        if !isBusy { status = computeStatus() }
+        if !isBusy { status = computeStatus(); if apiReachable { failure = nil } }
         loadLog()
     }
 
@@ -122,7 +135,8 @@ public final class HindsightServiceViewModel {
     }
 
     func probeAPI() async -> Bool {
-        (try? await clientProvider().version()) != nil
+        let response: VersionResponse? = try? await clientProvider().send(APIRequest("GET", ["version"], timeout: 3))
+        return response != nil
     }
 
     public func inspectScript() {
@@ -141,20 +155,34 @@ public final class HindsightServiceViewModel {
         }
     }
 
-    /// Fin du journal (64 Kio au plus), secrets masqués.
+    private var logURLs: [URL] {
+        let text = (try? String(contentsOf: scriptURL, encoding: .utf8)) ?? ""
+        let redirected = ServiceDiagnostics.redirectedLog(in: text)
+        return [paths.log] + (redirected.map { $0 != paths.log ? [$0] : [] } ?? [])
+    }
+
     public func loadLog() {
-        guard let h = try? FileHandle(forReadingFrom: paths.log) else {
-            logTail = ""
-            return
-        }
-        defer { try? h.close() }
-        let size = (try? h.seekToEnd()) ?? 0
-        let start = size > 65_536 ? size - 65_536 : 0
-        try? h.seek(toOffset: start)
-        let data = (try? h.readToEnd()) ?? Data()
-        var text = String(decoding: data, as: UTF8.self)
-        if start > 0, let nl = text.firstIndex(of: "\n") { text = String(text[text.index(after: nl)...]) }
-        logTail = SecretMasker.mask(text)
+        logTail = logURLs.compactMap { url in
+            let text = ServiceDiagnostics.tail(url)
+            return text.isEmpty ? nil : "[\(url.path)]\n" + text
+        }.joined(separator: "\n")
+    }
+
+    private func beginAttempt() {
+        attemptScriptHash = (try? Data(contentsOf: scriptURL)).map(SHA256.hex)
+        failure = nil
+        message = nil
+        logOffsets = Dictionary(uniqueKeysWithValues: logURLs.map { url in
+            let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.uint64Value ?? 0
+            return (url, size)
+        })
+    }
+
+    private func fail(_ text: String) {
+        loadLog()
+        let current = logURLs.map { ServiceDiagnostics.tail($0, after: logOffsets[$0] ?? 0) }.joined(separator: "\n")
+        failure = text + (ServiceDiagnostics.error(in: current).map { "\n" + $0 } ?? "")
+        message = failure
     }
 
     /// À appeler quand l'utilisateur a validé le contenu actuel du script (ex. enregistrement confirmé du diff).
@@ -167,6 +195,7 @@ public final class HindsightServiceViewModel {
     // MARK: Installation (confirmée)
 
     public func requestInstall(startAtLogin: Bool) {
+        guard !isBusy else { return }
         inspectScript()
         if let problem = blockingIssues.first {
             message = "Impossible d'utiliser ce script : \(problem)"
@@ -234,6 +263,7 @@ public final class HindsightServiceViewModel {
     }
 
     public func requestUninstall() {
+        guard !isBusy else { return }
         confirmation = ConfirmationRequest(
             title: "Désinstaller le service Hindsight ?",
             message: "Le serveur sera arrêté s'il tourne, et l'agent \(paths.plist.lastPathComponent) supprimé. Le script de lancement, les données du serveur et le journal sont conservés.",
@@ -258,12 +288,15 @@ public final class HindsightServiceViewModel {
     // MARK: Démarrer / arrêter / redémarrer
 
     public func requestStart() {
+        guard !isBusy else { return }
         inspectScript()
         if let problem = blockingIssues.first {
             message = "Démarrage refusé : \(problem)"
             return
         }
         guard scriptChangedSinceApproval else {
+            isBusy = true
+            status = .starting
             Task { await start() }
             return
         }
@@ -279,25 +312,23 @@ public final class HindsightServiceViewModel {
     }
 
     func start() async {
-        guard installed != nil else { return }
+        guard installed != nil else { isBusy = false; return }
+        isBusy = true
+        status = .starting
+        beginAttempt()
+        defer { isBusy = false; status = computeStatus() }
         if await probeAPI() {
             message = "Un serveur répond déjà à cette adresse : arrêtez-le avant de démarrer le service."
             await refresh()
             return
         }
-        isBusy = true
-        status = .starting
-        defer { isBusy = false }
         do {
             try prepareLog()
-            if !(await jobStatus().loaded) {
-                let r = try await runner.run(ProcessInvocation(Self.launchctl, ["bootstrap", domain, paths.plist.path], timeout: 20))
-                guard r.succeeded else { throw ServiceError.launchctl("bootstrap", r.combined) }
-            }
+            try await loadAgentForStart()
             let r = try await runner.run(ProcessInvocation(Self.launchctl, ["kickstart", target], timeout: 20))
             guard r.succeeded else { throw ServiceError.launchctl("kickstart", r.combined) }
         } catch {
-            message = "Démarrage impossible : \(error)"
+            fail("Démarrage impossible : \(error)")
             await refresh()
             return
         }
@@ -305,6 +336,7 @@ public final class HindsightServiceViewModel {
     }
 
     public func requestStop() {
+        guard !isBusy else { return }
         confirmation = ConfirmationRequest(
             title: "Arrêter le serveur Hindsight ?",
             message: "Les requêtes en cours seront interrompues ; les opérations en file reprendront au prochain démarrage. L'app restera ouverte mais déconnectée.",
@@ -338,6 +370,7 @@ public final class HindsightServiceViewModel {
     }
 
     public func requestRestart() {
+        guard !isBusy else { return }
         inspectScript()
         if let problem = blockingIssues.first {
             message = "Redémarrage refusé : \(problem)"
@@ -358,26 +391,42 @@ public final class HindsightServiceViewModel {
     /// Redémarre (ou démarre) le job et attend l'API. Retourne vrai si l'API répond.
     @discardableResult
     public func restart() async -> Bool {
-        guard installed != nil else { return false }
+        guard installed != nil, !isBusy else { return false }
         isBusy = true
         status = .starting
-        defer { isBusy = false }
+        beginAttempt()
+        defer { isBusy = false; status = computeStatus() }
         do {
             try prepareLog()
-            if !(await jobStatus().loaded) {
-                let r = try await runner.run(ProcessInvocation(Self.launchctl, ["bootstrap", domain, paths.plist.path], timeout: 20))
-                guard r.succeeded else { throw ServiceError.launchctl("bootstrap", r.combined) }
-            }
+            try await loadAgentForStart()
             let r = try await runner.run(ProcessInvocation(Self.launchctl, ["kickstart", "-k", target], timeout: stopTimeout + 10))
             guard r.succeeded else { throw ServiceError.launchctl("kickstart -k", r.combined) }
         } catch {
-            message = "Redémarrage impossible : \(error)"
+            fail("Redémarrage impossible : \(error)")
             await refresh()
             return false
         }
         // Laisse à l'ancien processus le temps de libérer le port avant de sonder.
         try? await Task.sleep(for: pollInterval)
         return await waitUntilUp(action: "redémarré")
+    }
+
+    private func loadAgentForStart() async throws {
+        if let spec = installed,
+           let data = try? Data(contentsOf: paths.plist),
+           let raw = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+           (raw["EnvironmentVariables"] as? [String: String])?["HINDSIGHT_API_ENABLE_BANK_LLM_HEALTH"] == nil {
+            try writePlist(spec)
+            if await jobStatus().loaded {
+                let result = try await runner.run(ProcessInvocation(Self.launchctl, ["bootout", target], timeout: stopTimeout))
+                guard result.succeeded else { throw ServiceError.launchctl("bootout", result.combined) }
+                await waitUntilDown()
+            }
+        }
+        if !(await jobStatus().loaded) {
+            let result = try await runner.run(ProcessInvocation(Self.launchctl, ["bootstrap", domain, paths.plist.path], timeout: 20))
+            guard result.succeeded else { throw ServiceError.launchctl("bootstrap", result.combined) }
+        }
     }
 
     // MARK: Geler la file
@@ -399,6 +448,7 @@ public final class HindsightServiceViewModel {
     /// confirmation de l'utilisateur, ou applique un plafond qu'il a confirmé.
     @discardableResult
     public func setWorkerPaused(_ paused: Bool) async -> Bool {
+        guard !isBusy else { return false }
         guard var spec = installed else {
             message = "Le serveur n'est pas lancé par le service de l'app : sa file ne peut pas être gelée d'ici."
             return false
@@ -465,19 +515,23 @@ public final class HindsightServiceViewModel {
     @discardableResult
     func waitUntilUp(action: String) async -> Bool {
         let deadline = Date().addingTimeInterval(startTimeout)
-        while Date() < deadline {
+        var sawRunning = false
+        let started = Date()
+        while Date() < deadline, !Task.isCancelled {
             if await probeAPI() {
                 apiReachable = true
                 job = await jobStatus()
                 status = computeStatus()
                 message = "Serveur \(action) : l'API répond."
                 loadLog()
+                startedScriptHash = attemptScriptHash
                 await onServerStarted?()
                 return true
             }
             job = await jobStatus()
-            if !job.running && job.lastExitCode != nil && job.lastExitCode != 0 {
-                break  // le script s'est terminé en erreur : inutile d'attendre
+            sawRunning = sawRunning || job.running
+            if !job.running && job.lastExitCode != nil && (sawRunning || Date().timeIntervalSince(started) >= min(2, startTimeout / 2)) {
+                break
             }
             try? await Task.sleep(for: pollInterval)
         }
@@ -486,7 +540,7 @@ public final class HindsightServiceViewModel {
         apiReachable = false
         status = computeStatus()
         let exit = job.lastExitCode.map { " (code de sortie \($0))" } ?? ""
-        message = "Le service a été lancé mais l'API ne répond pas\(exit). Consultez le journal ci-dessous."
+        fail("Le service a été lancé mais l'API ne répond pas\(exit). Consultez le journal ci-dessous.")
         return false
     }
 

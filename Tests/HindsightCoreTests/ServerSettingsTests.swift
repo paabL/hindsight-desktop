@@ -412,6 +412,50 @@ final class ServerSettingsViewModelTests: XCTestCase {
         XCTAssertTrue(vm.warnings.first?.contains("incompatibles") == true)
     }
 
+    func testNewCloudRerankerWithoutCredentialsCannotOverwriteWorkingScript() async throws {
+        let (vm, url, _) = make()
+        await vm.load()
+        let before = try Data(contentsOf: url)
+        vm.useCloudReranker()
+        XCTAssertFalse(vm.configurationProblems.isEmpty)
+        vm.requestSave()
+        XCTAssertNil(vm.confirmation)
+        XCTAssertEqual(try Data(contentsOf: url), before)
+        vm.useLocalHindsightReranker()
+        XCTAssertTrue(vm.configurationProblems.isEmpty)
+        vm.requestSave()
+        let confirmation = try XCTUnwrap(vm.confirmation)
+        await confirmation.perform()
+        XCTAssertEqual(LaunchScript(text: try String(contentsOf: url, encoding: .utf8)).value("HINDSIGHT_API_RERANKER_PROVIDER"), "local")
+    }
+
+    func testRestartNoticeClearsOnlyForTheConfirmedScriptThatActuallyStarted() async throws {
+        let (vm, file, _) = make()
+        await vm.load()
+        vm.setValue("HINDSIGHT_API_REFLECT_LLM_MODEL", "fixture-model")
+        vm.requestSave()
+        await vm.confirmation!.perform()
+        XCTAssertTrue(vm.needsRestart)
+        let hash = SHA256.hex(try Data(contentsOf: file))
+        vm.acknowledgeStartedScript("older-script")
+        XCTAssertTrue(vm.needsRestart)
+        let saved = try Data(contentsOf: file)
+        try Data("# externally modified\n".utf8).write(to: file)
+        vm.acknowledgeStartedScript(hash)
+        XCTAssertTrue(vm.needsRestart)
+        try saved.write(to: file)
+        vm.acknowledgeStartedScript(hash)
+        XCTAssertFalse(vm.needsRestart)
+    }
+
+    func testExplicitCloudKeyIsAccepted() async {
+        let (vm, _, _) = make()
+        await vm.load()
+        vm.useCloudReranker()
+        vm.setValue("HINDSIGHT_API_RERANKER_HINDSIGHT_API_KEY", "fixture-key-only")
+        XCTAssertTrue(vm.configurationProblems.isEmpty)
+    }
+
     func testSaveRequiresConfirmationAndBacksUp() async throws {
         let (vm, url, _) = make()
         await vm.load()

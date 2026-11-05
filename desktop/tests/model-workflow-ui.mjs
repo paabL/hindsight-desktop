@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict';
 import { chromium, expect } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
@@ -124,6 +125,7 @@ try {
   await expect(cohereModel).toHaveValue('rerank-v4.0-fast');
   await expect(editor.locator('input[type="password"]')).toHaveCount(1);
   await provider.selectOption('tei');
+  await editor.locator('.model-advanced > summary').click();
   await expect(editor.getByRole('textbox', { name: 'URL TEI', exact: true })).toBeVisible();
   await expect(cohereModel).toHaveCount(0);
   await expect(editor.locator('input[type="password"]')).toHaveCount(0);
@@ -163,6 +165,30 @@ try {
   );
   await editor.getByRole('button', { name: 'Annuler', exact: true }).click();
   await page.locator('.role-card').filter({ hasText: 'Décision' }).click();
+  await expect(provider).toHaveValue('__hindsight_local__');
+  await provider.selectOption('hindsight');
+  await expect(provider).toHaveValue('hindsight');
+  await provider.selectOption('__hindsight_local__');
+  await expect(provider).toHaveValue('__hindsight_local__');
+  await expect(editor.getByRole('combobox', { name: 'Modèle', exact: true })).toBeVisible();
+  await expect(
+    editor.getByRole('combobox', { name: 'Recall : retirer les doublons', exact: true }),
+  ).toHaveCount(0);
+  const bounds = await editor.boundingBox();
+  assert.ok(bounds.height < 650, `Decision editor too tall: ${bounds.height}`);
+  const footer = await editor
+    .getByRole('button', { name: 'Préparer ces changements', exact: true })
+    .boundingBox();
+  assert.ok(footer.y + footer.height <= 1100, 'Footer must remain visible');
+  await editor.getByRole('tab', { name: 'Recherche', exact: true }).click();
+  await expect(
+    editor.getByRole('combobox', { name: 'Recall : retirer les doublons', exact: true }),
+  ).toBeVisible();
+  await editor.getByRole('tab', { name: 'Pages', exact: true }).click();
+  await expect(
+    editor.getByRole('combobox', { name: 'Pages : filtrage des nouveautés', exact: true }),
+  ).toBeVisible();
+  await editor.getByRole('tab', { name: 'Réponse', exact: true }).click();
   const decisionFlag = editor.getByRole('combobox', {
     name: 'Réponses : utiliser la décision',
     exact: true,

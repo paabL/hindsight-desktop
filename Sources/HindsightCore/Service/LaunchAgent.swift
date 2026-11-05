@@ -27,7 +27,7 @@ public struct LaunchAgentSpec: Sendable, Hashable {
     }
 
     public var plist: [String: Any] {
-        var env = ["PATH": path]
+        var env = ["PATH": path, "HINDSIGHT_API_ENABLE_BANK_LLM_HEALTH": "true"]
         if workerPaused { env[Self.workerEnabledVariable] = "false" }
         return [
             "Label": Self.label,

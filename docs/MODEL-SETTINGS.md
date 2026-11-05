@@ -35,3 +35,23 @@ Validation:
 - `cd desktop && npm run test:models && npm run test:navigation && npm run test:i18n`
 
 The native test uses temporary launch scripts and a local HTTP fixture, verifies confirmation and replay protection, and checks that existing embedding lines and secrets are preserved. Browser checks use only the fictional demo state.
+
+## Local models and service recovery
+
+For Hindsight models on your Mac, use the **On this Mac** choices: the decision
+model uses the local service on port 8766; the local reranker uses provider
+`local` with `hindsight-ai/hs-rerank-1`. Provider `hindsight` for reranking means
+Hindsight Cloud and requires its account or key. Existing embeddings are separate.
+New Cloud selections without an explicit credential or connected account cannot
+be saved over a working script.
+
+The advanced decision editor groups fields into Model, Search, Answer,
+Consolidation and Pages. Technical options are collapsed; the footer stays visible.
+The service shows startup progress and keeps polling while offline. Startup errors
+appear beside its controls, including errors from a literal log redirection in the
+launch script. A successful managed restart clears the pending-restart notice only
+for the exact saved script that started.
+
+Managed launch agents enable the bank LLM diagnostic by default. The diagnostic
+endpoint is available; running a diagnostic is still an explicit action and may
+call your configured providers. An explicit script setting can disable it.

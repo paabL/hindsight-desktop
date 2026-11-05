@@ -350,8 +350,9 @@ export default function App() {
   // Le suivi ne lance aucun traitement. La surveillance reste active si des plafonds sont autorisés.
   // Page Serveur : suit l’installation du modèle local et la connexion à un compte, sans recharger.
   const serverWork =
-    route === 'server' &&
-    !!(snapshot.data?.connectingAccount || snapshot.data?.hindsightModels?.local?.busy);
+    !!snapshot.serviceBusy ||
+    (route === 'server' &&
+      !!(snapshot.data?.connectingAccount || snapshot.data?.hindsightModels?.local?.busy));
   const sourcesWork =
     route === 'sources' && !!(snapshot.data?.refreshing || snapshot.data?.collecting);
   useEffect(() => {

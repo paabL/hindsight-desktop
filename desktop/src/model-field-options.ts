@@ -80,7 +80,12 @@ export function providerOptions(role: Row, field: Row, data: Row): ModelOption[]
     ...available,
     ...configured,
     ...(field.value ? [{ id: field.value, title: field.value }] : []),
-  ]);
+  ]).map((option) => ({ ...option }));
+  for (const option of options) {
+    if (option.id === 'hindsight')
+      option.title = role.id === 'decision' ? 'Hindsight · local / Cloud' : 'Hindsight Cloud';
+    if (option.id === 'local') option.title = 'Local · on this Mac';
+  }
   return role.id === 'decision' && field.name === 'HINDSIGHT_API_REFLECT_DECISION_MODEL_PROVIDER'
     ? options.filter((option) => ['none', 'hindsight', 'typesafe', field.value].includes(option.id))
     : options;

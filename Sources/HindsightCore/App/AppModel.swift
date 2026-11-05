@@ -111,6 +111,7 @@ public final class AppModel {
             client: { [unowned self] in self.client }, scriptPath: { [unowned self] in self.serverSettings.scriptPath })
         // Après un (re)démarrage, l'API peut annoncer d'autres réglages (worker, traces) : les relire.
         self.service.onServerStarted = { @MainActor @Sendable [unowned self] in
+            self.serverSettings.acknowledgeStartedScript(self.service.startedScriptHash)
             if self.connection.isConnected { await self.refreshServerInfo() } else { await self.connect() }
         }
         self.serverSettings.service = self.service

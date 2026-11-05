@@ -204,6 +204,13 @@ const exact: Record<string, string> = {
 
 type Rule = [RegExp, (...groups: string[]) => string];
 const rules: Rule[] = [
+  [
+    /^Hindsight Cloud : connectez votre compte ou configurez (.*)\. Pour un modèle local, choisissez « Sur ce Mac »\.$/,
+    (key) =>
+      `Hindsight Cloud: connect your account or configure ${key}. For a local model, choose “On this Mac”.`,
+  ],
+  [/^Démarrage impossible : ([\s\S]*)$/, (detail) => `Startup failed: ${detail}`],
+  [/^Redémarrage impossible : ([\s\S]*)$/, (detail) => `Restart failed: ${detail}`],
   [/^Créer la banque « (.*) » \?$/, (id) => `Create memory bank “${id}”?`],
   [/^Renommer « (.*) » en « (.*) » \?$/, (id, name) => `Rename “${id}” to “${name}”?`],
   [/^Afficher « (.*) » sous le nom « (.*) » \?$/, (id, name) => `Display “${id}” as “${name}”?`],
@@ -597,7 +604,14 @@ export function localizeNativeSnapshot(snapshot: Snapshot): Snapshot {
       }));
     if (Array.isArray(data.warnings)) data.warnings = data.warnings.map(text);
     if (data.service)
-      data.service = { ...data.service, scriptWarning: text(data.service.scriptWarning) };
+      data.service = {
+        ...data.service,
+        scriptWarning: text(data.service.scriptWarning),
+        error: text(data.service.error),
+        message: text(data.service.message),
+      };
+    if (Array.isArray(data.configurationProblems))
+      data.configurationProblems = data.configurationProblems.map(text);
     if (data.hindsightModels?.local)
       data.hindsightModels = {
         ...data.hindsightModels,
