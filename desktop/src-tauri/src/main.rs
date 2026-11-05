@@ -7,6 +7,8 @@ use base64::Engine;
 use tokio::{io::{AsyncBufReadExt, AsyncWriteExt, BufReader}, process::{Child, ChildStdin, ChildStdout, Command}, sync::Mutex};
 
 mod release_update;
+mod relaunch;
+mod macos_install;
 
 struct NativeBridge { _child: Child, stdin: ChildStdin, stdout: BufReader<ChildStdout>, next: u64 }
 struct BridgeState(Mutex<Option<NativeBridge>>);
@@ -15,7 +17,7 @@ struct BridgeState(Mutex<Option<NativeBridge>>);
 async fn bridge(app: tauri::AppHandle, request: Value, state: State<'_, BridgeState>) -> Result<Value, String> {
     let mut guard = state.0.lock().await;
     let result = bridge_call(&app, request, &mut guard).await?;
-    if result["relaunch"] == true { app.restart(); }
+    if result["relaunch"] == true { relaunch::restart(&app)?; }
     Ok(result)
 }
 

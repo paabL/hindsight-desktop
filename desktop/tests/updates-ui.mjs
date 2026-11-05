@@ -186,8 +186,31 @@ try {
   await expect(frCheck).toBeEnabled();
   await frCheck.click();
   await expect.poll(() => count(french, 'release_update_check')).toBe(2);
+  await french.evaluate(() => window.__updaterFixture.finish({ version: '0.1.4' }));
+  await frUpdates.getByRole('button', { name: 'Mettre à jour et redémarrer' }).click();
+  await expect.poll(() => count(french, 'release_update_install')).toBe(2);
+  await french.evaluate(() => window.__updaterFixture.fail('UPDATE_RESTART_FAILED'));
+  await expect(frUpdates.getByRole('alert')).toContainText('La mise à jour est installée.');
+  await expect(frUpdates.getByRole('alert')).toContainText('Quittez puis rouvrez');
+  await frCheck.click();
+  await expect.poll(() => count(french, 'release_update_check')).toBe(3);
   await french.evaluate(() => window.__updaterFixture.finish(null));
   await expect(frUpdates.getByRole('status')).toHaveText('Vous utilisez la dernière version.');
+
+  const restartFailure = await nativePage('en');
+  const restartCard = card(restartFailure);
+  await restartCard.getByRole('button', { name: 'Check for updates', exact: true }).click();
+  await expect.poll(() => count(restartFailure, 'release_update_check')).toBe(1);
+  await restartFailure.evaluate(() => window.__updaterFixture.finish({ version: '0.1.4' }));
+  await restartCard.getByRole('button', { name: 'Update and restart', exact: true }).click();
+  await expect.poll(() => count(restartFailure, 'release_update_install')).toBe(1);
+  await restartFailure.evaluate(() => window.__updaterFixture.fail('UPDATE_RESTART_FAILED'));
+  await expect(restartCard.getByRole('alert')).toContainText(
+    'The update is installed. Quit and reopen',
+  );
+  await expect(
+    restartCard.getByRole('button', { name: 'Update and restart', exact: true }),
+  ).toHaveCount(0);
 
   const demo = await nativePage('en', true);
   await expect(

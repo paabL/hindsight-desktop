@@ -33,8 +33,8 @@ public enum BundleInstaller {
         else { throw InstallError.invalidBundle("exécutable absent") }
     }
 
-    /// Copie `new` à côté de `current`, puis échange les deux par renommages (même volume), en remettant
-    /// l'ancienne version en place si l'échange échoue. L'ancienne version est ensuite supprimée.
+    /// Garde le répertoire `.app` existant : les raccourcis du Dock suivent son identité de fichier.
+    /// Seul `Contents` est échangé ; une première installation crée normalement le bundle.
     public static func replace(_ current: URL, with new: URL, identifier: String = AppInfo.bundleIdentifier) throws {
         try validate(new, identifier: identifier)
         let fm = FileManager.default
@@ -42,12 +42,51 @@ public enum BundleInstaller {
         let token = UUID().uuidString.prefix(8)
         let staged = dir.appendingPathComponent(".\(current.lastPathComponent).new-\(token)")
         let old = dir.appendingPathComponent(".\(current.lastPathComponent).old-\(token)")
+        let hadCurrent = fm.fileExists(atPath: current.path)
+        if hadCurrent { try validate(current, identifier: identifier) }
         do {
             try fm.copyItem(at: new, to: staged)
         } catch {
+            try? fm.removeItem(at: staged)
             throw InstallError.io("Copie impossible dans \(dir.path) : \(error.localizedDescription)")
         }
-        let hadCurrent = fm.fileExists(atPath: current.path)
+        if hadCurrent {
+            let currentContents = current.appendingPathComponent("Contents")
+            let stagedContents = staged.appendingPathComponent("Contents")
+            guard (try? fm.attributesOfItem(atPath: current.path)[.type] as? FileAttributeType) == .typeDirectory,
+                  (try? fm.attributesOfItem(atPath: currentContents.path)[.type] as? FileAttributeType) == .typeDirectory,
+                  (try? fm.attributesOfItem(atPath: stagedContents.path)[.type] as? FileAttributeType) == .typeDirectory else {
+                try? fm.removeItem(at: staged)
+                throw InstallError.invalidBundle("le dossier de l’app ou son contenu n’est pas un répertoire ordinaire")
+            }
+            #if canImport(Darwin)
+            if renamex_np(currentContents.path, stagedContents.path, UInt32(RENAME_SWAP)) == 0 {
+                try? fm.removeItem(at: staged)
+                return
+            }
+            let swapError = errno
+            guard [ENOTSUP, EOPNOTSUPP, ENOSYS, EINVAL].contains(swapError) else {
+                try? fm.removeItem(at: staged)
+                throw InstallError.io("Impossible de remplacer le contenu de l’app : \(String(cString: strerror(swapError)))")
+            }
+            #endif
+            let backup = staged.appendingPathComponent("previous-Contents")
+            guard rename(currentContents.path, backup.path) == 0 else {
+                let reason = String(cString: strerror(errno))
+                try? fm.removeItem(at: staged)
+                throw InstallError.io("Impossible de sauvegarder l’ancienne version : \(reason)")
+            }
+            guard rename(stagedContents.path, currentContents.path) == 0 else {
+                let reason = String(cString: strerror(errno))
+                if rename(backup.path, currentContents.path) != 0 {
+                    throw InstallError.io("Installation interrompue. Ancienne version conservée dans \(backup.path) : \(reason)")
+                }
+                try? fm.removeItem(at: staged)
+                throw InstallError.io("Impossible d’installer la nouvelle version : \(reason)")
+            }
+            try? fm.removeItem(at: staged)
+            return
+        }
         if hadCurrent, rename(current.path, old.path) != 0 {
             let reason = String(cString: strerror(errno))
             try? fm.removeItem(at: staged)

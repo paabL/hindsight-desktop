@@ -891,6 +891,7 @@ final class AppUpdateTests: XCTestCase {
         let repo = dir.appendingPathComponent("repo")
         let built = repo.appendingPathComponent(tauri ? "desktop/.update-target/release/bundle/macos/Hindsight Desktop.app" : "build/Hindsight.app")
         if tauri {
+            makeBundle(at: dir.appendingPathComponent("Applications/Hindsight.app"), version: "old", identifier: "local.hindsight.desktop.tauri")
             try! FileManager.default.createDirectory(at: repo.appendingPathComponent("desktop/src-tauri"), withIntermediateDirectories: true)
             try! FileManager.default.createDirectory(at: repo.appendingPathComponent("desktop/scripts"), withIntermediateDirectories: true)
             try! Data("{}".utf8).write(to: repo.appendingPathComponent("desktop/src-tauri/tauri.conf.json"))

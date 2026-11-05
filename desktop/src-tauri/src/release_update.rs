@@ -74,10 +74,16 @@ pub async fn release_update_install(
     // Detached native work may have started during the download. Refuse to
     // replace/restart until it finishes; a readiness failure is never a bypass.
     require_idle_bridge(&app, &mut bridge_guard).await?;
-    update
-        .install(bytes)
-        .map_err(|error| install_error(&error))?;
-    app.restart();
+    match crate::macos_install::install(&app, &update, &bytes, &executable) {
+        Ok(()) => {}
+        // Keep the existing OS authorization flow for administrator-owned apps.
+        // Its whole-bundle swap is followed by the same waited relaunch and legacy
+        // shortcut repair; other failures never bypass the preserving installer.
+        Err(code) if code == "UPDATE_ADMIN_REQUIRED" => update.install(&bytes).map_err(|error| install_error(&error))?,
+        Err(error) => return Err(error),
+    }
+    crate::relaunch::restart(&app)?;
+    Ok(())
 }
 
 async fn require_idle_bridge(
@@ -283,8 +289,11 @@ mod tests {
         let bundle = folder.0.join("Qualification.app");
         let executable = bundle.join("Contents/MacOS/hindsight-desktop");
         std::fs::create_dir_all(executable.parent().unwrap()).unwrap();
-        let old_marker = bundle.join("previous-version-marker");
+        std::fs::write(&executable, b"old executable").unwrap();
+        let old_marker = bundle.join("Contents/previous-version-marker");
         std::fs::write(&old_marker, b"previous version").unwrap();
+        use std::os::unix::fs::MetadataExt;
+        let original_identity = std::fs::metadata(&bundle).unwrap().ino();
 
         let mut context = tauri::test::mock_context(tauri::test::noop_assets());
         context
@@ -310,11 +319,12 @@ mod tests {
         let mut tampered = bytes.clone();
         assert!(!tampered.is_empty());
         tampered[0] ^= 1;
-        assert!(update.install(tampered).is_err());
+        assert!(crate::macos_install::install(app.handle(), &update, &tampered, &executable).is_err());
         assert_eq!(std::fs::read(&old_marker).unwrap(), b"previous version");
         assert!(!bundle.join("Contents/Info.plist").exists());
 
-        update.install(bytes).unwrap();
+        crate::macos_install::install(app.handle(), &update, &bytes, &executable).unwrap();
+        assert_eq!(std::fs::metadata(&bundle).unwrap().ino(), original_identity, "The pinned app directory must retain its file identity");
         assert!(!old_marker.exists());
         let version = std::process::Command::new("/usr/libexec/PlistBuddy")
             .args(["-c", "Print :CFBundleShortVersionString"])

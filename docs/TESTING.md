@@ -164,6 +164,19 @@ archive and feed through `HINDSIGHT_VERIFY_ARCHIVE` and
 then checks the installed version and code signature. It does not modify the
 app in Applications.
 
+The macOS installer tests perform two consecutive contents replacements and
+verify both the `.app` inode and Foundation bookmark remain unchanged. Fault
+injection covers rollback, unavailable atomic swaps, changed directory identity,
+permission classification, altered signatures and incorrectly versioned archives.
+The final signed-archive qualification exercises this preserving installer in an
+isolated bundle, then verifies the installed version and code signature.
+
+`BundleIdentityTests`, `DockShortcutRepairTests` and `ApplicationRelaunchTests`
+cover the source-rebuild path, legacy stale bookmarks, untouched unrelated Dock
+entries, no implicit pinning, and waiting for the previous process before relaunch.
+They do not edit the real Dock. Test mode refuses the helper's repair/relaunch CLI
+modes; normal bridge tests stay isolated from the desktop.
+
 ## Build and check Tauri
 
 ```sh

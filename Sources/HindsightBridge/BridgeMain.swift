@@ -7,6 +7,21 @@ import HindsightCore
 @main
 struct BridgeMain {
     @MainActor static func main() async {
+        let arguments = Array(CommandLine.arguments.dropFirst())
+        if !arguments.isEmpty, ProcessInfo.processInfo.environment["HINDSIGHT_DESKTOP_TEST_MODE"] == "1" { exit(64) }
+        if arguments.count == 4, arguments[0] == "--relaunch-after", let pid = Int32(arguments[1]), arguments[2] == "--bundle" {
+            do { try await ApplicationRelaunch.relaunch(app: URL(fileURLWithPath: arguments[3]), after: pid) }
+            catch { exit(1) }
+            return
+        }
+        if arguments.count == 2, arguments[0] == "--repair-dock" {
+            do {
+                let result = try DockShortcutRepair.repair(app: URL(fileURLWithPath: arguments[1]))
+                print("repaired=\(result.repaired) refreshed=\(result.refreshed)")
+            } catch { exit(1) }
+            return
+        }
+        guard arguments.isEmpty else { exit(64) }
         let bridge = DesktopBridge()
         do {
             for try await line in FileHandle.standardInput.bytes.lines {
@@ -112,6 +127,9 @@ final class DesktopBridge {
         workspace = MemoryWorkspace(folder: app.memoryFolder, client: { [unowned self] in self.app.client }, bank: { [unowned self] in self.app.selectedBankID })
         workspace.pauseGate = app.pause.gate
         // Les sessions OAuth ne sont lues que sur demande explicite, après confirmation.
+        if !testing, let path = env["HINDSIGHT_DESKTOP_BUNDLE"], !path.isEmpty {
+            _ = try? DockShortcutRepair.repair(app: URL(fileURLWithPath: path))
+        }
     }
 
     func session() throws -> BankSession {

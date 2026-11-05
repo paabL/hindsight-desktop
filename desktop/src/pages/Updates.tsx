@@ -13,6 +13,7 @@ const releaseErrorCodes = new Set([
   'UPDATE_NOT_AVAILABLE',
   'UPDATE_VERSION_CHANGED',
   'UPDATE_INSTALL_FAILED',
+  'UPDATE_RESTART_FAILED',
   'UPDATE_MOVE_TO_APPLICATIONS',
   'UPDATE_UNTRUSTED_SOURCE',
 ]);
@@ -105,6 +106,11 @@ export default function Updates({
         return t(
           'L’installation n’a pas abouti. Réessayez ou téléchargez l’app depuis « Voir les versions ».',
           'The update could not be installed. Try again or download the app from View releases.',
+        );
+      case 'UPDATE_RESTART_FAILED':
+        return t(
+          'La mise à jour est installée. Quittez puis rouvrez Hindsight Desktop pour l’utiliser.',
+          'The update is installed. Quit and reopen Hindsight Desktop to use it.',
         );
       default:
         return t(

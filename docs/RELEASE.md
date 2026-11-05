@@ -74,3 +74,25 @@ Version 0.1.2 and earlier need one manual installation of the updater-enabled
 app. From version 0.1.3, users choose **Check for updates**, then **Update and
 restart**. There are no automatic checks or downloads. Keep **View releases**
 available as the manual fallback.
+
+## macOS Dock identity and relaunch
+
+Normal updates stage the signed archive through the official updater in a
+disposable copy. After bundle identifier, version and code-signature validation,
+only `Contents` is exchanged. The installed `.app` directory keeps its file
+identity, so existing Dock bookmarks remain valid. The source-rebuild installer
+uses the same directory-preserving behavior. Permission errors before any live
+move may use the existing administrator-authorization flow; signature, validation
+and rollback errors never bypass the preserving installer.
+
+Both update paths use the private Swift helper's `--relaunch-after PID --bundle
+PATH` mode. It waits for the old GUI to exit before opening the installed bundle
+through LaunchServices, without `open -n`. Keep this helper contract compatible
+in future releases. A launch-preparation error reports that installation finished
+and asks the user to quit and reopen the app.
+
+Older releases can leave a stale pinned shortcut. Startup repairs only an
+existing Hindsight shortcut pointing to that installed path, backs up the affected
+entries privately, and preserves all other entries and their order. A stale
+shortcut requires one brief refresh of the current user's Dock. Fresh shortcuts
+and apps that are not pinned make no Dock changes.
