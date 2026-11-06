@@ -299,8 +299,6 @@ const exact: Record<string, string> = {
     'The script changed since the preview. Run the check again; nothing was sent.',
   'La file d’envoi est occupée ou illisible : rien n’a été envoyé.':
     'The upload queue is busy or could not be read: nothing was sent.',
-  'Ce dossier ne contient pas encore de catalogue. Choisissez le dépôt mémoire ou son dossier collection.':
-    'This folder does not contain a catalog yet. Choose the memory repository or its collection folder.',
   "Le format de ce catalogue n'est pas pris en charge.": 'This catalog format is not supported.',
   'Collecteur illisible.': 'The collector could not be read.',
   'Choisissez un projet et au moins un fichier.': 'Choose a project and at least one file.',

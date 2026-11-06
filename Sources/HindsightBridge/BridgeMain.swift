@@ -736,7 +736,7 @@ final class DesktopBridge {
                         return row
                     }), "roots": wire(app.coverage.roots),
                     "catalogBank": wire(catalogBank), "bank": wire(app.selectedBankID),
-                    "catalogFolder": wire(app.memoryFolder.repository?.path), "loading": app.coverage.state.isLoading, "error": wire(app.coverage.state.errorMessage), "warnings": app.coverage.warnings]
+                    "catalogFolder": wire(app.memoryFolder.repository?.path), "catalogFolderHasCatalog": app.memoryFolder.catalogURL != nil, "loading": app.coverage.state.isLoading, "error": wire(app.coverage.state.errorMessage), "warnings": app.coverage.warnings]
         case "operations":
             return ["items": wire(s?.operations.rows.map(\.raw) ?? []), "total": s?.operations.total ?? 0,
                     "statusFilter": s?.operations.statusFilter.rawValue ?? "all", "refreshing": s?.operations.isRefreshing ?? false,

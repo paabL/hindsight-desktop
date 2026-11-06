@@ -498,6 +498,22 @@ export default function Sources({
         }
       />
       <ErrorNotice message={mismatch ? null : data.error} />
+      {!demo && data.folder && data.catalogMissing && !data.error && (
+        <section className="notice coverage-catalog-folder" role="status">
+          <div>
+            <strong>{t('Pas de catalogue dans ce dossier', 'No catalog in this folder')}</strong>
+            <p>
+              {t(
+                'Le Catalogue lit le fichier catalog.json produit par un collecteur (collect.py). Ce dossier n’en a pas : c’est un dossier de documents ordinaire. Pour envoyer ses fichiers à Hindsight, suivez-le dans « Dossiers suivis ».',
+                'The Catalog reads the catalog.json file produced by a collector (collect.py). This folder has none: it is an ordinary documents folder. To upload its files to Hindsight, track it in “Tracked folders”.',
+              )}
+            </p>
+          </div>
+          <Button onClick={() => navigate('coverage')}>
+            {t('Ouvrir Dossiers suivis', 'Open Tracked folders')}
+          </Button>
+        </section>
+      )}
       {mismatch && (
         <section className="bank-mismatch" role="alert">
           <p>
@@ -562,7 +578,7 @@ export default function Sources({
               <h2>{data.folder ? shortName(data.folder) : t('Dossier local', 'Local folder')}</h2>
               <Badge>
                 {!hasCatalog
-                  ? t('Non configuré', 'Not configured')
+                  ? t('Sans catalogue', 'No catalog')
                   : data.boundBank
                     ? t(
                         `Banque « ${bankName(data.boundBank)} »`,

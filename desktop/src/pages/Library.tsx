@@ -1070,6 +1070,7 @@ export function Coverage({ data, run, busy }: PageProps) {
     return '/' + parts.join('/');
   }
   const catalogFolder = typeof data.catalogFolder === 'string' ? data.catalogFolder : '';
+  const catalogFolderHasCatalog = data.catalogFolderHasCatalog !== false;
   // Un dossier rattaché à une autre banque ne se propose pas au suivi de celle-ci.
   const catalogOfOtherBank = Boolean(
     data.catalogBank && data.bank && data.catalogBank !== data.bank,
@@ -1171,13 +1172,18 @@ export function Coverage({ data, run, busy }: PageProps) {
         {offerCatalogFolder && (
           <div className="notice coverage-catalog-folder">
             <div>
-              <strong>{t('Catalogue local déjà ouvert', 'Local catalog already open')}</strong>
+              <strong>{t('Dossier ouvert dans le Catalogue', 'Folder open in the Catalog')}</strong>
               <p>{catalogFolder}</p>
               <p>
-                {t(
-                  'Ce dossier contient le catalogue local, mais il n’est pas suivi pour cette banque. Le suivi compare ses fichiers aux documents mémorisés ; chaque envoi reste à valider.',
-                  'This folder contains the local catalog, but it is not tracked for this bank. Tracking compares its files with stored documents; each upload still requires approval.',
-                )}
+                {catalogFolderHasCatalog
+                  ? t(
+                      'Ce dossier n’est pas suivi pour cette banque. Le suivi compare ses fichiers aux documents mémorisés et propose l’envoi de ce qui manque ; chaque envoi reste à valider.',
+                      'This folder is not tracked for this bank. Tracking compares its files with stored documents and offers to upload what is missing; each upload still requires approval.',
+                    )
+                  : t(
+                      'Ce dossier n’a pas de catalogue : c’est un dossier de documents ordinaire. Suivez-le pour comparer ses fichiers aux documents de cette banque et proposer l’envoi de ce qui manque ; chaque envoi reste à valider.',
+                      'This folder has no catalog: it is an ordinary documents folder. Track it to compare its files with this bank’s documents and offer to upload what is missing; each upload still requires approval.',
+                    )}
               </p>
             </div>
             <Button

@@ -61,7 +61,8 @@ public final class MemoryFolderViewModel {
         guard let folder else { return }
         let candidates = [folder.appendingPathComponent("catalog.json"), folder.appendingPathComponent("collection/catalog.json")]
         guard let catalog = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }) else {
-            error = "Ce dossier ne contient pas encore de catalogue. Choisissez le dépôt mémoire ou son dossier collection."
+            // Un dossier de documents ordinaire n'a pas de catalogue : ce n'est pas une erreur,
+            // l'interface propose alors de le suivre (Dossiers suivis).
             revision = UUID()
             return
         }
