@@ -254,6 +254,8 @@ export default function Sources({
   const activeSources = sources.filter((s) => !/disabled/.test(String(s.status || '')));
   // Sans catalogue lisible, le pont ne renvoie que les documents de la banque : rien à préparer.
   const hasCatalog = Boolean(data.catalog) && !data.catalogMissing;
+  // Dossier ordinaire choisi : ni collecte, ni statistiques de catalogue, seulement l'orientation vers le suivi.
+  const noCatalog = !demo && Boolean(data.folder) && Boolean(data.catalogMissing) && !data.error;
   // Le dossier appartient à la banque déclarée dans sa politique ; une autre banque ne fait que le consulter.
   const bankName = (id: unknown) =>
     bankLabel(banks.find((x) => x.bank_id === id)) || String(id || '');
@@ -443,44 +445,48 @@ export default function Sources({
               onClick={choose}
               disabled={busy || data.collecting}
             />
-            <Button
-              icon={FolderPlus}
-              disabled={busy || data.collecting || !data.canCollect || !projects.length || demo}
-              onClick={() => void chooseDocuments()}
-            >
-              {t('Ajouter des documents', 'Add documents')}
-            </Button>
-            <Button
-              icon={FolderSync}
-              disabled={busy || data.collecting || !data.canCollect || demo}
-              title={t(
-                'Lance le collecteur du dossier : met à jour le catalogue de ce Mac, sans rien envoyer à Hindsight.',
-                'Runs the folder’s collector: updates this Mac’s catalog without uploading anything to Hindsight.',
-              )}
-              onClick={() => void run('folder.refresh')}
-            >
-              {data.collecting && !data.importing
-                ? t('Collecte en cours…', 'Collecting…')
-                : t('Collecter les sources', 'Collect sources')}
-            </Button>
-            <Button
-              icon={ArrowDownToLine}
-              kind="primary"
-              disabled={
-                busy || data.collecting || !hasCatalog || !serverConnected || demo || mismatch
-              }
-              title={
-                mismatch
-                  ? t(
-                      `Ce dossier appartient à la banque « ${bankName(data.boundBank)} ».`,
-                      `This folder belongs to the “${bankName(data.boundBank)}” memory bank.`,
-                    )
-                  : undefined
-              }
-              onClick={() => void run('folder.prepare')}
-            >
-              {t('Préparer l’envoi à Hindsight', 'Prepare upload to Hindsight')}
-            </Button>
+            {!noCatalog && (
+              <>
+                <Button
+                  icon={FolderPlus}
+                  disabled={busy || data.collecting || !data.canCollect || !projects.length || demo}
+                  onClick={() => void chooseDocuments()}
+                >
+                  {t('Ajouter des documents', 'Add documents')}
+                </Button>
+                <Button
+                  icon={FolderSync}
+                  disabled={busy || data.collecting || !data.canCollect || demo}
+                  title={t(
+                    'Lance le collecteur du dossier : met à jour le catalogue de ce Mac, sans rien envoyer à Hindsight.',
+                    'Runs the folder’s collector: updates this Mac’s catalog without uploading anything to Hindsight.',
+                  )}
+                  onClick={() => void run('folder.refresh')}
+                >
+                  {data.collecting && !data.importing
+                    ? t('Collecte en cours…', 'Collecting…')
+                    : t('Collecter les sources', 'Collect sources')}
+                </Button>
+                <Button
+                  icon={ArrowDownToLine}
+                  kind="primary"
+                  disabled={
+                    busy || data.collecting || !hasCatalog || !serverConnected || demo || mismatch
+                  }
+                  title={
+                    mismatch
+                      ? t(
+                          `Ce dossier appartient à la banque « ${bankName(data.boundBank)} ».`,
+                          `This folder belongs to the “${bankName(data.boundBank)}” memory bank.`,
+                        )
+                      : undefined
+                  }
+                  onClick={() => void run('folder.prepare')}
+                >
+                  {t('Préparer l’envoi à Hindsight', 'Prepare upload to Hindsight')}
+                </Button>
+              </>
+            )}
             <IconButton
               icon={RefreshCw}
               label={t('Actualiser l’état dans Hindsight', 'Refresh Hindsight status')}
@@ -498,14 +504,14 @@ export default function Sources({
         }
       />
       <ErrorNotice message={mismatch ? null : data.error} />
-      {!demo && data.folder && data.catalogMissing && !data.error && (
+      {noCatalog && (
         <section className="notice coverage-catalog-folder" role="status">
           <div>
             <strong>{t('Pas de catalogue dans ce dossier', 'No catalog in this folder')}</strong>
             <p>
               {t(
-                'Le Catalogue lit le fichier catalog.json produit par un collecteur (collect.py). Ce dossier n’en a pas : c’est un dossier de documents ordinaire. Pour envoyer ses fichiers à Hindsight, suivez-le dans « Dossiers suivis ».',
-                'The Catalog reads the catalog.json file produced by a collector (collect.py). This folder has none: it is an ordinary documents folder. To upload its files to Hindsight, track it in “Tracked folders”.',
+                `Le Catalogue liste les sources rassemblées par un collecteur (collect.py) dans un fichier catalog.json : conversations, GitHub, W&B, rapports… Ce dossier n’en a pas : c’est un dossier de documents ordinaire. Pour envoyer ses fichiers à Hindsight, suivez-le dans « Dossiers suivis »${data.bank ? ` ; il sera suivi pour la banque sélectionnée, « ${bankName(data.bank)} »` : ''}.`,
+                `The Catalog lists sources gathered by a collector (collect.py) in a catalog.json file: conversations, GitHub, W&B, reports… This folder has none: it is an ordinary documents folder. To upload its files to Hindsight, track it in “Tracked folders”${data.bank ? `; it will be tracked for the selected bank, “${bankName(data.bank)}”` : ''}.`,
               )}
             </p>
           </div>
@@ -604,295 +610,299 @@ export default function Sources({
             {t('Ouvrir le dossier', 'Open folder')}
           </Button>
         </div>
-        <div className="archive-stats">
-          <div>
-            <span>{t('Sources du catalogue', 'Catalog sources')}</span>
-            <strong>{number(catalogCount)}</strong>
+        {!noCatalog && (
+          <div className="archive-stats">
+            <div>
+              <span>{t('Sources du catalogue', 'Catalog sources')}</span>
+              <strong>{number(catalogCount)}</strong>
+            </div>
+            <div>
+              <span>
+                {data.bank
+                  ? t(`Dans « ${bankName(data.bank)} »`, `In “${bankName(data.bank)}”`)
+                  : t('Dans la banque', 'In the memory bank')}
+              </span>
+              <strong>{serverConnected || demo ? number(storedCount) : '—'}</strong>
+            </div>
+            <div>
+              <span>{t('Projets', 'Projects')}</span>
+              <strong>{number(projects.length)}</strong>
+            </div>
+            <div className="archive-updated">
+              <span>{t('Dernière collecte du catalogue', 'Last catalog collection')}</span>
+              <strong>
+                {data.catalog?.generated_at
+                  ? date(data.catalog.generated_at, true)
+                  : t('Aucune collecte', 'No collection yet')}
+              </strong>
+            </div>
           </div>
-          <div>
-            <span>
-              {data.bank
-                ? t(`Dans « ${bankName(data.bank)} »`, `In “${bankName(data.bank)}”`)
-                : t('Dans la banque', 'In the memory bank')}
-            </span>
-            <strong>{serverConnected || demo ? number(storedCount) : '—'}</strong>
-          </div>
-          <div>
-            <span>{t('Projets', 'Projects')}</span>
-            <strong>{number(projects.length)}</strong>
-          </div>
-          <div className="archive-updated">
-            <span>{t('Dernière collecte du catalogue', 'Last catalog collection')}</span>
-            <strong>
-              {data.catalog?.generated_at
-                ? date(data.catalog.generated_at, true)
-                : t('Aucune collecte', 'No collection yet')}
-            </strong>
-          </div>
-        </div>
+        )}
       </section>
 
-      <div className="source-layout">
-        <section className="card source-list">
-          <CardHeader
-            title={t('Sources et mémoire', 'Sources and memory')}
-            subtitle={t(
-              `${number(records.length)} sources${projects.length ? ` dans ${number(projects.length)} projet${projects.length > 1 ? 's' : ''}` : ''}`,
-              `${number(records.length)} sources${projects.length ? ` in ${number(projects.length)} project${projects.length > 1 ? 's' : ''}` : ''}`,
-            )}
-            action={
-              <span className="subtle-label">
-                <Clock3 size={13} />
-                {data.catalog?.generated_at
-                  ? t(
-                      `Collecté le ${date(data.catalog.generated_at)}`,
-                      `Collected on ${date(data.catalog.generated_at)}`,
-                    )
-                  : t('Prêt à collecter', 'Ready to collect')}
-              </span>
-            }
-          />
-          <div className="list-toolbar source-filters">
-            <div className="input-with-icon">
-              <Search size={16} />
-              <input
-                aria-label={t('Filtrer les sources', 'Filter sources')}
-                placeholder={t('Retrouver une source…', 'Find a source…')}
-                value={query}
-                onChange={(e) => {
-                  setQuery(e.target.value);
-                  setLimit(30);
-                }}
-              />
-            </div>
-            <select
-              aria-label={t('Filtrer par état mémoire', 'Filter by memory status')}
-              value={memoryFilter}
-              onChange={(e) => {
-                setMemoryFilter(e.target.value);
-                setLimit(30);
-              }}
-            >
-              <option value="all">{t('Tous les états', 'All statuses')}</option>
-              {Object.entries(memoryLabels).map(([id, label]) => (
-                <option key={id} value={id}>
-                  {label} ({stateCounts.get(id) || 0})
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label={t('Filtrer par projet', 'Filter by project')}
-              value={project}
-              onChange={(e) => {
-                setProject(e.target.value);
-                setRepository('all');
-                setLimit(30);
-                setAsideLimit(30);
-              }}
-            >
-              <option value="all">{t('Tous les projets', 'All projects')}</option>
-              {projects.map(([id, title]) => (
-                <option value={id} key={id}>
-                  {title}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label={t('Filtrer par dépôt', 'Filter by repository')}
-              value={repository}
-              onChange={(e) => {
-                setRepository(e.target.value);
-                setLimit(30);
-                setAsideLimit(30);
-              }}
-            >
-              <option value="all">{t('Tous les dépôts', 'All repositories')}</option>
-              {repositories.map((id) => (
-                <option value={id} key={id}>
-                  {id}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="workspace-bulk">
-            <span>
-              {number(enabledCount)}
-              {t(' activées sur ', ' enabled of ')}
-              {number(filtered.length)}
-              {t(' dans ce filtre · ', ' in this filter · ')}
-              {number(toggleable.length)}
-              {t(' modifiables', ' editable')}
-            </span>
-            <Button
-              disabled={busy || data.collecting || demo || !toInclude.length}
-              onClick={() =>
-                void run('folder.enabled', { ids: toInclude.map((r) => r.id), enabled: true })
-              }
-            >
-              {t('Inclure ce filtre', 'Include matching sources')}
-            </Button>
-            <Button
-              disabled={busy || data.collecting || demo || !toExclude.length}
-              onClick={() =>
-                void run('folder.enabled', { ids: toExclude.map((r) => r.id), enabled: false })
-              }
-            >
-              {t('Exclure ce filtre', 'Exclude matching sources')}
-            </Button>
-          </div>
-          <div className="filter-chips">
-            {[
-              { id: 'all', title: t('Toutes', 'All') },
-              { id: 'conversation', title: t('Conversations', 'Conversations') },
-              { id: 'git', title: t('Commits', 'Commits') },
-              { id: 'note', title: t('Notes', 'Notes') },
-              { id: 'report', title: t('Rapports', 'Reports') },
-              { id: 'document', title: t('Documents', 'Documents') },
-            ].map((k) => (
-              <button
-                key={k.id}
-                onClick={() => {
-                  setKind(k.id);
-                  setLimit(30);
-                }}
-                className={kind === k.id ? 'active' : ''}
-              >
-                {k.title}
-                {k.id === 'all' && <span>{number(records.length)}</span>}
-              </button>
-            ))}
-          </div>
-          {filtered.length ? (
-            <SourceRows records={filtered.slice(0, limit)} onOpen={open} />
-          ) : (
-            <Empty
-              icon={records.length ? Search : Folder}
-              title={
-                allRecords.length
-                  ? t('Aucune source de projet ne correspond', 'No matching project sources')
-                  : data.folder
-                    ? t('Aucune source collectée', 'No sources collected')
-                    : t('Aucun dossier sélectionné', 'No folder selected')
-              }
-              description={
-                allRecords.length
-                  ? t(
-                      'Essayez un autre filtre. Les validations internes et exports vides restent accessibles dans Archives à part.',
-                      'Try another filter. Internal reviews and empty exports remain available in Separate archives.',
-                    )
-                  : data.folder
-                    ? t(
-                        'Collectez les sources définies dans la configuration du dossier.',
-                        'Collect the sources defined in the folder configuration.',
-                      )
-                    : t(
-                        'Choisissez votre dossier mémoire pour consulter ses conversations, commits, notes et rapports.',
-                        'Choose your memory folder to browse its conversations, commits, notes, and reports.',
-                      )
-              }
-              action={
-                !data.folder && (
-                  <Button icon={FolderOpen} onClick={choose}>
-                    {t('Choisir le dossier mémoire', 'Choose a memory folder')}
-                  </Button>
-                )
-              }
-            />
-          )}
-          {filtered.length > limit && (
-            <div className="card-footer">
-              <Button kind="ghost" icon={ChevronDown} onClick={() => setLimit(limit + 50)}>
-                {t('Afficher plus de sources', 'Show more sources')}
-              </Button>
-              <span>
-                {number(limit)}
-                {t(' sur ', ' of ')}
-                {number(filtered.length)}
-              </span>
-            </div>
-          )}
-        </section>
-        <aside className="source-aside">
-          <section className="card collector-card">
+      {!noCatalog && (
+        <div className="source-layout">
+          <section className="card source-list">
             <CardHeader
-              title={t('État des collectes', 'Collection status')}
+              title={t('Sources et mémoire', 'Sources and memory')}
+              subtitle={t(
+                `${number(records.length)} sources${projects.length ? ` dans ${number(projects.length)} projet${projects.length > 1 ? 's' : ''}` : ''}`,
+                `${number(records.length)} sources${projects.length ? ` in ${number(projects.length)} project${projects.length > 1 ? 's' : ''}` : ''}`,
+              )}
               action={
-                <Badge>
-                  {t(
-                    `${number(activeSources.length)} actifs`,
-                    `${number(activeSources.length)} active`,
-                  )}
-                </Badge>
+                <span className="subtle-label">
+                  <Clock3 size={13} />
+                  {data.catalog?.generated_at
+                    ? t(
+                        `Collecté le ${date(data.catalog.generated_at)}`,
+                        `Collected on ${date(data.catalog.generated_at)}`,
+                      )
+                    : t('Prêt à collecter', 'Ready to collect')}
+                </span>
               }
             />
-            <div className="collector-status-list">
-              {activeSources.slice(0, 5).map((source) => (
-                <div key={source.id}>
-                  <span
-                    className={`status-dot ${/error|fail|partial/.test(source.status) ? 'warning' : /ok|success/.test(source.status) ? 'green' : ''}`}
-                  />
-                  <div>
-                    <strong>
-                      {source.repository
-                        ? shortName(source.repository)
-                        : kindLabels[sourceKind(source.kind)]}
-                    </strong>
-                    <span>
-                      {kindLabels[sourceKind(source.kind)]} · {number(source.count)}{' '}
-                      {source.count === 1 ? 'source' : 'sources'}
-                    </span>
-                  </div>
-                </div>
+            <div className="list-toolbar source-filters">
+              <div className="input-with-icon">
+                <Search size={16} />
+                <input
+                  aria-label={t('Filtrer les sources', 'Filter sources')}
+                  placeholder={t('Retrouver une source…', 'Find a source…')}
+                  value={query}
+                  onChange={(e) => {
+                    setQuery(e.target.value);
+                    setLimit(30);
+                  }}
+                />
+              </div>
+              <select
+                aria-label={t('Filtrer par état mémoire', 'Filter by memory status')}
+                value={memoryFilter}
+                onChange={(e) => {
+                  setMemoryFilter(e.target.value);
+                  setLimit(30);
+                }}
+              >
+                <option value="all">{t('Tous les états', 'All statuses')}</option>
+                {Object.entries(memoryLabels).map(([id, label]) => (
+                  <option key={id} value={id}>
+                    {label} ({stateCounts.get(id) || 0})
+                  </option>
+                ))}
+              </select>
+              <select
+                aria-label={t('Filtrer par projet', 'Filter by project')}
+                value={project}
+                onChange={(e) => {
+                  setProject(e.target.value);
+                  setRepository('all');
+                  setLimit(30);
+                  setAsideLimit(30);
+                }}
+              >
+                <option value="all">{t('Tous les projets', 'All projects')}</option>
+                {projects.map(([id, title]) => (
+                  <option value={id} key={id}>
+                    {title}
+                  </option>
+                ))}
+              </select>
+              <select
+                aria-label={t('Filtrer par dépôt', 'Filter by repository')}
+                value={repository}
+                onChange={(e) => {
+                  setRepository(e.target.value);
+                  setLimit(30);
+                  setAsideLimit(30);
+                }}
+              >
+                <option value="all">{t('Tous les dépôts', 'All repositories')}</option>
+                {repositories.map((id) => (
+                  <option value={id} key={id}>
+                    {id}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="workspace-bulk">
+              <span>
+                {number(enabledCount)}
+                {t(' activées sur ', ' enabled of ')}
+                {number(filtered.length)}
+                {t(' dans ce filtre · ', ' in this filter · ')}
+                {number(toggleable.length)}
+                {t(' modifiables', ' editable')}
+              </span>
+              <Button
+                disabled={busy || data.collecting || demo || !toInclude.length}
+                onClick={() =>
+                  void run('folder.enabled', { ids: toInclude.map((r) => r.id), enabled: true })
+                }
+              >
+                {t('Inclure ce filtre', 'Include matching sources')}
+              </Button>
+              <Button
+                disabled={busy || data.collecting || demo || !toExclude.length}
+                onClick={() =>
+                  void run('folder.enabled', { ids: toExclude.map((r) => r.id), enabled: false })
+                }
+              >
+                {t('Exclure ce filtre', 'Exclude matching sources')}
+              </Button>
+            </div>
+            <div className="filter-chips">
+              {[
+                { id: 'all', title: t('Toutes', 'All') },
+                { id: 'conversation', title: t('Conversations', 'Conversations') },
+                { id: 'git', title: t('Commits', 'Commits') },
+                { id: 'note', title: t('Notes', 'Notes') },
+                { id: 'report', title: t('Rapports', 'Reports') },
+                { id: 'document', title: t('Documents', 'Documents') },
+              ].map((k) => (
+                <button
+                  key={k.id}
+                  onClick={() => {
+                    setKind(k.id);
+                    setLimit(30);
+                  }}
+                  className={kind === k.id ? 'active' : ''}
+                >
+                  {k.title}
+                  {k.id === 'all' && <span>{number(records.length)}</span>}
+                </button>
               ))}
             </div>
-            {!sources.length && (
-              <p className="collector-empty">
-                {t(
-                  'Les collecteurs apparaîtront après le choix d’un catalogue.',
-                  'Collectors will appear once you choose a catalog.',
-                )}
-              </p>
+            {filtered.length ? (
+              <SourceRows records={filtered.slice(0, limit)} onOpen={open} />
+            ) : (
+              <Empty
+                icon={records.length ? Search : Folder}
+                title={
+                  allRecords.length
+                    ? t('Aucune source de projet ne correspond', 'No matching project sources')
+                    : data.folder
+                      ? t('Aucune source collectée', 'No sources collected')
+                      : t('Aucun dossier sélectionné', 'No folder selected')
+                }
+                description={
+                  allRecords.length
+                    ? t(
+                        'Essayez un autre filtre. Les validations internes et exports vides restent accessibles dans Archives à part.',
+                        'Try another filter. Internal reviews and empty exports remain available in Separate archives.',
+                      )
+                    : data.folder
+                      ? t(
+                          'Collectez les sources définies dans la configuration du dossier.',
+                          'Collect the sources defined in the folder configuration.',
+                        )
+                      : t(
+                          'Choisissez votre dossier mémoire pour consulter ses conversations, commits, notes et rapports.',
+                          'Choose your memory folder to browse its conversations, commits, notes, and reports.',
+                        )
+                }
+                action={
+                  !data.folder && (
+                    <Button icon={FolderOpen} onClick={choose}>
+                      {t('Choisir le dossier mémoire', 'Choose a memory folder')}
+                    </Button>
+                  )
+                }
+              />
             )}
-            {!!sources.length && !activeSources.length && (
-              <p className="collector-empty">
-                {t('Aucun collecteur actif.', 'No active collector.')}
-              </p>
+            {filtered.length > limit && (
+              <div className="card-footer">
+                <Button kind="ghost" icon={ChevronDown} onClick={() => setLimit(limit + 50)}>
+                  {t('Afficher plus de sources', 'Show more sources')}
+                </Button>
+                <span>
+                  {number(limit)}
+                  {t(' sur ', ' of ')}
+                  {number(filtered.length)}
+                </span>
+              </div>
             )}
-            {!!sources.length && (
-              <button className="collector-more" onClick={() => setCollectorsOpen(true)}>
-                {t(
-                  `Voir les ${number(sources.length)} collecteurs`,
-                  `View all ${number(sources.length)} collectors`,
-                )}
-                {sources.length > activeSources.length &&
-                  t(
-                    ` (${number(sources.length - activeSources.length)} désactivés)`,
-                    ` (${number(sources.length - activeSources.length)} disabled)`,
+          </section>
+          <aside className="source-aside">
+            <section className="card collector-card">
+              <CardHeader
+                title={t('État des collectes', 'Collection status')}
+                action={
+                  <Badge>
+                    {t(
+                      `${number(activeSources.length)} actifs`,
+                      `${number(activeSources.length)} active`,
+                    )}
+                  </Badge>
+                }
+              />
+              <div className="collector-status-list">
+                {activeSources.slice(0, 5).map((source) => (
+                  <div key={source.id}>
+                    <span
+                      className={`status-dot ${/error|fail|partial/.test(source.status) ? 'warning' : /ok|success/.test(source.status) ? 'green' : ''}`}
+                    />
+                    <div>
+                      <strong>
+                        {source.repository
+                          ? shortName(source.repository)
+                          : kindLabels[sourceKind(source.kind)]}
+                      </strong>
+                      <span>
+                        {kindLabels[sourceKind(source.kind)]} · {number(source.count)}{' '}
+                        {source.count === 1 ? 'source' : 'sources'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {!sources.length && (
+                <p className="collector-empty">
+                  {t(
+                    'Les collecteurs apparaîtront après le choix d’un catalogue.',
+                    'Collectors will appear once you choose a catalog.',
                   )}
-                <ArrowRight size={14} />
-              </button>
-            )}
-          </section>
-          <section className="card processing-note">
-            <div>
-              <LayersIcon />
-              <h3>{t('Sources et mémoire', 'Sources and memory')}</h3>
-            </div>
-            <p>
-              {t(
-                'Collecter les sources lance le collecteur du dossier et met à jour le catalogue de ce Mac, sans rien envoyer à Hindsight. Actualiser (↻) relit l’état de la banque, sans collecter ni envoyer. Préparer l’envoi compare les sources collectées à la mémoire : vous validez chaque ajout ou mise à jour, puis Hindsight en extrait les faits. Retirer conserve le fichier et l’exclut des envois futurs.',
-                'Collect sources runs the folder’s collector and updates this Mac’s catalog without uploading anything to Hindsight. Refresh (↻) rereads the memory bank’s status without collecting or uploading. Prepare upload compares collected sources with memory: you approve every addition or update, then Hindsight extracts their facts. Remove keeps the file and excludes it from future uploads.',
+                </p>
               )}
-            </p>
-          </section>
-          {problems.map((p) => (
-            <div className="notice error" key={p.id}>
-              {p.message ||
-                t(`${p.kind} : collecte incomplète`, `${p.kind}: incomplete collection`)}
-            </div>
-          ))}
-        </aside>
-      </div>
+              {!!sources.length && !activeSources.length && (
+                <p className="collector-empty">
+                  {t('Aucun collecteur actif.', 'No active collector.')}
+                </p>
+              )}
+              {!!sources.length && (
+                <button className="collector-more" onClick={() => setCollectorsOpen(true)}>
+                  {t(
+                    `Voir les ${number(sources.length)} collecteurs`,
+                    `View all ${number(sources.length)} collectors`,
+                  )}
+                  {sources.length > activeSources.length &&
+                    t(
+                      ` (${number(sources.length - activeSources.length)} désactivés)`,
+                      ` (${number(sources.length - activeSources.length)} disabled)`,
+                    )}
+                  <ArrowRight size={14} />
+                </button>
+              )}
+            </section>
+            <section className="card processing-note">
+              <div>
+                <LayersIcon />
+                <h3>{t('Sources et mémoire', 'Sources and memory')}</h3>
+              </div>
+              <p>
+                {t(
+                  'Collecter les sources lance le collecteur du dossier et met à jour le catalogue de ce Mac, sans rien envoyer à Hindsight. Actualiser (↻) relit l’état de la banque, sans collecter ni envoyer. Préparer l’envoi compare les sources collectées à la mémoire : vous validez chaque ajout ou mise à jour, puis Hindsight en extrait les faits. Retirer conserve le fichier et l’exclut des envois futurs.',
+                  'Collect sources runs the folder’s collector and updates this Mac’s catalog without uploading anything to Hindsight. Refresh (↻) rereads the memory bank’s status without collecting or uploading. Prepare upload compares collected sources with memory: you approve every addition or update, then Hindsight extracts their facts. Remove keeps the file and excludes it from future uploads.',
+                )}
+              </p>
+            </section>
+            {problems.map((p) => (
+              <div className="notice error" key={p.id}>
+                {p.message ||
+                  t(`${p.kind} : collecte incomplète`, `${p.kind}: incomplete collection`)}
+              </div>
+            ))}
+          </aside>
+        </div>
+      )}
       {!!archives.length && (
         <details
           className="card log-details source-list"

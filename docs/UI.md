@@ -62,8 +62,9 @@ Tracked folders are saved per bank, separately from the local catalog. If the
 catalog folder is not tracked for the current bank, this view shows its path and
 an explicit **Track this folder** action. It never registers or uploads it on
 navigation. A folder without `catalog.json` is an ordinary documents folder, not an
-error: Catalog says so neutrally and points to Tracked folders, which offers to
-track it. Loading is shown before the folder list arrives. Sidebar numbers use
+error: Catalog says so neutrally, hides collection controls and empty catalog
+statistics, names the bank it would be tracked for and points to Tracked folders,
+which offers to track it. Loading is shown before the folder list arrives. Sidebar numbers use
 the `⌘` prefix to identify keyboard shortcuts.
 
 Processing keeps its selected status during automatic refreshes and preserves
