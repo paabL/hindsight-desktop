@@ -4,6 +4,7 @@ import { setLanguage } from '../src/i18n-core.ts';
 import {
   localizeConfirmation,
   localizeNativeSnapshot,
+  nativeSourceReason,
   nativeSystemMessage,
 } from '../src/native-messages.ts';
 
@@ -20,11 +21,11 @@ const confirmation = (extra = {}) => ({
 
 test('une interruption du moteur explique la récupération dans la langue choisie', () => {
   const message =
-    "Le moteur Hindsight s'est interrompu. Vérifiez les opérations avant de réessayer, puis reconnectez le serveur.";
+    "Le moteur Hindsight s'est interrompu. Vérifiez « Activité › Traitements » avant de réessayer, puis reconnectez le serveur.";
   setLanguage('en');
   assert.equal(
     nativeSystemMessage(message),
-    'The Hindsight engine stopped. Check operations before trying again, then reconnect the server.',
+    'The Hindsight engine stopped. Check Activity › Processing before trying again, then reconnect the server.',
   );
   setLanguage('fr');
   assert.equal(nativeSystemMessage(message), message);
@@ -110,4 +111,90 @@ test('un message inconnu reste visible dans sa forme d’origine', () => {
   setLanguage('en');
   const unknown = 'Message personnalisé envoyé par mon serveur';
   assert.equal(nativeSystemMessage(unknown), unknown);
+});
+
+test('les messages d’état composés du moteur sont traduits sans toucher aux noms capturés', () => {
+  setLanguage('en');
+  assert.equal(
+    nativeSystemMessage('Banque renommée « Projet Été ».'),
+    'Memory bank renamed “Projet Été”.',
+  );
+  assert.equal(
+    nativeSystemMessage('Choisissez deux banques différentes.'),
+    'Choose two different memory banks.',
+  );
+  assert.equal(
+    nativeSystemMessage(
+      'Fusion terminée (documents_imported 3) ; « brouillon » supprimée. Lancez la consolidation de « équipe » pour intégrer les nouveaux faits aux observations.',
+    ),
+    'Merge complete (documents_imported 3); “brouillon” deleted. Run consolidation on “équipe” to add the new facts to its observations.',
+  );
+  assert.equal(
+    nativeSystemMessage('« équipe » est en pause. 2 rafraîchissements de modèles mentaux annulés.'),
+    '“équipe” is paused. 2 mental model refreshes cancelled.',
+  );
+  assert.equal(nativeSystemMessage('1 fait(s) supprimé(s).'), '1 fact deleted.');
+  assert.equal(
+    nativeSystemMessage('3 sources envoyées ; traitement à suivre dans cette liste.'),
+    '3 sources uploaded. Follow processing in this list.',
+  );
+  assert.equal(
+    nativeSystemMessage(
+      "L'opération op-7 n'est pas terminée ; suivez-la dans « Activité › Traitements ».",
+    ),
+    'Operation op-7 is not finished yet. Follow it in Activity › Processing.',
+  );
+  // Préfixe générique : une règle plus précise passe avant « Échec : … ».
+  assert.equal(
+    nativeSystemMessage("Échec : HTTP 500. Vérifiez l'état des deux banques avant de recommencer."),
+    'Failed: HTTP 500. Check both memory banks before trying again.',
+  );
+  setLanguage('fr');
+  assert.equal(
+    nativeSystemMessage('Choisissez deux banques différentes.'),
+    'Choisissez deux banques différentes.',
+  );
+});
+
+test('les raisons par source du catalogue se traduisent à l’affichage', () => {
+  setLanguage('en');
+  assert.equal(nativeSourceReason('En attente de revue'), 'Pending review');
+  assert.equal(nativeSourceReason('Source locale indisponible.'), 'Local source unavailable.');
+  assert.equal(
+    nativeSourceReason(
+      'Ce dossier est rattaché à la banque « équipe ». Sélectionnez-la pour envoyer ou retirer ses sources.',
+    ),
+    'This folder belongs to the “équipe” memory bank. Select it to upload or remove its sources.',
+  );
+  assert.equal(nativeSourceReason('Raison écrite à la main'), 'Raison écrite à la main');
+  assert.equal(nativeSourceReason(undefined), '');
+  setLanguage('fr');
+  assert.equal(nativeSourceReason('En attente de revue'), 'En attente de revue');
+});
+
+test('les erreurs secondaires des sections et les pages de connaissance sont traduites', () => {
+  setLanguage('en');
+  const result = localizeNativeSnapshot({
+    app: { connected: true, bank: 'b', banks: [], serverURL: 'http://127.0.0.1:8888' },
+    section: 'dashboard',
+    data: {
+      partialErrors: ['entités : HTTP 500'],
+      modelError: 'Connaissance inconnue.',
+      detailError: 'Banque inconnue.',
+    },
+    confirmations: [
+      confirmation({
+        title: 'Supprimer la page de connaissance « Projet » ?',
+        message: 'Son contenu et son historique sont supprimés.',
+        confirmTitle: 'Supprimer',
+        requiredText: null,
+      }),
+    ],
+    messages: ['Page de connaissance supprimée.'],
+  });
+  assert.deepEqual(result.data.partialErrors, ['entities: HTTP 500']);
+  assert.equal(result.data.modelError, 'Unknown knowledge item.');
+  assert.equal(result.data.detailError, 'Unknown memory bank.');
+  assert.equal(result.confirmations[0].title, 'Delete knowledge page “Projet”?');
+  assert.equal(result.messages[0], 'Knowledge page deleted.');
 });

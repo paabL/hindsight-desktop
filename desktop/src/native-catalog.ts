@@ -52,13 +52,13 @@ const catalog: Record<string, string> = {
     'Only applies across different observation scopes: batches within the same scope run one after another',
   'Reflect (réponses)': 'Reflect (answers)',
   'LLM qui rédige les réponses de reflect.': 'LLM that writes reflect answers.',
-  'Modèles mentaux': 'Summaries',
-  'LLM qui rafraîchit les modèles mentaux.': 'LLM that refreshes summaries.',
+  'Modèles mentaux': 'Mental models',
+  'LLM qui rafraîchit les modèles mentaux.': 'LLM that refreshes mental models.',
   'Vision (VLM)': 'Vision (VLM)',
   'Modèle qui décrit les images des documents.': 'Model that describes document images.',
   'Modèle de décision (1.1.0+ ; Hindsight en 1.2.0)': 'Decision model (1.1.0+; Hindsight in 1.2.0)',
-  "Modèle qui répond à des questions typées (choix, score) à la place d'un appel LLM, partagé par recall, reflect, consolidation et pages de connaissance. N'écrit pas de texte ; hors quotas d'abonnement.":
-    'Model that answers typed questions (choices, scores) instead of an LLM call, shared by recall, reflect, consolidation and knowledge pages. Does not generate text; excluded from subscription quotas.',
+  "Modèle qui répond à des questions typées (choix, score) à la place d'un appel LLM, partagé par recall, reflect, consolidation et pages de connaissance. N'écrit pas de texte ; hors plafonds de dépense.":
+    'Model that answers typed questions (choices, scores) instead of an LLM call, shared by recall, reflect, consolidation and knowledge pages. Does not generate text; excluded from spending limits.',
   'none (défaut), hindsight (Hindsight Inference, 1.2.0), typesafe, cloudflare, openai':
     'none (default), hindsight (Hindsight Inference, 1.2.0), typesafe, cloudflare, openai',
   'Vide = défaut du fournisseur (hindsight : hs-decide-1-flash)':

@@ -218,13 +218,21 @@ final class BankAdminTests: XCTestCase {
         XCTAssertEqual(refreshed, 1)
 
         t.on("DELETE", "\(bankPath)", json: #"{"success":true}"#)
+        var appMessages: [String] = []
+        vm.onAppMessage = { appMessages.append($0) }
         vm.requestDeleteBank()
         XCTAssertEqual(vm.confirmation?.requiredText, testBank)
         XCTAssertFalse(vm.confirmation!.isSatisfied(by: "codex"))
         await vm.confirmation!.perform()
         XCTAssertEqual(refreshed, 2)
+        XCTAssertEqual(appMessages, ["Banque supprimée."], "le message survit à la session de la banque supprimée")
+        XCTAssertNotEqual(vm.actionMessage, "Banque supprimée.", "pas de doublon dans la session remplacée")
+        t.on("DELETE", "\(bankPath)/memories", json: #"{"success":true,"deleted_count":4}"#)
         vm.requestDeleteMemories(type: "observation")
         XCTAssertEqual(vm.confirmation?.requiredText, testBank)
+        await vm.confirmation!.perform()
+        XCTAssertEqual(vm.actionMessage, "4 fait(s) supprimé(s).")
+        XCTAssertEqual(refreshed, 3, "le nombre de faits de la banque est relu")
         vm.requestClearObservations()
         XCTAssertEqual(vm.confirmation?.requiredText, testBank)
     }

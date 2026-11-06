@@ -33,6 +33,7 @@ import {
   date,
   number,
 } from '../ui';
+import { nativeSystemMessage } from '../native-messages';
 import { DocumentReader } from './Library';
 import {
   analyzeGraph,
@@ -318,7 +319,16 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
     const request = ++sourceRequest.current;
     try {
       const value = await run('document.open', { id: documentID });
-      if (sourceRequest.current === request && !value?.error) setReader(value);
+      if (sourceRequest.current !== request) return;
+      if (value && !value.error) setReader(value);
+      else
+        setDetailError(
+          (value?.error && nativeSystemMessage(value.error)) ||
+            t(
+              'Impossible d’ouvrir le document source.',
+              'The source document could not be opened.',
+            ),
+        );
     } catch (error) {
       if (sourceRequest.current === request)
         setDetailError(error instanceof Error ? error.message : String(error));
@@ -467,7 +477,7 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
     <div className="atlas">
       <PageHeader
         eyebrow={t('EXPLORER · COMPRENDRE · RELIER', 'EXPLORE · UNDERSTAND · CONNECT')}
-        title={t('Atlas de la mémoire', 'Memory atlas')}
+        title={t('Graphe', 'Graph')}
         description={t(
           'Repérez les sujets liés, explorez leurs connexions et revenez aux sources.',
           'Find related topics, explore their connections, and return to the sources.',
@@ -533,7 +543,7 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
           onClick={() => setFilters(!filters)}
         >
           {t('Filtres', 'Filters')}
-          {relation !== 'all' || density ? ' actifs' : ''}
+          {relation !== 'all' || density ? t(' actifs', ' on') : ''}
         </Button>
         <select
           aria-label={t('Taille de l’échantillon du graphe', 'Graph sample size')}
@@ -1344,7 +1354,7 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
                           onClick={() => void openSource(fact.documentID || fact.document_id)}
                         >
                           <FileText size={14} />
-                          <span>{t('Consulter la source', 'View source')}</span>
+                          <span>{t('Voir le document source', 'View source document')}</span>
                           <ArrowRight size={13} />
                         </button>
                       )}
@@ -1372,7 +1382,9 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
                       {facts.length > 1 ? 's' : ''}
                       {t(' chargé', ' loaded')}
                       {facts.length > 1 ? 's' : ''}
-                      {mode === 'entities' ? ' · jusqu’à 50 par entité' : ''}
+                      {mode === 'entities'
+                        ? t(' · jusqu’à 50 par entité', ' · up to 50 per entity')
+                        : ''}
                       {t(
                         '. Les mentions et les faits sont des mesures différentes.',
                         '. Mentions and facts are different measures.',

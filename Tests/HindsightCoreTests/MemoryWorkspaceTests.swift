@@ -113,6 +113,40 @@ final class MemoryWorkspaceTests: XCTestCase {
         XCTAssertFalse(s.transport.requests.contains { $0.path.contains("consolidat") || $0.method == "DELETE" })
         XCTAssertTrue(s.runner.calls.isEmpty, "Confirming the preview must not collect either")
     }
+    func testFolderOfAnotherBankIsBrowsableButNeverSentOrLinked() async throws {
+        let s = try setup()
+        try JSONSerialization.data(withJSONObject: ["version": 1, "bank_id": "other-bank", "excluded_document_ids": [:], "deferred_document_ids": [:]]).write(to: s.root.appendingPathComponent("memory-policy.json"))
+        s.server.docs = [DocumentListItem(id: "direct-note")]
+        s.vm.prime()
+        XCTAssertEqual(state(s.vm)["state"] as? String, "other_bank")
+        await s.vm.refresh()
+        XCTAssertEqual(s.vm.boundBank, "other-bank")
+        XCTAssertTrue(s.vm.bankMismatch)
+        XCTAssertEqual(state(s.vm)["state"] as? String, "other_bank")
+        XCTAssertEqual(state(s.vm)["enabled"] as? Bool, false)
+        XCTAssertEqual(state(s.vm)["locked"] as? Bool, true)
+        XCTAssertFalse(s.vm.records.contains { ($0["id"] as? String)?.hasPrefix("bank:") == true }, "The selected bank's documents have nothing to link in another bank's catalog")
+        XCTAssertThrowsError(try s.vm.setEnabled("project:repo:note", enabled: true))
+        await s.vm.prepareSend()
+        XCTAssertNil(s.vm.confirmation)
+        XCTAssertTrue(s.vm.error?.contains("other-bank") == true)
+        XCTAssertFalse(s.transport.requests.contains { $0.method != "GET" })
+    }
+    func testFirstUploadLinksAnUnboundFolderToItsBank() async throws {
+        let s = try setup()
+        let policyURL = s.root.appendingPathComponent("memory-policy.json")
+        try FileManager.default.removeItem(at: policyURL)
+        await s.vm.prepareSend()
+        XCTAssertNil(s.vm.boundBank)
+        let approval = try XCTUnwrap(s.vm.confirmation)
+        XCTAssertTrue(approval.message.contains("Ce dossier sera rattaché à « \(testBank) »"))
+        await approval.perform()
+        XCTAssertNotNil(s.transport.requests.first { $0.method == "POST" })
+        let policy = try JSONSerialization.jsonObject(with: Data(contentsOf: policyURL)) as? [String: Any]
+        XCTAssertEqual(policy?["bank_id"] as? String, testBank)
+        XCTAssertEqual(s.vm.boundBank, testBank)
+        XCTAssertFalse(s.vm.bankMismatch)
+    }
     func testChangedTextCannotUsePreviousApproval() async throws {
         let s = try setup(); await s.vm.prepareSend(); let approval = try XCTUnwrap(s.vm.confirmation)
         try Data("changed after preview".utf8).write(to: s.text)
@@ -262,14 +296,14 @@ final class MemoryWorkspaceTests: XCTestCase {
     func testCompletedParentWithNoSavedDocumentAndDrainedQueueIsAnError() async throws {
         let s = try setup(); _ = try await submitAndParent(s)
         await s.vm.refresh()
-        XCTAssertEqual(state(s.vm)["state"] as? String, "error")
+        XCTAssertEqual(state(s.vm)["state"] as? String, "failed")
     }
     func testFailedOperationIsNotSuccessEvenWhenDocumentTextMatches() async throws {
         let s = try setup(); let id = try await submitAndParent(s)
         installDocument(s, id: "source:project:repo:note", text: try String(contentsOf: s.text, encoding: .utf8))
         s.transport.on("GET", "\(bankPath)/operations/\(id)", json: #"{"operation_id":"\#(id)","status":"failed"}"#)
         await s.vm.refresh()
-        XCTAssertEqual(state(s.vm)["state"] as? String, "error")
+        XCTAssertEqual(state(s.vm)["state"] as? String, "failed")
     }
     func testOldFalseFailureIsBackedUpAndRecoveredWithoutResending() async throws {
         let s = try setup(); _ = try await submitAndParent(s)
@@ -377,7 +411,7 @@ final class MemoryWorkspaceTests: XCTestCase {
         }
         XCTAssertEqual(state(s.vm, "project:repo:both")["reason"] as? String, "En attente de revue")
         XCTAssertEqual(state(s.vm, "project:repo:removed")["reason"] as? String, "Retrait validé")
-        XCTAssertEqual(state(s.vm, "project:repo:removed")["can_remove"] as? Bool, true)
+        XCTAssertEqual(state(s.vm, "project:repo:removed")["can_remove"] as? Bool, false, "Nothing stored: there is nothing to remove from memory")
         XCTAssertEqual(state(s.vm, "project:repo:removed")["locked"] as? Bool, false)
         XCTAssertEqual(state(s.vm, "project:repo:free")["state"] as? String, "new")
         XCTAssertTrue(s.transport.requests.allSatisfy { $0.method == "GET" })
@@ -482,7 +516,7 @@ final class MemoryWorkspaceTests: XCTestCase {
         let s = try setup(); let id = try await submitAndParent(s)
         s.transport.on("GET", "\(bankPath)/operations", json: #"{"bank_id":"b","total":1,"limit":100,"offset":0,"operations":[{"id":"\#(id)","task_type":"batch_retain","items_count":1,"status":"processing","created_at":""}]}"#)
         await s.vm.refresh()
-        XCTAssertEqual(state(s.vm)["state"] as? String, "error", "A drained queue without the expected saved text needs fresh approval, not an endless queued state")
+        XCTAssertEqual(state(s.vm)["state"] as? String, "failed", "A drained queue without the expected saved text needs fresh approval, not an endless queued state")
         XCTAssertEqual(s.transport.requests.filter { $0.method == "POST" }.count, 1)
     }
 
@@ -734,6 +768,8 @@ final class MemoryWorkspaceTests: XCTestCase {
         await vm.refresh()
         await gate.release(); await old.value
         XCTAssertEqual(state(vm)["state"] as? String, "excluded")
+        installDocument(s, id: target, text: try String(contentsOf: s.text, encoding: .utf8))
+        await vm.refresh()
         vm.requestRemove("project:repo:note")
         XCTAssertNotNil(vm.confirmation, "A superseded recovery must not resurrect an old pending blocker")
         XCTAssertEqual(s.transport.requests.filter { $0.method == "POST" }.count, 1)

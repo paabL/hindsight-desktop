@@ -98,15 +98,17 @@ try {
     }
   }
 
-  // Group clicks restore the last tab; numbered shortcuts select group defaults.
+  // Group clicks and numbered shortcuts both restore the group's last tab.
   await page.goto(`${base}/?demo=1#graph`);
   await hasRoute(page, 'graph');
   await nav.getByRole('button', { name: /^Search/ }).click();
   await hasRoute(page, 'search');
   await nav.getByRole('button', { name: /^Memory/ }).click();
   await hasRoute(page, 'graph');
+  await page.keyboard.press('Meta+4');
+  await hasRoute(page, 'search');
   await page.keyboard.press('Meta+2');
-  await hasRoute(page, 'facts');
+  await hasRoute(page, 'graph');
   await nav.getByRole('button', { name: /^Sources/ }).click();
   await page
     .getByRole('tablist', { name: 'Source views' })
@@ -116,23 +118,29 @@ try {
   await nav.getByRole('button', { name: /^Overview/ }).click();
   await nav.getByRole('button', { name: /^Sources/ }).click();
   await hasRoute(page, 'coverage');
+  // Activity's last tab is Logs: the deep links above opened it after Processing and Usage.
   for (const [index, id] of [
     'dashboard',
-    'facts',
+    'graph',
     'models',
     'search',
     'model-settings',
-    'sources',
-    'operations',
+    'coverage',
+    'audit',
   ].entries()) {
     await page.keyboard.press(`Meta+${index + 1}`);
     await hasRoute(page, id);
   }
   await page.keyboard.press('Meta+9');
-  await hasRoute(page, 'operations');
+  await hasRoute(page, 'audit');
 
   // Memory shows stored facts, with type filters and a route back to source text.
   await page.keyboard.press('Meta+2');
+  await page
+    .getByRole('tablist', { name: 'Memory views' })
+    .getByRole('tab', { name: 'Facts', exact: true })
+    .click();
+  await hasRoute(page, 'facts');
   await expect(page.locator('.fact-card')).toHaveCount(12);
   await page.getByRole('combobox', { name: 'Fact type', exact: true }).selectOption('observation');
   await expect(page.locator('.fact-card')).toHaveCount(4);
@@ -140,13 +148,15 @@ try {
     .getByRole('textbox', { name: 'Filter loaded facts', exact: true })
     .fill('Une décision');
   await expect(page.locator('.fact-card')).toHaveCount(1);
-  await page.getByRole('button', { name: 'Open source document', exact: true }).click();
+  await page.getByRole('button', { name: 'View source document', exact: true }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await expect(page.locator('.modal .markdown')).toContainText('Ceci est un document fictif');
   await page.getByRole('button', { name: 'Close', exact: true }).click();
 
   // Hash history must change the rendered view, selected tab and active group together.
+  // A reload forgets the last tabs opened above, so the Sources group opens on Catalog.
   await page.goto(`${base}/?demo=1#graph`);
+  await page.reload();
   await nav.getByRole('button', { name: /^Sources/ }).click();
   await hasRoute(page, 'sources');
   await page

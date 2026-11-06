@@ -151,22 +151,11 @@ extension ConsumptionMath {
             let used = totals(since(events, start), prices: prices).dollars
             out.append(
                 BudgetGauge(
-                    id: "dollars.day", title: "Facturé aujourd'hui", used: used, limit: limit, unit: .dollars, level: level(used, limit),
+                    // Même mesure et même nom que le « Coût estimé aujourd'hui » de l'écran Consommation.
+                    id: "dollars.day", title: "Coût estimé aujourd'hui", used: used, limit: limit, unit: .dollars, level: level(used, limit),
                     resetsAt: calendar.date(byAdding: .day, value: 1, to: start), note: nil))
         }
         return out
-    }
-}
-
-/// Noms lisibles des fournisseurs d'abonnement.
-public enum SubscriptionNames {
-    public static func title(_ provider: String) -> String {
-        switch provider.lowercased() {
-        case "claude-code": return "Claude Code"
-        case "openai-codex", "codex": return "Codex"
-        case "chatgpt": return "ChatGPT"
-        default: return provider
-        }
     }
 }
 

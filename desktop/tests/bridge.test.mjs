@@ -189,6 +189,20 @@ test('les anciens contrôles de quota sont refusés sans lecture ni confirmation
   assert.ok(calls.slice(before).every((call) => call.method === 'GET'));
 });
 
+test('les actions du lecteur refusent un document qui n’est plus ouvert', async () => {
+  const before = calls.length;
+  const status = await bridge.request('document.status', { id: 'source-document' });
+  assert.deepEqual(status, { open: false, confirming: false });
+  for (const command of [
+    'document.delete',
+    'document.reprocess',
+    'document.tags',
+    'document.scope',
+  ])
+    await assert.rejects(bridge.request(command, { id: 'source-document' }), /n’est plus ouvert/);
+  assert.equal(calls.length, before);
+});
+
 test('reflect attend une confirmation et ne peut pas la rejouer', async () => {
   await bridge.request('section', { section: 'search' });
   const before = calls.filter((c) => c.path.endsWith('/reflect')).length;
@@ -386,6 +400,26 @@ test('le graphe conserve son mode, expose les limites et garde les sources des f
   await assert.rejects(
     bridge.request('graph.select', { id: 'outside-loaded-graph' }),
     /ne fait pas partie/,
+  );
+  assert.ok(calls.slice(before).every((c) => c.method === 'GET'));
+});
+
+test('un même résultat d’action, produit deux fois, est une nouvelle occurrence à afficher', async () => {
+  const before = calls.length;
+  await bridge.request('section', { section: 'memory' });
+  const key = (result) =>
+    result.messageKeys[result.messages.indexOf('Aucun changement à enregistrer.')];
+  const first = await bridge.request('memory.save', { config: {} });
+  assert.equal(first.messages.length, first.messageKeys.length);
+  assert.ok(key(first), 'enregistrer sans changement le dit');
+  const polled = await bridge.request('snapshot');
+  assert.equal(key(polled), key(first), 'un sondage ne recrée pas le message');
+  const second = await bridge.request('memory.save', { config: {} });
+  assert.ok(key(second));
+  assert.notEqual(key(second), key(first), 'la seconde occurrence reçoit une nouvelle clé');
+  await assert.rejects(
+    bridge.request('memory.save', { config: { audit_log_enabled: true } }),
+    /Clés non prises en charge ici : audit_log_enabled/,
   );
   assert.ok(calls.slice(before).every((c) => c.method === 'GET'));
 });

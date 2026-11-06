@@ -1,4 +1,5 @@
 import type { Row } from './types';
+import { translate as t } from './i18n-core.ts';
 
 export type ModelOption = { id: string; title: string };
 export const localDecisionURL = 'http://127.0.0.1:8766';
@@ -130,4 +131,45 @@ export function chooseProvider(role: Row, field: Row, value: string, draft: Row,
     next[model.name] = value ? modelOptions(role, model, next, data)[0]?.id || '' : '';
   }
   return next;
+}
+/** État du modèle de décision de ce Mac, nommé d’après sa phase réelle (pas « arrêté » pendant l’installation). */
+export function localDecisionStateLabel(phase: unknown): string {
+  switch (phase) {
+    case 'running':
+      return t('En marche', 'Running');
+    case 'starting':
+      return t('Démarrage…', 'Starting…');
+    case 'installing':
+      return t('Installation…', 'Installing…');
+    case 'notInstalled':
+      return t('Non installé', 'Not installed');
+    case 'stopped':
+      return t('Arrêté', 'Stopped');
+    default:
+      return t('État inconnu', 'Unknown state');
+  }
+}
+/** Avis affiché quand le modèle de décision local est choisi mais ne répond pas encore. */
+export function localDecisionNotice(phase: unknown): string {
+  switch (phase) {
+    case 'starting':
+      return t('Le modèle de décision local démarre.', 'The local decision model is starting.');
+    case 'installing':
+      return t(
+        'Le modèle de décision local est en cours d’installation.',
+        'The local decision model is being installed.',
+      );
+    case 'notInstalled':
+      return t(
+        'Le modèle de décision local n’est pas installé.',
+        'The local decision model is not installed.',
+      );
+    case 'stopped':
+      return t('Le modèle de décision local est arrêté.', 'The local decision model is stopped.');
+    default:
+      return t(
+        'L’état du modèle de décision local n’est pas encore connu.',
+        'The local decision model state is not known yet.',
+      );
+  }
 }

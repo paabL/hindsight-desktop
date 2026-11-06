@@ -19,7 +19,7 @@ import {
 import { useI18n } from '../i18n';
 import { Button, ErrorNotice, Tabs } from '../ui';
 import type { PageProps, Row } from '../types';
-import { serviceModelField } from '../model-field-options';
+import { localDecisionNotice, serviceModelField } from '../model-field-options';
 import './model-workflow.css';
 
 type Flow = 'reflect' | 'retain' | 'pages' | 'recall';
@@ -389,8 +389,8 @@ export function ModelWorkflowSettings({
           <Help
             title={t('Recherche mémoire', 'Memory search')}
             text={t(
-              'Retrouve les souvenirs et classe les candidats. Le classement peut lui aussi utiliser le modèle de décision, indépendamment de la réflexion.',
-              'Finds memories and ranks candidates. Ranking can also use the decision model, independently of reflection.',
+              'Retrouve les faits et classe les candidats. Le classement peut lui aussi utiliser le modèle de décision, indépendamment de la réflexion.',
+              'Finds facts and ranks candidates. Ranking can also use the decision model, independently of reflection.',
             )}
             icon={Search}
           />
@@ -436,7 +436,8 @@ export function ModelWorkflowSettings({
             else void request('server.decision', { source: e.target.value });
           }}
         >
-          <option value="off">{t('Choisir un modèle…', 'Choose a model…')}</option>
+          {/* Choisir cette option coupe le modèle de décision : même libellé que dans Réglages. */}
+          <option value="off">{t('Désactivé', 'Off')}</option>
           {source === 'other' && (
             <option value="other">
               {t('Configuration personnalisée', 'Custom configuration')}
@@ -629,28 +630,25 @@ export function ModelWorkflowSettings({
     nodes = [
       memory(
         'new',
-        t('Nouveautés', 'New memories'),
+        t('Nouveaux faits', 'New facts'),
         t('Depuis la dernière mise à jour', 'Since the last update'),
         t(
-          'Sélectionne par date les souvenirs nouveaux, sans modèle.',
-          'Selects new memories by date, without a model.',
+          'Sélectionne par date les nouveaux faits, sans modèle.',
+          'Selects new facts by date, without a model.',
         ),
       ),
       judge(
         t('Modifier la page ?', 'Change the page?'),
         t(
-          'Vérifie si les nouveautés peuvent modifier la page. Sinon, la conserve telle quelle.',
-          'Checks whether new memories could change the page. Otherwise keeps it unchanged.',
+          'Vérifie si les nouveaux faits peuvent modifier la page. Sinon, la conserve telle quelle.',
+          'Checks whether new facts could change the page. Otherwise keeps it unchanged.',
         ),
       ),
       gen(
         'write',
         t('Rédaction', 'Writing'),
         'mental_model',
-        t(
-          'Actualise la page avec les souvenirs utiles.',
-          'Updates the page using relevant memories.',
-        ),
+        t('Actualise la page avec les faits utiles.', 'Updates the page using relevant facts.'),
         NotebookText,
       ),
       memory(
@@ -677,15 +675,15 @@ export function ModelWorkflowSettings({
             t('Retrouver', 'Retrieve'),
             workflow.embeddings,
             t(
-              'Les embeddings retrouvent des souvenirs proches par le sens.',
-              'Embeddings retrieve memories that are similar in meaning.',
+              'Les embeddings retrouvent des faits proches par le sens.',
+              'Embeddings retrieve facts that are similar in meaning.',
             ),
           ),
           judge(
             t('Classer', 'Rank'),
             t(
-              'Classe les souvenirs selon leur utilité. Ne rédige pas de réponse.',
-              'Ranks memories by usefulness. Does not write an answer.',
+              'Classe les faits selon leur utilité. Ne rédige pas de réponse.',
+              'Ranks facts by usefulness. Does not write an answer.',
             ),
           ),
         ]
@@ -773,12 +771,7 @@ export function ModelWorkflowSettings({
         {data.hindsightModels?.decision === 'local' &&
           data.hindsightModels?.local?.phase !== 'running' && (
             <div className="notice">
-              <span>
-                {t(
-                  'Le modèle de décision local est arrêté.',
-                  'The local decision model is stopped.',
-                )}
-              </span>
+              <span>{localDecisionNotice(data.hindsightModels?.local?.phase)}</span>
               <Button kind="ghost" onClick={tools}>
                 {t('Gérer le modèle local', 'Manage local model')}
               </Button>

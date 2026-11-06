@@ -44,10 +44,12 @@ import {
   Modal,
   PageHeader,
   Step,
+  bankLabel,
   date,
   number,
   shortName,
 } from '../ui';
+import { nativeSourceReason } from '../native-messages';
 import { pickDirectory, pickDocuments } from '../transport';
 
 const memoryLabels: Record<string, string> = {
@@ -64,7 +66,13 @@ const memoryLabels: Record<string, string> = {
     return t('En cours', 'In progress');
   },
   get error() {
-    return t('Erreur de source', 'Source error');
+    return t('Source illisible', 'Unreadable source');
+  },
+  get failed() {
+    return t('Échec du dernier envoi', 'Last upload failed');
+  },
+  get unsupported() {
+    return t('Format non envoyable', 'Format not uploadable');
   },
   get unknown() {
     return t('État non vérifié', 'Unchecked status');
@@ -78,7 +86,26 @@ const memoryLabels: Record<string, string> = {
   get missing() {
     return t('Source absente du catalogue', 'Source missing from catalog');
   },
+  get other_bank() {
+    return t('Autre banque', 'Other memory bank');
+  },
 };
+
+// Les documents de la banque hors catalogue n'ont pas de projet : le moteur les marque « En mémoire ».
+function projectLabel(record: Row): string {
+  if (String(record.id).startsWith('bank:')) return t('En mémoire', 'In memory');
+  return String(record.project_name || record.project || '');
+}
+
+function collectorStatus(status: unknown): string {
+  const value = String(status || '');
+  if (/^(ok|success)/.test(value)) return t('OK', 'OK');
+  if (/disabled/.test(value)) return t('Désactivé', 'Disabled');
+  if (/partial/.test(value)) return t('Partiel', 'Partial');
+  if (/error|fail/.test(value)) return t('Erreur', 'Error');
+  if (/skip/.test(value)) return t('Ignoré', 'Skipped');
+  return value || '—';
+}
 
 const kindIcons = {
   conversation: MessageSquare,
@@ -96,9 +123,15 @@ export default function Sources({
   demo,
   navigate,
   serverConnected,
+  banks = [],
   onExploreExample,
   contextKey,
-}: PageProps & { serverConnected: boolean; onExploreExample: () => void; contextKey?: string }) {
+}: PageProps & {
+  serverConnected: boolean;
+  banks?: Row[];
+  onExploreExample: () => void;
+  contextKey?: string;
+}) {
   useI18n();
 
   const [query, setQuery] = useState('');
@@ -202,17 +235,37 @@ export default function Sources({
       }, {}),
     [records],
   );
+  // Le filtre d'état s'applique aussi aux archives à part : ses comptes les incluent.
   const stateCounts = useMemo(() => {
     const byState = new Map<unknown, number>();
-    for (const r of records) byState.set(r.memory?.state, (byState.get(r.memory?.state) || 0) + 1);
+    for (const r of allRecords)
+      byState.set(r.memory?.state, (byState.get(r.memory?.state) || 0) + 1);
     return byState;
-  }, [records]);
-  const enabledCount = useMemo(() => records.filter((r) => r.memory?.enabled).length, [records]);
+  }, [allRecords]);
+  const enabledCount = useMemo(() => filtered.filter((r) => r.memory?.enabled).length, [filtered]);
   const toggleable = useMemo(
     () => filtered.filter((r) => !String(r.id).startsWith('bank:') && !r.memory?.locked),
     [filtered],
   );
+  const toInclude = toggleable.filter((r) => !r.memory?.enabled);
+  const toExclude = toggleable.filter((r) => r.memory?.enabled);
   const sources: Row[] = data.catalog?.sources || [];
+  const activeSources = sources.filter((s) => !/disabled/.test(String(s.status || '')));
+  // Sans catalogue lisible, le pont ne renvoie que les documents de la banque : rien à préparer.
+  const hasCatalog = Boolean(data.catalog) && !data.catalogMissing;
+  // Le dossier appartient à la banque déclarée dans sa politique ; une autre banque ne fait que le consulter.
+  const bankName = (id: unknown) =>
+    bankLabel(banks.find((x) => x.bank_id === id)) || String(id || '');
+  const mismatch = !demo && Boolean(data.bankMismatch && data.boundBank);
+  const boundBankExists = banks.some((b) => b.bank_id === data.boundBank);
+  const catalogCount = useMemo(
+    () => records.filter((r) => !String(r.id).startsWith('bank:')).length,
+    [records],
+  );
+  const storedCount = useMemo(
+    () => records.filter((r) => !String(r.id).startsWith('bank:') && r.memory?.stored).length,
+    [records],
+  );
   const problems = sources.filter((s) => /error|fail|partial/.test(s.status));
 
   async function choose() {
@@ -313,11 +366,11 @@ export default function Sources({
       </div>
     );
 
-  if (!demo && !data.folder && !data.catalog)
+  if (!demo && !data.folder && !hasCatalog)
     return (
       <>
         <PageHeader
-          title={t('Sources', 'Sources')}
+          title={t('Catalogue', 'Catalog')}
           description={t(
             'Parcourez le catalogue de ce Mac et choisissez ce que vous souhaitez envoyer à la banque Hindsight sélectionnée.',
             'Browse this Mac’s source catalog and choose what to send to the selected Hindsight bank.',
@@ -376,7 +429,7 @@ export default function Sources({
   return (
     <>
       <PageHeader
-        title={t('Sources', 'Sources')}
+        title={t('Catalogue', 'Catalog')}
         description={t(
           'Le catalogue de ce Mac et l’état de ses sources dans la banque Hindsight sélectionnée.',
           'This Mac’s source catalog and the status of its sources in the selected Hindsight bank.',
@@ -408,7 +461,17 @@ export default function Sources({
             <Button
               icon={ArrowDownToLine}
               kind="primary"
-              disabled={busy || data.collecting || !data.catalog || demo}
+              disabled={
+                busy || data.collecting || !hasCatalog || !serverConnected || demo || mismatch
+              }
+              title={
+                mismatch
+                  ? t(
+                      `Ce dossier appartient à la banque « ${bankName(data.boundBank)} ».`,
+                      `This folder belongs to the “${bankName(data.boundBank)}” memory bank.`,
+                    )
+                  : undefined
+              }
               onClick={() => void run('folder.prepare')}
             >
               {t('Préparer l’envoi à Hindsight', 'Prepare upload to Hindsight')}
@@ -429,7 +492,40 @@ export default function Sources({
           </>
         }
       />
-      <ErrorNotice message={data.error} />
+      <ErrorNotice message={mismatch ? null : data.error} />
+      {mismatch && (
+        <section className="bank-mismatch" role="alert">
+          <p>
+            <strong>
+              {t(
+                `Ce dossier appartient à la banque « ${bankName(data.boundBank)} », pas à « ${bankName(data.bank)} ».`,
+                `This folder belongs to the “${bankName(data.boundBank)}” memory bank, not “${bankName(data.bank)}”.`,
+              )}
+            </strong>{' '}
+            {t(
+              'Son catalogue reste consultable ici, mais ses sources ne peuvent être ni envoyées ni retirées depuis cette banque.',
+              'You can browse its catalog here, but its sources cannot be uploaded or removed from this memory bank.',
+            )}
+          </p>
+          <div className="bank-mismatch-actions">
+            {boundBankExists && (
+              <Button
+                kind="primary"
+                disabled={busy}
+                onClick={() => void run('bank.select', { id: data.boundBank })}
+              >
+                {t(
+                  `Passer à « ${bankName(data.boundBank)} »`,
+                  `Switch to “${bankName(data.boundBank)}”`,
+                )}
+              </Button>
+            )}
+            <Button icon={FolderOpen} disabled={busy || data.collecting} onClick={choose}>
+              {t('Choisir un autre dossier', 'Choose another folder')}
+            </Button>
+          </div>
+        </section>
+      )}
       {data.refreshing && (
         <p className="form-hint" role="status">
           {t(
@@ -460,9 +556,14 @@ export default function Sources({
             <div className="archive-heading">
               <h2>{data.folder ? shortName(data.folder) : t('Dossier local', 'Local folder')}</h2>
               <Badge>
-                {data.catalog
-                  ? t('Catalogue disponible', 'Catalog available')
-                  : t('Non configuré', 'Not configured')}
+                {!hasCatalog
+                  ? t('Non configuré', 'Not configured')
+                  : data.boundBank
+                    ? t(
+                        `Banque « ${bankName(data.boundBank)} »`,
+                        `“${bankName(data.boundBank)}” memory bank`,
+                      )
+                    : t('Rattaché au premier envoi', 'Linked on first upload')}
               </Badge>
             </div>
             <p>
@@ -484,22 +585,20 @@ export default function Sources({
         </div>
         <div className="archive-stats">
           <div>
-            <span>{t('Sources et documents en mémoire', 'Sources and stored documents')}</span>
-            <strong>{number(records.length)}</strong>
+            <span>{t('Sources du catalogue', 'Catalog sources')}</span>
+            <strong>{number(catalogCount)}</strong>
+          </div>
+          <div>
+            <span>
+              {data.bank
+                ? t(`Dans « ${bankName(data.bank)} »`, `In “${bankName(data.bank)}”`)
+                : t('Dans la banque', 'In the memory bank')}
+            </span>
+            <strong>{serverConnected || demo ? number(storedCount) : '—'}</strong>
           </div>
           <div>
             <span>{t('Projets', 'Projects')}</span>
             <strong>{number(projects.length)}</strong>
-          </div>
-          <div>
-            <span>{t('Collecteurs', 'Collectors')}</span>
-            <strong>
-              {number(
-                new Set(
-                  sources.filter((s) => s.kind !== 'documents').map((s) => sourceKind(s.kind)),
-                ).size,
-              )}
-            </strong>
           </div>
           <div className="archive-updated">
             <span>{t('Dernière collecte du catalogue', 'Last catalog collection')}</span>
@@ -596,23 +695,25 @@ export default function Sources({
           </div>
           <div className="workspace-bulk">
             <span>
-              {enabledCount}
-              {t(' sources activées · ', ' sources enabled · ')}
-              {toggleable.length}
-              {t(' modifiables dans ce filtre', ' editable in this filter')}
+              {number(enabledCount)}
+              {t(' activées sur ', ' enabled of ')}
+              {number(filtered.length)}
+              {t(' dans ce filtre · ', ' in this filter · ')}
+              {number(toggleable.length)}
+              {t(' modifiables', ' editable')}
             </span>
             <Button
-              disabled={busy || data.collecting || demo || !toggleable.length}
+              disabled={busy || data.collecting || demo || !toInclude.length}
               onClick={() =>
-                void run('folder.enabled', { ids: toggleable.map((r) => r.id), enabled: true })
+                void run('folder.enabled', { ids: toInclude.map((r) => r.id), enabled: true })
               }
             >
               {t('Inclure ce filtre', 'Include matching sources')}
             </Button>
             <Button
-              disabled={busy || data.collecting || demo || !toggleable.length}
+              disabled={busy || data.collecting || demo || !toExclude.length}
               onClick={() =>
-                void run('folder.enabled', { ids: toggleable.map((r) => r.id), enabled: false })
+                void run('folder.enabled', { ids: toExclude.map((r) => r.id), enabled: false })
               }
             >
               {t('Exclure ce filtre', 'Exclude matching sources')}
@@ -694,10 +795,17 @@ export default function Sources({
           <section className="card collector-card">
             <CardHeader
               title={t('État des collectes', 'Collection status')}
-              action={<Badge>{sources.length}</Badge>}
+              action={
+                <Badge>
+                  {t(
+                    `${number(activeSources.length)} actifs`,
+                    `${number(activeSources.length)} active`,
+                  )}
+                </Badge>
+              }
             />
             <div className="collector-status-list">
-              {sources.slice(0, 5).map((source) => (
+              {activeSources.slice(0, 5).map((source) => (
                 <div key={source.id}>
                   <span
                     className={`status-dot ${/error|fail|partial/.test(source.status) ? 'warning' : /ok|success/.test(source.status) ? 'green' : ''}`}
@@ -724,11 +832,22 @@ export default function Sources({
                 )}
               </p>
             )}
+            {!!sources.length && !activeSources.length && (
+              <p className="collector-empty">
+                {t('Aucun collecteur actif.', 'No active collector.')}
+              </p>
+            )}
             {!!sources.length && (
               <button className="collector-more" onClick={() => setCollectorsOpen(true)}>
-                {t('Voir les ', 'View all ')}
-                {number(sources.length)}
-                {t(' collectes', ' collections')}
+                {t(
+                  `Voir les ${number(sources.length)} collecteurs`,
+                  `View all ${number(sources.length)} collectors`,
+                )}
+                {sources.length > activeSources.length &&
+                  t(
+                    ` (${number(sources.length - activeSources.length)} désactivés)`,
+                    ` (${number(sources.length - activeSources.length)} disabled)`,
+                  )}
                 <ArrowRight size={14} />
               </button>
             )}
@@ -836,11 +955,15 @@ export default function Sources({
               <tbody>
                 {sources.map((source) => (
                   <tr key={source.id}>
-                    <td>{source.repository ? shortName(source.repository) : source.kind}</td>
+                    <td>
+                      {source.repository
+                        ? shortName(source.repository)
+                        : kindLabels[sourceKind(source.kind)]}
+                    </td>
                     <td>{source.project}</td>
                     <td>{number(source.count)}</td>
                     <td>
-                      <Badge>{source.status}</Badge>
+                      <Badge>{collectorStatus(source.status)}</Badge>
                     </td>
                     <td>{date(source.last_success_at, true)}</td>
                   </tr>
@@ -916,7 +1039,7 @@ export default function Sources({
       {selected && (
         <Modal
           title={selected.title || t('Source', 'Source')}
-          subtitle={`${selected.project_name || selected.project} · ${kindLabels[sourceKind(selected.kind)]}`}
+          subtitle={`${projectLabel(selected)} · ${kindLabels[sourceKind(selected.kind)]}`}
           wide
           onClose={closeSource}
         >
@@ -979,7 +1102,7 @@ export default function Sources({
               <Badge>
                 {memoryLabels[selected.memory.state] || t('État non vérifié', 'Unchecked status')}
               </Badge>
-              <p className="form-hint">{selected.memory.reason}</p>
+              <p className="form-hint">{nativeSourceReason(selected.memory.reason)}</p>
               {!String(selected.id).startsWith('bank:') && (
                 <label>
                   <input
@@ -1116,7 +1239,7 @@ function SourceRows({
             <span className="source-row-main">
               <strong>{record.title || record.id}</strong>
               <span>
-                {record.project_name || record.project}
+                {projectLabel(record)}
                 <span className="middot">·</span>
                 {archived
                   ? asideLabel(record)
@@ -1134,7 +1257,9 @@ function SourceRows({
             {record.memory && (
               <Badge>
                 {memoryLabels[record.memory.state] || t('État non vérifié', 'Unchecked status')}
-                {record.memory.state === 'excluded' && record.memory.stored ? ' · En mémoire' : ''}
+                {record.memory.state === 'excluded' && record.memory.stored
+                  ? t(' · En mémoire', ' · In memory')
+                  : ''}
               </Badge>
             )}
             <span className="source-date">

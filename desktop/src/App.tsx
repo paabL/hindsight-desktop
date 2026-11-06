@@ -58,6 +58,7 @@ import {
   Logo,
   Modal,
   PageHeader,
+  bankLabel,
   number,
   shortName,
 } from './ui';
@@ -226,6 +227,8 @@ export default function App() {
     const section = initialRoute();
     return { [groupFor(section)]: section };
   });
+  const lastViewsRef = useRef(lastViews);
+  lastViewsRef.current = lastViews;
   const [command, setCommand] = useState(false);
   const [commandQuery, setCommandQuery] = useState('');
   const [bankMenu, setBankMenu] = useState(false);
@@ -294,12 +297,18 @@ export default function App() {
           section: routeRef.current,
           data: result.section === routeRef.current ? result.data : old.data,
         }));
-        for (const message of result.messages || [])
-          if (!seenMessages.current.has(message)) {
-            seenMessages.current.add(message);
+      }
+      // Une fois par occurrence : le moteur donne une nouvelle clé à un message produit de nouveau (même
+      // texte), l’exemple n’a que le texte. Lu aussi dans une réponse écartée par une action au premier plan,
+      // pour ne pas perdre un résultat que le moteur ne renverra plus.
+      if (result?.app && result?.section && generation === contextGeneration.current)
+        (result.messages || []).forEach((message: string, index: number) => {
+          const key = result.messageKeys?.[index] || message;
+          if (!seenMessages.current.has(key)) {
+            seenMessages.current.add(key);
             setToast(message);
           }
-      }
+        });
       return result;
     } catch (error) {
       const message =
@@ -451,7 +460,9 @@ export default function App() {
         void refresh();
       } else if (/^[1-9]$/.test(event.key) && primary[Number(event.key) - 1]) {
         event.preventDefault();
-        navigate(primary[Number(event.key) - 1].id);
+        // Comme un clic dans la barre latérale : retour au dernier onglet ouvert du groupe.
+        const id = primary[Number(event.key) - 1].id;
+        navigate(lastViewsRef.current[groupFor(id)] || id);
       }
     };
     document.addEventListener('keydown', handler);
@@ -482,8 +493,7 @@ export default function App() {
 
   const props: PageProps = { data: snapshot.data, run, busy, navigate, refresh, notify, demo };
   const bank = snapshot.app.banks.find((b) => b.bank_id === snapshot.app.bank);
-  const bankName =
-    bank?.display_alias || bank?.name || bank?.bank_id || t('Votre espace', 'Your workspace');
+  const bankName = bankLabel(bank) || t('Votre espace', 'Your workspace');
   const title = sections.find((s) => s.id === route)?.label || 'Hindsight';
   const currentGroup = groupFor(route);
   const groupTitle =
@@ -572,6 +582,7 @@ export default function App() {
             {...props}
             data={{ ...props.data, folder: props.data.folder ?? snapshot.app.folder }}
             serverConnected={snapshot.app.connected}
+            banks={snapshot.app.banks}
             onExploreExample={() => changeDemo(true)}
           />
         );
@@ -605,7 +616,7 @@ export default function App() {
       case 'memory':
         return <MemoryDesign {...props} />;
       case 'admin':
-        return <Admin {...props} />;
+        return <Admin {...props} bank={bank} banks={snapshot.app.banks} />;
       case 'server':
         return <ServerSettings {...props} />;
       case 'model-settings':
@@ -634,7 +645,7 @@ export default function App() {
             <Logo />
             <div>
               <strong>Hindsight</strong>
-              <span>{t('ESPACE DE MÉMOIRE', 'DESKTOP WORKSPACE')}</span>
+              <span>{t('ESPACE DE MÉMOIRE', 'MEMORY WORKSPACE')}</span>
             </div>
           </div>
           <div className="workspace-wrapper">
@@ -683,13 +694,15 @@ export default function App() {
                       }}
                     >
                       <Database size={15} />
-                      <span>{b.display_alias || b.name || b.bank_id}</span>
+                      <span>{bankLabel(b)}</span>
                       {snapshot.app.bank === b.bank_id && <Check size={14} />}
                     </button>
                   ))}
                   {!snapshot.app.banks.length && (
                     <p className="muted">
-                      {t('Aucune banque connectée', 'No connected memory banks')}
+                      {snapshot.app.connected
+                        ? t('Aucune banque sur ce serveur', 'No memory banks on this server')
+                        : t('Serveur Hindsight déconnecté', 'Hindsight server disconnected')}
                     </p>
                   )}
                   <button onClick={() => navigate('admin')}>
@@ -741,7 +754,7 @@ export default function App() {
                     ? t('Espace de démonstration', 'Example workspace')
                     : snapshot.app.connected
                       ? t('Hindsight est connecté', 'Hindsight is connected')
-                      : t('Dossier disponible hors ligne', 'Browse a folder offline')}
+                      : t('Dossier disponible hors ligne', 'Folder available offline')}
                 </strong>
                 <span>
                   {demo
@@ -764,8 +777,13 @@ export default function App() {
       <main className="main-shell">
         <header className="topbar" data-tauri-drag-region>
           <div className="breadcrumb">
-            <span>{bankName}</span>
-            <ChevronRight size={13} />
+            {/* Pages globales (réglages, serveur, consommation) : pas de banque dans le fil d’Ariane. */}
+            {(needsBank || (route === 'sources' && !!bank)) && (
+              <>
+                <span>{bankName}</span>
+                <ChevronRight size={13} />
+              </>
+            )}
             {views && (
               <>
                 <span>{groupTitle}</span>
@@ -827,7 +845,10 @@ export default function App() {
         {snapshot.app.paused?.length ? (
           <div className="pause-banner">
             <span className="status-dot warning" />
-            {t('Traitements en pause :', 'Processing paused:')} {snapshot.app.paused.join(', ')}
+            {t('Traitements en pause :', 'Processing paused:')}{' '}
+            {snapshot.app.paused
+              .map((id) => bankLabel(snapshot.app.banks.find((b) => b.bank_id === id)) || id)
+              .join(', ')}
             <button onClick={() => navigate('consumption')}>
               {t('Gérer la pause', 'Manage pause')}
               <ArrowRight size={13} />
@@ -1010,7 +1031,7 @@ function Settings({
     <>
       <PageHeader
         eyebrow={t('À votre façon', 'Make it yours')}
-        title={t('Réglages', 'Settings')}
+        title={t('Application', 'Application')}
         description={t(
           'Connexion, apparence et préférences de l’application.',
           'Connection, appearance and application preferences.',

@@ -222,6 +222,9 @@ public struct MemoryDesign: Sendable, Hashable {
         return new.filter { before[$0.key] != $0.value }
     }
 
+    /// Clés de configuration que cette structure relit et enregistre ; une autre clé y serait ignorée.
+    public static let editableKeys: Set<String> = Set(MemoryDesign().values()?.keys.map { $0 } ?? [])
+
     /// Problèmes bloquants (ou à signaler) avant l'enregistrement.
     public var problems: [String] {
         var p: [String] = []

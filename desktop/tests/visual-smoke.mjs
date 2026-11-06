@@ -44,7 +44,7 @@ try {
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Vue d’ensemble', exact: true })).toBeVisible();
   await page.keyboard.press('Meta+6');
-  await expect(page.getByRole('heading', { name: 'Sources', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Catalogue', exact: true })).toBeVisible();
   await expect(page.getByText('12 sources dans 2 projets')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Actualiser la vue', exact: true })).toBeEnabled();
   await page.screenshot({ path: path.join(root, 'screenshots/01-dossier.png') });

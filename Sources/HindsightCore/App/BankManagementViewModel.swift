@@ -76,7 +76,11 @@ public final class BankManagementViewModel {
 
     public func requestRename(_ bank: String, name: String) {
         let n = name.trimmingCharacters(in: .whitespaces)
-        guard !n.isEmpty, n != item(bank)?.name else { return }
+        guard !n.isEmpty else { return }
+        guard n != item(bank)?.name else {
+            message = "La banque porte déjà le nom « \(n) »."
+            return
+        }
         confirmation = ConfirmationRequest(
             title: "Renommer « \(bank) » en « \(n) » ?",
             message: "Seul le nom affiché change : l'identifiant, les données et les clients (MCP, scripts) ne sont pas touchés.",
@@ -203,7 +207,11 @@ public final class BankManagementViewModel {
     // MARK: Fusionner
 
     public func requestMerge(source: String, into target: String, conflict: Conflict = .skip, after: AfterMerge = .keepSource) {
-        guard source != target, item(source) != nil, item(target) != nil else {
+        guard item(source) != nil, item(target) != nil else {
+            message = "Banque inconnue."
+            return
+        }
+        guard source != target else {
             message = "Choisissez deux banques différentes."
             return
         }
@@ -266,7 +274,7 @@ public final class BankManagementViewModel {
             let skipped = metadata.filter { $0.key.contains("skipped") }.compactMap { $0.value.intValue }.reduce(0, +)
             if after != .keepSource, conflict == .skip, skipped > 0 {
                 progress = nil
-                message = summary + ". « \(source) » est CONSERVÉE : \(skipped) document(s) ignoré(s) n'existent que dans la source. Vérifiez, puis supprimez-la depuis Administration."
+                message = summary + ". « \(source) » est CONSERVÉE : \(skipped) document(s) ignoré(s) n'existent que dans la source. Vérifiez, puis supprimez-la depuis « Réglages › Banque »."
                 await refreshBanks()
                 selectBank(target)
                 return

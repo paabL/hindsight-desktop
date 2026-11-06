@@ -1029,6 +1029,29 @@ tbody tr:hover {
   background: var(--amber-light);
   color: var(--amber-ink);
 }
+.bank-mismatch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 20px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  padding: 16px 20px;
+  border-radius: 12px;
+  background: var(--amber-light);
+  color: var(--amber-ink);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.bank-mismatch p {
+  flex: 1 1 360px;
+  margin: 0;
+}
+.bank-mismatch-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
 .pause-banner button {
   margin-left: auto;
   display: flex;
@@ -1565,6 +1588,9 @@ tbody tr:hover {
 }
 .provenance dl {
   margin-top: 18px;
+}
+.bank-identity {
+  margin: 0 0 14px;
 }
 
 .section-callout {

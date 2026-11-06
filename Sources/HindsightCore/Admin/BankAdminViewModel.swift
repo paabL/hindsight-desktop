@@ -17,8 +17,11 @@ public final class BankAdminViewModel {
 
     public let bank: String
     @ObservationIgnored private let client: HindsightClient
-    /// Prévenu quand la liste des banques change (création, clone, suppression).
+    /// Prévenu quand la liste des banques change (création, clone, suppression) ou que leur nombre de faits change.
     @ObservationIgnored public var onBanksChanged: (@MainActor () async -> Void)?
+    /// Message qui doit survivre à cette session : après la suppression de la banque, la session est remplacée
+    /// et son `actionMessage` ne serait plus jamais affiché.
+    @ObservationIgnored public var onAppMessage: (@MainActor (String) -> Void)?
 
     public private(set) var config: LoadState<BankConfigResponse> = .idle
     public private(set) var directives: LoadState<[DirectiveResponse]> = .idle
@@ -227,7 +230,9 @@ public final class BankAdminViewModel {
         }
         confirmation = ConfirmationRequest(
             title: "Rafraîchir « \(m.name) » ?",
-            message: "Le modèle mental est régénéré par le LLM (opération asynchrone)."
+            message: (m.isKnowledgePage == true
+                ? "La page de connaissance est régénérée par le LLM (opération asynchrone)."
+                : "Le modèle mental est régénéré par le LLM (opération asynchrone).")
                 + (estimate?(.mentalModelRefresh).map { "\n\n" + $0.summary } ?? ""),
             confirmTitle: "Rafraîchir", severity: .normal
         ) { [weak self] in
@@ -262,14 +267,17 @@ public final class BankAdminViewModel {
     }
 
     public func requestDeleteMentalModel(_ m: MentalModelResponse) {
+        // Le serveur distingue les pages de connaissance des modèles mentaux autonomes : chacun garde son nom.
+        let page = m.isKnowledgePage == true
         confirmation = ConfirmationRequest(
-            title: "Supprimer le modèle mental « \(m.name) » ?", message: "Son contenu et son historique sont supprimés.",
+            title: page ? "Supprimer la page de connaissance « \(m.name) » ?" : "Supprimer le modèle mental « \(m.name) » ?",
+            message: "Son contenu et son historique sont supprimés.",
             confirmTitle: "Supprimer"
         ) { [weak self] in
             guard let self else { return }
             do {
                 _ = try await self.client.deleteMentalModel(self.bank, id: m.id)
-                self.actionMessage = "Modèle mental supprimé."
+                self.actionMessage = page ? "Page de connaissance supprimée." : "Modèle mental supprimé."
                 if self.mentalModelDetail.value?.id == m.id { self.mentalModelDetail = .idle }
                 await self.loadMentalModels()
             } catch { self.actionMessage = "Échec : \(error.userMessage)" }
@@ -325,7 +333,11 @@ public final class BankAdminViewModel {
 
     public func requestClone(targetBankID: String, includeData: Bool = true, includeConfig: Bool = true, includeHistory: Bool = false) {
         let target = targetBankID.trimmingCharacters(in: .whitespaces)
-        guard !target.isEmpty, target != bank else { return }
+        guard !target.isEmpty else { return }
+        guard target != bank else {
+            actionMessage = "Le clone doit porter un nouvel identifiant."
+            return
+        }
         confirmation = ConfirmationRequest(
             title: "Cloner « \(bank) » vers « \(target) » ?",
             message: "Une nouvelle banque est créée (elle ne doit pas exister). Sans appel LLM : faits ré-indexés, entités résolues à nouveau."
@@ -425,6 +437,8 @@ public final class BankAdminViewModel {
             do {
                 let r = try await self.client.clearObservations(self.bank)
                 self.actionMessage = "\(r.deletedCount ?? 0) observation(s) effacée(s)."
+                // Le nombre de faits affiché pour la banque inclut les observations.
+                await self.onBanksChanged?()
             } catch { self.actionMessage = "Échec : \(error.userMessage)" }
         }
     }
@@ -440,6 +454,7 @@ public final class BankAdminViewModel {
             do {
                 let r = try await self.client.deleteAllMemories(self.bank, type: type)
                 self.actionMessage = "\(r.deletedCount ?? 0) fait(s) supprimé(s)."
+                await self.onBanksChanged?()
             } catch { self.actionMessage = "Échec : \(error.userMessage)" }
         }
     }
@@ -453,7 +468,7 @@ public final class BankAdminViewModel {
             guard let self else { return }
             do {
                 _ = try await self.client.deleteBank(self.bank)
-                self.actionMessage = "Banque supprimée."
+                if let onAppMessage = self.onAppMessage { onAppMessage("Banque supprimée.") } else { self.actionMessage = "Banque supprimée." }
                 await self.onBanksChanged?()
             } catch { self.actionMessage = "Échec : \(error.userMessage)" }
         }

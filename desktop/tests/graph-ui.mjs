@@ -34,7 +34,7 @@ try {
   await page.addInitScript(() => localStorage.setItem('hindsight-desktop-language', 'fr'));
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto(url + '/?demo=1#graph');
-  await expect(page.getByRole('heading', { name: 'Atlas de la mémoire' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Graphe', exact: true })).toBeVisible();
   await expect(page.locator('.atlas-node')).toHaveCount(20);
   await expect(page.locator('.atlas-community')).toHaveCount(4);
   const positions = await page
@@ -53,7 +53,7 @@ try {
       .locator('.atlas-node')
       .evaluateAll((nodes) => nodes.map((n) => n.getAttribute('transform'))),
   ).toEqual(positions);
-  await page.getByRole('button', { name: 'Consulter la source', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Voir le document source', exact: true }).first().click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.getByRole('button', { name: 'Fermer', exact: true }).click();
   await page.getByRole('button', { name: 'Isoler', exact: true }).click();
@@ -118,7 +118,7 @@ try {
   await page.getByRole('tab', { name: 'Faits & sources', exact: true }).click();
   await expect(page.locator('.atlas-fact')).toHaveCount(1);
   await expect(
-    page.getByRole('button', { name: 'Consulter la source', exact: true }),
+    page.getByRole('button', { name: 'Voir le document source', exact: true }),
   ).toBeVisible();
   await page.getByRole('button', { name: 'Activer le thème clair', exact: true }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');

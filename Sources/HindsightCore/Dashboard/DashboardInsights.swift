@@ -111,7 +111,7 @@ public enum DashboardInsights {
                     id: "pending-consolidation", severity: running ? .info : stale ? .warning : .info,
                     title: "\(st.pendingConsolidation) fait(s) attendent la consolidation",
                     detail: running
-                        ? "Une consolidation est en cours : elle les traite. Suivi dans Opérations."
+                        ? "Une consolidation est en cours : elle les traite. Suivi dans « Activité › Traitements »."
                         : s.lastConsolidation.map { "Dernière consolidation : \(Self.relative($0, now: now))." } ?? "Aucune consolidation enregistrée.",
                     action: running ? .openOperations(status: "processing") : .runConsolidation,
                     actionTitle: running ? "Voir l'avancement" : "Lancer la consolidation"))

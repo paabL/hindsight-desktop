@@ -237,6 +237,8 @@ public final class AppModel {
             client: client, bank: id, features: connection.version?.features, services: services, apiVersion: connection.version?.apiVersion)
         if automaticActions { Task { await services.estimator.refreshProfile(bank: id) } }
         s.admin.onBanksChanged = { [weak self] in await self?.refreshBanks() }
+        // La suppression de la banque remplace cette session : son message passe par la gestion des banques.
+        s.admin.onAppMessage = { [weak self] text in self?.bankManagement.message = text }
         s.operations.pauseGate = pause.gate
         s.documents.pauseGate = pause.gate
         // Supprimé, retraité ou retagué depuis le lecteur : la liste de l'écran Documents suit.

@@ -137,7 +137,7 @@ public enum HelpTopic: String, CaseIterable, Sendable, Identifiable {
                 parcours du **graphe** d'entités et de liens, et branche **temporelle** (dates de la requête) ; \
                 fusion des rangs puis **reranking** par cross-encoder. Le budget règle l'effort d'exploration ; \
                 `max_tokens` borne le volume renvoyé. Coût : embeddings + reranker (et modèle de décision s'il est réglé), \
-                hors quotas d'abonnement.
+                hors plafonds de dépense.
                 """)
         case .recallArms:
             return (

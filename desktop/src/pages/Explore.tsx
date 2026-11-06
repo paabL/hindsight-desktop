@@ -23,6 +23,7 @@ import {
   Empty,
   ErrorNotice,
   IconButton,
+  Loading,
   Markdown,
   Metric,
   Modal,
@@ -31,6 +32,7 @@ import {
   date,
   number,
 } from '../ui';
+import { factTypeLabel, factTypePluralLabel } from '../fact-types';
 import { DocumentReader } from './Library';
 
 export function Dashboard({ data, navigate, run, busy }: PageProps) {
@@ -38,35 +40,49 @@ export function Dashboard({ data, navigate, run, busy }: PageProps) {
   const stats = data.snapshot?.stats || {};
   const [reader, setReader] = useState<Row | null>(null);
   const types = Object.entries(stats.nodes_by_fact_type || {}) as [string, number][];
+  const header = (
+    <PageHeader
+      eyebrow={t('Un regard d’ensemble', 'At a glance')}
+      title={t('Vue d’ensemble', 'Overview')}
+      description={t(
+        'L’état de votre banque, en quelques repères utiles.',
+        'Your memory bank at a glance.',
+      )}
+      actions={
+        <div className="action-row">
+          <Button kind="primary" icon={Search} onClick={() => navigate('search')}>
+            {t('Rechercher et questionner', 'Search and ask')}
+          </Button>
+          <Button icon={Layers3} onClick={() => navigate('facts')}>
+            {t('Explorer la mémoire', 'Explore memory')}
+          </Button>
+          <Button icon={FileText} onClick={() => navigate('sources')}>
+            {t('Ajouter des sources', 'Add sources')}
+          </Button>
+        </div>
+      }
+    />
+  );
+  if (!data.snapshot)
+    return (
+      <>
+        {header}
+        {data.error ? <ErrorNotice message={data.error} /> : <Loading />}
+      </>
+    );
   return (
     <>
-      <PageHeader
-        eyebrow={t('Un regard d’ensemble', 'At a glance')}
-        title={t('Vue d’ensemble', 'Overview')}
-        description={t(
-          'L’état de votre banque, en quelques repères utiles.',
-          'Your memory bank at a glance.',
-        )}
-        actions={
-          <div className="action-row">
-            <Button kind="primary" icon={Search} onClick={() => navigate('search')}>
-              {t('Rechercher et questionner', 'Search and ask')}
-            </Button>
-            <Button icon={Layers3} onClick={() => navigate('facts')}>
-              {t('Explorer la mémoire', 'Explore memory')}
-            </Button>
-            <Button icon={FileText} onClick={() => navigate('sources')}>
-              {t('Ajouter des sources', 'Add sources')}
-            </Button>
-          </div>
-        }
-      />
+      {header}
       <ErrorNotice message={data.error} />
       <div className="metrics-grid">
         <Metric
           label={t('Faits en mémoire', 'Facts in memory')}
+          // Même total que la barre latérale (`fact_count` du serveur) et que la page Faits : observations comprises.
           value={number(stats.total_nodes)}
-          note={t('Faits conservés', 'Stored facts')}
+          note={t(
+            `Dont ${number(stats.total_observations ?? 0)} observations`,
+            `Including ${number(stats.total_observations ?? 0)} observations`,
+          )}
           icon={Sparkles}
         />
         <Metric
@@ -79,7 +95,7 @@ export function Dashboard({ data, navigate, run, busy }: PageProps) {
         <Metric
           label={t('Observations', 'Observations')}
           value={number(stats.total_observations)}
-          note={t('Connaissances consolidées', 'Consolidated knowledge')}
+          note={t('Consolidées à partir des faits', 'Consolidated from facts')}
           icon={Layers3}
           tone="lavender"
         />
@@ -103,11 +119,9 @@ export function Dashboard({ data, navigate, run, busy }: PageProps) {
                   </span>
                   <div>
                     <strong>
-                      {{
-                        world: t('Faits du monde', 'World facts'),
-                        experience: t('Expériences', 'Experiences'),
-                        observation: t('Observations', 'Observations'),
-                      }[key] || key}
+                      {['world', 'experience', 'observation', 'opinion'].includes(key)
+                        ? factTypePluralLabel(key)
+                        : key}
                     </strong>
                     <p>
                       {number(count)} {t('faits', 'facts')}
@@ -199,13 +213,16 @@ export function Dashboard({ data, navigate, run, busy }: PageProps) {
   );
 }
 
-export function Facts({ data, run, busy, refresh }: PageProps) {
+export function Facts({ data, run, busy, refresh, notify }: PageProps) {
   useI18n();
   const [query, setQuery] = useState('');
   const [type, setType] = useState('all');
   const [limit, setLimit] = useState(80);
   const [reader, setReader] = useState<Row | null>(null);
+  const loaded = Array.isArray(data.facts);
   const facts = (data.facts || []) as Row[];
+  // Avant le premier chargement ou après un échec sans données, aucun compte n’est affiché.
+  const counted = loaded && !(data.error && !facts.length);
   const total = typeof data.total === 'number' ? data.total : facts.length;
   const lowerText = useMemo(
     () => facts.map((fact) => String(fact.text || '').toLocaleLowerCase()),
@@ -220,12 +237,6 @@ export function Facts({ data, run, busy, refresh }: PageProps) {
       ),
     [facts, type, lowerText, needle],
   );
-  const typeLabels: Record<string, string> = {
-    world: t('Fait du monde', 'World fact'),
-    experience: t('Expérience', 'Experience'),
-    observation: t('Observation', 'Observation'),
-  };
-  const typeLabel = (value?: string) => typeLabels[value || ''] || value || t('Fait', 'Fact');
 
   async function searchBank(value = query, selectedType = type) {
     setLimit(80);
@@ -234,6 +245,11 @@ export function Facts({ data, run, busy, refresh }: PageProps) {
   async function openSource(id: string) {
     const result = await run('document.open', { id });
     if (result && !result.error) setReader(result);
+    else
+      notify(
+        result?.error ||
+          t('Impossible d’ouvrir le document source.', 'The source document could not be opened.'),
+      );
   }
 
   return (
@@ -276,9 +292,9 @@ export function Facts({ data, run, busy, refresh }: PageProps) {
             }}
           >
             <option value="all">{t('Tous les types', 'All types')}</option>
-            <option value="world">{t('Faits du monde', 'World facts')}</option>
-            <option value="experience">{t('Expériences', 'Experiences')}</option>
-            <option value="observation">{t('Observations', 'Observations')}</option>
+            <option value="world">{factTypePluralLabel('world')}</option>
+            <option value="experience">{factTypePluralLabel('experience')}</option>
+            <option value="observation">{factTypePluralLabel('observation')}</option>
           </select>
           <Button icon={Search} disabled={busy}>
             {t('Rechercher dans la banque', 'Search the bank')}
@@ -305,12 +321,18 @@ export function Facts({ data, run, busy, refresh }: PageProps) {
           )}
         </p>
         <p role="status" className="page-footnote">
-          {t(
-            `${number(facts.length)} chargés sur ${number(total)} dans la banque`,
-            `${number(facts.length)} loaded out of ${number(total)} in the bank`,
+          {counted ? (
+            <>
+              {t(
+                `${number(facts.length)} chargés sur ${number(total)} dans la banque`,
+                `${number(facts.length)} loaded out of ${number(total)} in the bank`,
+              )}
+              {' · '}
+              {number(filtered.length)} {t('correspondent aux filtres', 'match the filters')}
+            </>
+          ) : (
+            '—'
           )}
-          {' · '}
-          {number(filtered.length)} {t('correspondent aux filtres', 'match the filters')}
           {data.query && (
             <>
               {' '}
@@ -320,7 +342,7 @@ export function Facts({ data, run, busy, refresh }: PageProps) {
           {data.type && data.type !== 'all' && (
             <>
               {' '}
-              · {t('Type recherché :', 'Bank type:')} {typeLabel(data.type)}
+              · {t('Type recherché :', 'Bank type:')} {factTypeLabel(data.type)}
             </>
           )}
         </p>
@@ -338,7 +360,7 @@ export function Facts({ data, run, busy, refresh }: PageProps) {
           <article className="card fact-card" key={fact.id}>
             <div className="action-row">
               <Badge tone={fact.type === 'observation' ? 'lavender' : 'sage'}>
-                {typeLabel(fact.type)}
+                {factTypeLabel(fact.type)}
               </Badge>
               {fact.state === 'invalidated' && <Badge>{t('Invalidé', 'Invalidated')}</Badge>}
             </div>
@@ -364,13 +386,14 @@ export function Facts({ data, run, busy, refresh }: PageProps) {
                 disabled={busy}
                 onClick={() => void openSource(fact.documentID)}
               >
-                {t('Ouvrir le document source', 'Open source document')}
+                {t('Voir le document source', 'View source document')}
               </Button>
             )}
           </article>
         ))}
       </div>
-      {!filtered.length && (
+      {!loaded && !data.error && <Loading />}
+      {loaded && !data.error && !filtered.length && (
         <Empty
           icon={Layers3}
           title={t('Aucun fait à afficher', 'No facts to display')}
@@ -421,8 +444,12 @@ export function Timeline({ data, run, busy, refresh }: PageProps) {
       group.push(fact);
       map.set(day, group);
     }
-    return [...map.entries()].sort(([a], [b]) => b.localeCompare(a));
+    // Du plus récent au plus ancien ; les faits sans date viennent en dernier.
+    return [...map.entries()].sort(([a], [b]) =>
+      a === 'undated' ? 1 : b === 'undated' ? -1 : b.localeCompare(a),
+    );
   }, [data.facts, lowered, query, axis]);
+  const loaded = Array.isArray(data.facts);
   let shown = 0;
   return (
     <>
@@ -463,7 +490,7 @@ export function Timeline({ data, run, busy, refresh }: PageProps) {
           {t('Rechercher', 'Search')}
         </Button>
         <Badge>
-          {number(data.facts?.length || 0)} {t('faits chargés', 'facts loaded')}
+          {loaded ? number(data.facts.length) : '—'} {t('faits chargés', 'facts loaded')}
         </Badge>
       </form>
       {data.truncated && (
@@ -496,9 +523,7 @@ export function Timeline({ data, run, busy, refresh }: PageProps) {
                 {visible.map((fact) => (
                   <article className="card timeline-fact" key={fact.id}>
                     <Badge tone={fact.type === 'observation' ? 'lavender' : 'sage'}>
-                      {fact.type === 'observation'
-                        ? t('Observation', 'Observation')
-                        : t('Fait', 'Fact')}
+                      {factTypeLabel(fact.type)}
                     </Badge>
                     <p>{fact.text}</p>
                     {fact.documentID && (
@@ -508,7 +533,7 @@ export function Timeline({ data, run, busy, refresh }: PageProps) {
                           void run('document.open', { id: fact.documentID }).then(setReader)
                         }
                       >
-                        {t('Voir le document', 'View document')}
+                        {t('Voir le document source', 'View source document')}
                         <ArrowRight size={14} />
                       </button>
                     )}
@@ -519,7 +544,8 @@ export function Timeline({ data, run, busy, refresh }: PageProps) {
           );
         })}
       </div>
-      {!groups.length && (
+      {!loaded && !data.error && <Loading />}
+      {loaded && !data.error && !groups.length && (
         <Empty
           icon={CalendarDays}
           title={t('Aucun fait à afficher', 'No facts to display')}
@@ -552,19 +578,29 @@ export function Audit({ data, run, busy }: PageProps) {
     () => all.filter((_, i) => haystacks[i].includes(needle)),
     [all, haystacks, needle],
   );
+  // Le tableau s’arrête à 300 lignes et le moteur ne charge que les 500 dernières entrées : le dire.
+  const shown = Math.min(rows.length, 300);
+  const serverTotal =
+    tab === 'audit' ? data.auditTotal : tab === 'traces' ? data.traceTotal : undefined;
   return (
     <>
       <PageHeader
         eyebrow={t('Une mémoire qui s’explique', 'Understand your memory')}
         title={t('Journaux', 'Logs')}
         description={t(
-          'Comprenez qui consulte votre mémoire et quels traitements ont été effectués.',
-          'See who reads your memory and which operations have run.',
+          'Comprenez qui consulte votre mémoire et quels appels aux modèles ont été faits.',
+          'See who reads your memory and which model calls were made.',
         )}
         actions={
-          <Button onClick={() => void run('audit.enable')} disabled={busy}>
-            {t('Activer le journal', 'Enable logging')}
-          </Button>
+          data.auditStatus === 'enabled' ? (
+            <Button onClick={() => void run('audit.disable')} disabled={busy}>
+              {t('Désactiver le journal', 'Disable logging')}
+            </Button>
+          ) : (
+            <Button onClick={() => void run('audit.enable')} disabled={busy}>
+              {t('Activer le journal', 'Enable logging')}
+            </Button>
+          )
         }
       />
       <Tabs
@@ -593,7 +629,12 @@ export function Audit({ data, run, busy }: PageProps) {
             />
           </div>
           <span className="muted">
-            {number(rows.length)} {t('événements', 'events')}
+            {shown < rows.length
+              ? `${number(shown)} ${t('affichés sur', 'shown of')} ${number(rows.length)} ${t('événements', 'events')}`
+              : `${number(rows.length)} ${t('événements', 'events')}`}
+            {typeof serverTotal === 'number' && serverTotal > all.length
+              ? ` · ${t('les', 'the')} ${number(all.length)} ${t('plus récents sur', 'most recent of')} ${number(serverTotal)}`
+              : ''}
           </span>
         </div>
         {rows.length ? (

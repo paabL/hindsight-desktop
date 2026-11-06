@@ -73,6 +73,17 @@ export function date(value: unknown, full = false) {
 export const display = (value: unknown) =>
   typeof value === 'string' ? value : JSON.stringify(value, null, 2);
 export const shortName = (value: string) => value?.split('/').filter(Boolean).at(-1) || value;
+/** Nom d’une banque à l’écran : son nom (ce que « Renommer » modifie) avant l’alias affiché, qui n’est
+ * qu’un second identifiant, et l’identifiant en dernier recours. */
+export function bankLabel(
+  bank?: { bank_id?: unknown; name?: unknown; display_alias?: unknown } | null,
+) {
+  if (!bank) return '';
+  const id = typeof bank.bank_id === 'string' ? bank.bank_id : '';
+  const name = typeof bank.name === 'string' ? bank.name.trim() : '';
+  const alias = typeof bank.display_alias === 'string' ? bank.display_alias : '';
+  return (name && name !== id ? name : '') || alias || name || id;
+}
 
 export function Logo({ small = false }: { small?: boolean }) {
   return (

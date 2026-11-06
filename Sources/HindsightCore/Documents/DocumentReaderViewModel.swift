@@ -321,7 +321,7 @@ public final class DocumentReaderViewModel: Identifiable {
             }
             do {
                 let r = try await self.client.reprocessDocument(self.bank, id: self.documentID)
-                self.actionMessage = "Retraitement lancé (opération \(r.operationId)). Suivez-le dans « Opérations »."
+                self.actionMessage = "Retraitement lancé (opération \(r.operationId)). Suivez-le dans « Activité › Traitements »."
                 self.onReprocessed?()
                 // La soumission est asynchrone : relire l'état actuel ne prétend pas que l'opération
                 // est terminée, mais évite de conserver indéfiniment les faits de l'ancien snapshot.

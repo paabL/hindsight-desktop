@@ -40,7 +40,7 @@ export default function Operations({ data, run, busy, refresh }: PageProps) {
     retain: t('Extraction de faits', 'Fact extraction'),
     batch_retain: t('Extraction par lot', 'Batch extraction'),
     consolidation: t('Consolidation', 'Consolidation'),
-    refresh_mental_model: t('Synthèse', 'Knowledge page'),
+    refresh_mental_model: t('Actualisation des connaissances', 'Knowledge refresh'),
     reprocess_document: t('Retraitement', 'Reprocessing'),
     file_convert_retain: t('Conversion et extraction', 'Conversion and extraction'),
   };
@@ -59,6 +59,10 @@ export default function Operations({ data, run, busy, refresh }: PageProps) {
     [],
   );
   const allItems: Row[] = data.items || [];
+  // Mode consultation : le moteur ignore toute écriture, les actions sont donc désactivées.
+  const readOnly = !!data.consultationOnly;
+  // « Exécuter maintenant » ne concerne que les opérations dont le moteur accepte l’avance.
+  const runNow = useMemo(() => new Set<string>(data.runNowIDs || []), [data.runNowIDs]);
   const [visibleLimit, setVisibleLimit] = useState(100);
   useEffect(() => {
     setVisibleLimit(100);
@@ -105,7 +109,7 @@ export default function Operations({ data, run, busy, refresh }: PageProps) {
             <Button
               icon={Layers3}
               kind="primary"
-              disabled={busy || data.consultationOnly}
+              disabled={busy || readOnly}
               onClick={() => void run('operations.consolidate')}
             >
               {t('Consolider', 'Consolidate')}
@@ -144,12 +148,21 @@ export default function Operations({ data, run, busy, refresh }: PageProps) {
         <Button
           kind="ghost"
           icon={RotateCcw}
-          disabled={busy}
+          disabled={busy || readOnly}
           onClick={() => void run('operations.retryFailed')}
         >
           {t('Relancer les échecs', 'Retry failed operations')}
         </Button>
-        <Button kind="ghost" disabled={busy} onClick={() => void run('operations.recover')}>
+        <Button
+          kind="ghost"
+          disabled={busy || readOnly || data.failedConsolidation === 0}
+          title={
+            data.failedConsolidation === 0
+              ? t('Aucun fait en échec de consolidation.', 'No facts failed consolidation.')
+              : undefined
+          }
+          onClick={() => void run('operations.recover')}
+        >
           {t('Récupérer la consolidation', 'Recover consolidation')}
         </Button>
       </div>
@@ -232,22 +245,24 @@ export default function Operations({ data, run, busy, refresh }: PageProps) {
                     <IconButton
                       icon={RefreshCw}
                       label={t('Relancer cette opération', 'Retry this operation')}
-                      disabled={busy}
+                      disabled={busy || readOnly}
                       onClick={() => void run('operation.retry', { id: item.id })}
                     />
                   )}
                   {item.status === 'pending' && (
                     <>
-                      <IconButton
-                        icon={Sparkles}
-                        label={t('Exécuter maintenant', 'Run now')}
-                        disabled={busy}
-                        onClick={() => void run('operation.now', { id: item.id })}
-                      />
+                      {runNow.has(item.id) && (
+                        <IconButton
+                          icon={Sparkles}
+                          label={t('Exécuter maintenant', 'Run now')}
+                          disabled={busy || readOnly}
+                          onClick={() => void run('operation.now', { id: item.id })}
+                        />
+                      )}
                       <IconButton
                         icon={X}
                         label={t('Annuler cette opération', 'Cancel this operation')}
-                        disabled={busy}
+                        disabled={busy || readOnly}
                         onClick={() => void run('operation.cancel', { id: item.id })}
                       />
                     </>
@@ -259,7 +274,7 @@ export default function Operations({ data, run, busy, refresh }: PageProps) {
                         'Supprimer l’historique de cette opération',
                         'Delete this operation history',
                       )}
-                      disabled={busy}
+                      disabled={busy || readOnly}
                       onClick={() => void run('operation.delete', { id: item.id })}
                     />
                   )}
@@ -281,8 +296,8 @@ export default function Operations({ data, run, busy, refresh }: PageProps) {
                 : t('Aucune opération dans ce filtre', 'No operations match this filter')
             }
             description={t(
-              'Les extractions, consolidations et générations de synthèses apparaîtront ici.',
-              'Extractions, consolidations and knowledge-page generation will appear here.',
+              'Les extractions, consolidations et actualisations des connaissances apparaîtront ici.',
+              'Extractions, consolidations and knowledge refreshes will appear here.',
             )}
           />
         )}

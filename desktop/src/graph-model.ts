@@ -1,4 +1,5 @@
 import { translate as t, getLocale } from './i18n-core.ts';
+import { factTypeLabel } from './fact-types.ts';
 /** Analyse locale des liens fournis par Hindsight. Aucun lien ni sujet n'est inventé. */
 export type MemoryNode = {
   id: string;
@@ -49,13 +50,7 @@ export function edgeDescription(edge: MemoryEdge) {
   return relationLabel(edge.kind) + (edge.label ? ` · ${edge.label}` : '');
 }
 export const kindLabel = (kind: string) =>
-  ({
-    entity: t('Entité', 'Entity'),
-    world: t('Fait', 'Fact'),
-    experience: t('Expérience', 'Experience'),
-    observation: t('Observation', 'Observation'),
-    opinion: t('Opinion', 'Opinion'),
-  })[kind] || t('Fait', 'Fact');
+  kind === 'entity' ? t('Entité', 'Entity') : factTypeLabel(kind);
 export const normalize = (value: string) =>
   value
     .normalize('NFD')

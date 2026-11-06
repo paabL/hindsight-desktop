@@ -84,7 +84,7 @@ public enum ServerSettingsCatalog {
             fields: Array(llmFields("VLM_").prefix(4)), fallback: nil, caution: nil),
         Role(
             id: "decision", title: "Modèle de décision (1.1.0+ ; Hindsight en 1.2.0)",
-            help: "Modèle qui répond à des questions typées (choix, score) à la place d'un appel LLM, partagé par recall, reflect, consolidation et pages de connaissance. N'écrit pas de texte ; hors quotas d'abonnement.",
+            help: "Modèle qui répond à des questions typées (choix, score) à la place d'un appel LLM, partagé par recall, reflect, consolidation et pages de connaissance. N'écrit pas de texte ; hors plafonds de dépense.",
             fields: [
                 Field(
                     name: "HINDSIGHT_API_DECISION_MODEL_PROVIDER", label: "Fournisseur",

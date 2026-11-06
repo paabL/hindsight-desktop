@@ -52,6 +52,7 @@ final class SearchTests: XCTestCase {
         XCTAssertNil(vm.state.errorMessage)
         XCTAssertEqual(vm.hits.map(\.id), ["m1", "obs1"])  // m3 n'a pas l'entité Codex
         XCTAssertEqual(vm.locallyFiltered, 1)
+        XCTAssertEqual(vm.total, 2, "le total affiché exclut les résultats écartés localement")
         XCTAssertEqual(vm.hits[0].score, 0.91)
         XCTAssertEqual(vm.chunkText(for: vm.hits[0])?.hasPrefix("Étape 1"), true)
         let body = try XCTUnwrap(t.requests.last { $0.path.hasSuffix("/recall") }?.bodyJSON)

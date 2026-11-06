@@ -448,6 +448,55 @@ final class ServerSettingsViewModelTests: XCTestCase {
         XCTAssertFalse(vm.needsRestart)
     }
 
+    func testRestartNoticeSurvivesAnAppRelaunchUntilTheServerRestarts() async throws {
+        let (vm, file, store) = make()
+        await vm.load()
+        vm.setValue("HINDSIGHT_API_REFLECT_LLM_MODEL", "fixture-model")
+        vm.requestSave()
+        await vm.confirmation!.perform()
+        XCTAssertTrue(vm.needsRestart)
+        let relaunched = ServerSettingsViewModel(settings: store, client: { makeClient(MockTransport()) }, bank: { testBank })
+        XCTAssertTrue(relaunched.needsRestart, "l'avis de redémarrage ne disparaît pas en relançant l'app")
+        await relaunched.load()
+        relaunched.acknowledgeStartedScript(SHA256.hex(try Data(contentsOf: file)))
+        XCTAssertFalse(relaunched.needsRestart)
+        XCTAssertFalse(ServerSettingsViewModel(settings: store, client: { makeClient(MockTransport()) }, bank: { testBank }).needsRestart)
+    }
+
+    func testRestartNoticeClearsWhenAnotherServerProcessStartedSinceTheSave() async throws {
+        let (vm, file, store) = make()
+        await vm.load()
+        // Un service installé dont le processus change de PID quand il redémarre (hors de l'app, au login…).
+        let restarted = Switch(false)
+        let runner = FakeProcessRunner { inv in
+            guard inv.executable == HindsightServiceViewModel.launchctl, inv.arguments.first == "print" else { return ProcessOutput(status: 0) }
+            return ProcessOutput(status: 0, stdout: "\tstate = running\n\tpid = \(restarted.value ? 43 : 42)\n")
+        }
+        let paths = ServicePaths(launchAgents: dir.appendingPathComponent("agents"), logs: dir.appendingPathComponent("logs"))
+        try FileManager.default.createDirectory(at: paths.launchAgents, withIntermediateDirectories: true)
+        try LaunchAgentSpec(scriptPath: file.path, logPath: paths.logs.appendingPathComponent("api.log").path, runAtLoad: true, path: "/usr/bin:/bin")
+            .data().write(to: paths.plist)
+        let client = makeClient(MockTransport())
+        let service = HindsightServiceViewModel(settings: store, runner: runner, paths: paths, client: { client }, scriptPath: { file.path })
+        await service.refresh()
+        XCTAssertEqual(service.job.pid, 42)
+        vm.service = service
+        vm.setValue("HINDSIGHT_API_REFLECT_LLM_MODEL", "fixture-model")
+        vm.requestSave()
+        await vm.confirmation!.perform()
+        XCTAssertTrue(vm.needsRestart)
+
+        let relaunched = ServerSettingsViewModel(settings: store, client: { makeClient(MockTransport()) }, bank: { testBank })
+        relaunched.service = service
+        relaunched.reconcilePendingRestart()
+        XCTAssertTrue(relaunched.needsRestart, "le même processus tourne encore avec l'ancien script")
+        restarted.value = true
+        await service.refresh()
+        relaunched.reconcilePendingRestart()
+        XCTAssertFalse(relaunched.needsRestart, "un processus lancé après l'enregistrement a lu le nouveau script")
+        XCTAssertFalse(ServerSettingsViewModel(settings: store, client: { makeClient(MockTransport()) }, bank: { testBank }).needsRestart)
+    }
+
     func testExplicitCloudKeyIsAccepted() async {
         let (vm, _, _) = make()
         await vm.load()
@@ -806,6 +855,5 @@ final class Server110CatalogTests: XCTestCase {
         let decision = ServerSettingsCatalog.roles.first { $0.id == "decision" }
         XCTAssertEqual(decision?.fields.first?.name, "HINDSIGHT_API_DECISION_MODEL_PROVIDER")
         XCTAssertTrue(ServerSettingsCatalog.suggestedProviders.contains { $0.id == "chatgpt" })
-        XCTAssertEqual(SubscriptionNames.title("chatgpt"), "ChatGPT")
     }
 }

@@ -38,10 +38,14 @@ export default function ModelChoices({ data, run, busy, navigate }: PageProps) {
           icon={Settings2}
           title={t('Configurez vos modèles', 'Configure your models')}
           description={t(
-            'Ajoutez vos fournisseurs et choisissez le script du serveur dans les paramètres.',
-            'Add your providers and choose the server script in Settings.',
+            'Ajoutez vos fournisseurs et choisissez le script du serveur dans « Serveur & modèles ».',
+            'Add your providers and choose the server script in Server & models.',
           )}
-          action={<Button onClick={manage}>{t('Ouvrir les paramètres', 'Open settings')}</Button>}
+          action={
+            <Button onClick={manage}>
+              {t('Ouvrir Serveur & modèles', 'Open Server & models')}
+            </Button>
+          }
         />
       )}
     </>

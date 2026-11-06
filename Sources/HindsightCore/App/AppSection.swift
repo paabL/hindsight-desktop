@@ -11,7 +11,7 @@ public enum AppSection: String, CaseIterable, Identifiable, Sendable {
         case .sources: return "Dossier mémoire"
         case .dashboard: return "Vue d'ensemble"
         case .memory: return "Structure"
-        case .mentalModels: return "Synthèses"
+        case .mentalModels: return "Connaissances"
         case .documents: return "Documents en mémoire"
         case .consumption: return "Consommation"
         case .operations: return "Opérations"

@@ -90,7 +90,10 @@ public final class MemoryDesignViewModel {
             return
         }
         let u = changes
-        guard !u.isEmpty else { return }
+        guard !u.isEmpty else {
+            actionMessage = "Aucun changement à enregistrer."
+            return
+        }
         var notes = [
             "Ces réglages deviennent propres à la banque « \(bank) ».",
             "Ils s'appliquent aux PROCHAINES rétentions, consolidations et réponses : les faits déjà extraits ne changent pas (retraitez un document pour lui appliquer la nouvelle extraction).",

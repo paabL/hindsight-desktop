@@ -6,8 +6,8 @@ import type { Confirmation, Row, Snapshot } from './types';
 // Seuls les champs système du pont sont localisés. Le contenu des documents, les noms,
 // les requêtes, les identifiants et le texte à retaper restent intacts.
 const exact: Record<string, string> = {
-  "Le moteur Hindsight s'est interrompu. Vérifiez les opérations avant de réessayer, puis reconnectez le serveur.":
-    'The Hindsight engine stopped. Check operations before trying again, then reconnect the server.',
+  "Le moteur Hindsight s'est interrompu. Vérifiez « Activité › Traitements » avant de réessayer, puis reconnectez le serveur.":
+    'The Hindsight engine stopped. Check Activity › Processing before trying again, then reconnect the server.',
   'Actualisez la liste des sources.': 'Refresh the source list.',
   'Catalogue de sources incomplet ; actualisez la liste.':
     'The source catalog is incomplete. Refresh the list.',
@@ -145,7 +145,7 @@ const exact: Record<string, string> = {
   'Entité inconnue ; rechargez les filtres.': 'Unknown entity; reload the filters.',
   'Pièce jointe inconnue.': 'Unknown attachment.',
   'Cette pièce jointe dépasse 12 Mo.': 'This attachment exceeds 12 MB.',
-  'Synthèse inconnue.': 'Unknown summary.',
+  'Connaissance inconnue.': 'Unknown knowledge item.',
   'Opération inconnue.': 'Unknown operation.',
   'Directive inconnue.': 'Unknown directive.',
   'Les plafonds doivent être des montants positifs valides.':
@@ -178,8 +178,15 @@ const exact: Record<string, string> = {
   'Recherchez les mises à jour ou reconstruisez cette copie.':
     'Check for updates or rebuild this copy.',
   'Recherche des mises à jour…': 'Checking for updates…',
-  'Vous utilisez la version à jour.': 'You are using the latest version.',
-  'Une mise à jour est disponible.': 'An update is available.',
+  'Aucun nouveau commit : cette copie du code source est à jour.':
+    'No new commits: this source copy is up to date.',
+  'De nouveaux commits sont disponibles dans le dépôt source.':
+    'New commits are available in the source repository.',
+  // Plafonds, comportement de la mémoire et test des modèles.
+  "Coût estimé aujourd'hui": 'Estimated cost today',
+  'Aucun changement à enregistrer.': 'No changes to save.',
+  'Choisissez une banque : le test des modèles passe par une banque du serveur.':
+    'Choose a memory bank: the model test runs through a server memory bank.',
   'La copie locale est plus récente que l’app.': 'This local copy is newer than the app.',
   'Mise à jour installée. Relancez l’application.': 'Update installed. Relaunch the app.',
   'Application des commits…': 'Applying changes…',
@@ -193,16 +200,500 @@ const exact: Record<string, string> = {
   'Fait invalidé.': 'Fact invalidated.',
   'Fait rétabli.': 'Fact restored.',
   'Banque supprimée.': 'Memory bank deleted.',
-  'Modèle mental supprimé.': 'Summary deleted.',
+  'Modèle mental supprimé.': 'Mental model deleted.',
   'Import terminé.': 'Import complete.',
   'Modèle appliqué.': 'Template applied.',
   'Serveur arrêté.': 'Server stopped.',
   'Aucun appel LLM prévu.': 'No LLM calls expected.',
   'Cette action consomme des jetons ; estimation indisponible.':
     'This action uses tokens; no estimate is available.',
+
+  // Messages d’état du moteur : banques, réglages de la banque, file, service, sources.
+  'Identifiant invalide (lettres, chiffres, « - », « _ », « . »).':
+    'Invalid ID (letters, digits, “-”, “_”, “.”).',
+  'Alias invalide (lettres, chiffres, « - », « _ », « . »).':
+    'Invalid alias (letters, digits, “-”, “_”, “.”).',
+  'Identifiant invalide.': 'Invalid ID.',
+  'Alias retiré.': 'Alias removed.',
+  'Une opération sur les banques est déjà en cours.':
+    'A memory bank operation is already in progress.',
+  'Choisissez deux banques différentes.': 'Choose two different memory banks.',
+  'Le clone doit porter un nouvel identifiant.': 'The clone needs a new ID.',
+  "L'export est terminé mais le serveur n'indique pas où télécharger l'archive.":
+    'The export finished, but the server did not say where to download the archive.',
+  'Configuration réinitialisée.': 'Settings reset.',
+  'Directive créée.': 'Directive created.',
+  'Directive mise à jour.': 'Directive updated.',
+  'Directive supprimée.': 'Directive deleted.',
+  'Page de connaissance supprimée.': 'Knowledge page deleted.',
+  'Le service est déjà en cours de modification.': 'The service is already being changed.',
+  'Ce document n’est plus ouvert.': 'This document is no longer open.',
+  'Test des modèles terminé. Consultez le résultat dans Serveur & modèles.':
+    'Model test complete. See the result in Server & models.',
+  "Filtre d'opérations inconnu.": 'Unknown operations filter.',
+  'Le test des LLM est désactivé sur ce serveur. La relance des opérations reste disponible. Pour activer ce diagnostic, ajoutez HINDSIGHT_API_ENABLE_BANK_LLM_HEALTH=true au script de lancement, puis redémarrez le serveur.':
+    'LLM testing is disabled on this server. Retrying operations is still available. To enable this check, add HINDSIGHT_API_ENABLE_BANK_LLM_HEALTH=true to the launch script, then restart the server.',
+  "Pause en cours sur toutes les banques : rien n'est envoyé. Reprenez depuis « Consommation ».":
+    'All memory banks are paused: nothing is sent. Resume from Activity › Usage.',
+  'Toutes les banques sont en pause.': 'All memory banks are paused.',
+  "Le serveur n'est pas lancé par le service de l'app : ajoutez HINDSIGHT_API_WORKER_ENABLED=false à son environnement et redémarrez-le, ou mettez les banques en pause.":
+    'The server is not started by the app’s service: add HINDSIGHT_API_WORKER_ENABLED=false to its environment and restart it, or pause the memory banks.',
+  'Une autre action est en cours (gel, vidage) : réessayez dans un instant.':
+    'Another action is in progress (freeze or clear): try again in a moment.',
+  'File gelée au prochain démarrage du serveur.':
+    'The queue will be frozen when the server next starts.',
+  'File reprise au prochain démarrage du serveur.':
+    'The queue will resume when the server next starts.',
+  'Le serveur a redémarré mais son worker tourne toujours : votre script fixe probablement HINDSIGHT_API_WORKER_ENABLED.':
+    'The server restarted but its worker is still running: your script probably sets HINDSIGHT_API_WORKER_ENABLED.',
+  "File gelée : le serveur répond mais ne traite plus d'opérations.":
+    'Queue frozen: the server responds but no longer processes operations.',
+  'File reprise : le serveur traite à nouveau ses opérations.':
+    'Queue resumed: the server processes operations again.',
+  'Aucune opération en attente.': 'No pending operations.',
+  "Le modèle installé sur ce Mac nécessite un serveur Hindsight local. Sélectionnez d'abord son adresse locale.":
+    'The model installed on this Mac requires a local Hindsight server. Select its local address first.',
+  'Les réglages ont changé depuis la confirmation. Rechargez le script et réessayez.':
+    'Settings changed since the confirmation. Reload the script and try again.',
+  'Sauvegarde restaurée. Redémarrez le serveur pour appliquer.':
+    'Backup restored. Restart the server to apply it.',
+  'Le script a changé depuis la confirmation : vérifiez-le à nouveau.':
+    'The script changed since the confirmation. Review it again.',
+  'Installez le service Hindsight (ci-dessus) ou indiquez la commande qui redémarre votre serveur.':
+    'Install the Hindsight service (above) or enter the command that restarts your server.',
+  'Le serveur, la banque ou le script a changé depuis la confirmation. Réessayez.':
+    'The server, memory bank or script changed since the confirmation. Try again.',
+  'Le contexte a changé pendant le redémarrage. Actualisez le serveur et la banque sélectionnés.':
+    'The context changed during the restart. Refresh the selected server and memory bank.',
+  'Le contexte a changé pendant le test des LLM. Actualisez le diagnostic.':
+    'The context changed during the LLM test. Refresh the check.',
+  'Serveur redémarré, mais le diagnostic LLM ne contient aucun résultat.':
+    'Server restarted, but the LLM check returned no results.',
+  'La copie locale contient des modifications. Enregistrez-les dans Git avant d’appliquer les commits distants, ou utilisez Recompiler cette copie.':
+    'This local copy has changes. Commit them in Git before applying remote commits, or use Rebuild this copy.',
+  'Le service de ce Mac doit être vérifié avec une adresse locale. Sélectionnez le serveur local avant de le démarrer ou de modifier sa file.':
+    'This Mac’s service must be checked with a local address. Select the local server before starting it or changing its queue.',
+  'Service désinstallé.': 'Service uninstalled.',
+  "Installez d'abord le service Hindsight.": 'Install the Hindsight service first.',
+  'Un serveur répond déjà à cette adresse : arrêtez-le avant de démarrer le service.':
+    'A server is already responding at this address. Stop it before starting the service.',
+  'Vérifiez et approuvez le script du service avant de redémarrer.':
+    'Review and approve the service script before restarting.',
+  "Le serveur n'est pas lancé par le service de l'app : sa file ne peut pas être gelée d'ici.":
+    'The server is not started by the app’s service: its queue cannot be frozen from here.',
+  "Le script de lancement a changé depuis votre dernière approbation : redémarrez d'abord le serveur depuis « Serveur & modèles ».":
+    'The launch script changed since your last approval. Restart the server from Server & models first.',
+  'Démarrage annulé.': 'Start cancelled.',
+  'Tags mis à jour.': 'Tags updated.',
+  'Portée mise à jour.': 'Scope updated.',
+  "Journal d'audit activé pour cette banque.": 'Audit log enabled for this memory bank.',
+  "Journal d'audit désactivé.": 'Audit log disabled.',
+  "Texte reconstitué à partir des chunks (le texte original n'est pas stocké sur le serveur).":
+    'Text rebuilt from chunks (the original text is not stored on the server).',
+  'Aucun texte disponible pour ce document.': 'No text is available for this document.',
+  "Choisissez d'abord le script de synchronisation du projet.":
+    'Choose the project sync script first.',
+  'File d’envoi illisible : réessayez avant de préparer la synchronisation.':
+    'The upload queue could not be read. Try again before preparing the sync.',
+  'Le script a changé depuis l’aperçu. Relancez la vérification ; rien n’a été envoyé.':
+    'The script changed since the preview. Run the check again; nothing was sent.',
+  'La file d’envoi est occupée ou illisible : rien n’a été envoyé.':
+    'The upload queue is busy or could not be read: nothing was sent.',
+  'Ce dossier ne contient pas encore de catalogue. Choisissez le dépôt mémoire ou son dossier collection.':
+    'This folder does not contain a catalog yet. Choose the memory repository or its collection folder.',
+  "Le format de ce catalogue n'est pas pris en charge.": 'This catalog format is not supported.',
+  'Collecteur illisible.': 'The collector could not be read.',
+  'Choisissez un projet et au moins un fichier.': 'Choose a project and at least one file.',
+  'Choisissez uniquement des fichiers .md, .tex ou .pdf ordinaires.':
+    'Choose only regular .md, .tex or .pdf files.',
+  'Un fichier a changé depuis la confirmation. Relancez la demande.':
+    'A file changed since the confirmation. Start the request again.',
+  'Le dossier ne peut pas être collecté.': 'This folder cannot be collected.',
+  'Le dossier a changé depuis la confirmation. Relancez la demande.':
+    'The folder changed since the confirmation. Start the request again.',
+  'Le collecteur a changé depuis la confirmation. Relancez la demande.':
+    'The collector changed since the confirmation. Start the request again.',
+  'La collecte a dépassé le délai prévu. Les archives déjà enregistrées sont conservées.':
+    'Collection timed out. Archives that were already saved are kept.',
+  'Connectez Hindsight pour comparer les versions.': 'Connect Hindsight to compare versions.',
+  'Dossier actualisé. Aucun envoi ni traitement Hindsight.':
+    'Folder refreshed. Nothing was uploaded or processed by Hindsight.',
+  'Choisissez un dossier mémoire et une banque.': 'Choose a memory folder and a memory bank.',
+  'Choisissez un catalogue existant.': 'Choose an existing catalog.',
+  'Un envoi est encore en cours. Actualisez après son traitement.':
+    'An upload is still in progress. Refresh after it has been processed.',
+  'Toutes les sources activées sont à jour.': 'All enabled sources are up to date.',
+  'Le contexte a changé ; préparez un nouvel aperçu.':
+    'The context changed. Prepare a new preview.',
+  'Les sources, la sélection ou la banque ont changé. Préparez un nouvel aperçu.':
+    'The sources, selection or memory bank changed. Prepare a new preview.',
+  'Aucun envoi à vérifier pour cette source.': 'There is no upload to check for this source.',
+  'Envoi initial retrouvé ou repris. Actualisez pour vérifier le résultat.':
+    'Original upload found or resumed. Refresh to check the result.',
+  'Source indisponible ou en attente de revue.': 'Source unavailable or pending review.',
+  'Attendez la fin du traitement avant de retirer cette source.':
+    'Wait for processing to finish before removing this source.',
+  'Source retirée et exclue. Fichier conservé.': 'Source removed and excluded. File kept.',
+  'Source locale indisponible.': 'Local source unavailable.',
+  'Source hors du dossier commun.': 'Source outside the shared folder.',
+  'Une source TeX ou Markdown est requise pour ce document.':
+    'This document needs a TeX or Markdown source.',
+  'Le traitement précédent a échoué ou n’a pas enregistré cette version. Une nouvelle validation est nécessaire pour réessayer.':
+    'The previous processing failed or did not store this version. Approve it again to retry.',
+  'La synchronisation automatique est suspendue : sélectionnez les documents et validez chaque envoi.':
+    'Automatic sync is suspended: select the documents and approve each upload.',
+  'Le contexte a changé. Actualisez les dossiers avant de préparer l’envoi.':
+    'The context changed. Refresh the folders before preparing the upload.',
+  'Un fichier a été modifié ou remplacé. Préparez à nouveau l’envoi.':
+    'A file was changed or replaced. Prepare the upload again.',
+  'Le serveur, les dossiers ou la sélection ont changé. Préparez à nouveau l’envoi.':
+    'The server, folders or selection changed. Prepare the upload again.',
+  'Les documents ont changé. Actualisez la liste avant de préparer l’envoi.':
+    'The documents changed. Refresh the list before preparing the upload.',
+  'Les documents ont changé. Actualisez la liste avant de préparer le retrait.':
+    'The documents changed. Refresh the list before preparing the removal.',
+  'Les documents ont changé depuis la confirmation. Préparez à nouveau le retrait.':
+    'The documents changed since the confirmation. Prepare the removal again.',
+  'Un fichier source a été retrouvé. Actualisez les dossiers avant de préparer le retrait.':
+    'A source file was found again. Refresh the folders before preparing the removal.',
+  'Le serveur, les dossiers ou la sélection ont changé. Préparez à nouveau le retrait.':
+    'The server, folders or selection changed. Prepare the removal again.',
+  'L’envoi a été refusé par le serveur.': 'The server rejected the upload.',
+  'Le contexte a changé ; actualisez les sources.': 'The context changed. Refresh the sources.',
+  'Configuration mémoire illisible.': 'The memory settings file could not be read.',
+  'Politique mémoire incompatible ; envoi suspendu.':
+    'Incompatible memory policy; uploads are suspended.',
+  'Sélection mémoire illisible ; envoi suspendu.':
+    'The memory selection could not be read; uploads are suspended.',
+  'Sélection mémoire invalide ; envoi suspendu.':
+    'Invalid memory selection; uploads are suspended.',
+  'Suivi mémoire invalide ; envoi suspendu.': 'Invalid upload tracking; uploads are suspended.',
+  'Cette sélection mémoire appartient à un autre serveur ; envoi suspendu.':
+    'This memory selection belongs to another server; uploads are suspended.',
+  'Suivi mémoire incomplet ; envoi suspendu.': 'Incomplete upload tracking; uploads are suspended.',
+  'Choisissez un dossier et une banque.': 'Choose a folder and a memory bank.',
+  'Le contexte a changé ; actualisez la vue.': 'The context changed. Refresh the view.',
+  'File d’opérations incomplète ; actualisez avant tout envoi.':
+    'Incomplete operations queue. Refresh before uploading.',
+  'Identifiants du catalogue invalides ou dupliqués ; envoi suspendu.':
+    'Invalid or duplicate catalog IDs; uploads are suspended.',
+  'Inventaire Hindsight incomplet.': 'Incomplete Hindsight inventory.',
+  'Une source nécessite une revue ou une version texte.':
+    'A source needs a review or a text version.',
+  'Choisissez une source non liée et un document disponible.':
+    'Choose an unlinked source and an available document.',
+  'Actualisez les sources de cette banque.': 'Refresh the sources for this memory bank.',
+  'Document inconnu.': 'Unknown document.',
+  'Des opérations sont encore en cours. Consultez « Activité › Traitements » puis actualisez.':
+    'Operations are still running. Check Activity › Processing, then refresh.',
+  'Le serveur n’a pas accepté l’envoi. Vérifiez son état avant toute reprise.':
+    'The server did not accept the upload. Check its state before retrying.',
+  'Le lot initial ne correspond plus à la file locale.':
+    'The original batch no longer matches the local queue.',
+  'Le lot a changé depuis l’aperçu.': 'The batch changed since the preview.',
+  'La sélection ou la politique a changé ; préparez un nouvel aperçu.':
+    'The selection or policy changed. Prepare a new preview.',
+  'La sélection ou la politique a changé ; rechargez la vue.':
+    'The selection or policy changed. Reload the view.',
+  'La politique a changé ; rechargez la vue.': 'The policy changed. Reload the view.',
+  'La version mémorisée a changé ; rechargez la vue.':
+    'The stored version changed. Reload the view.',
+  'Le serveur n’a pas confirmé le retrait. La source reste exclue des futurs envois.':
+    'The server did not confirm the removal. The source stays excluded from future uploads.',
+  'Source hors du dossier suivi.': 'Source outside the tracked folder.',
+  'La liste des échecs a changé pendant le chargement. Réessayez.':
+    'The list of failures changed while loading. Try again.',
+  'Le raccourci du Dock n’a pas pu être enregistré.': 'The Dock shortcut could not be saved.',
+  'Redémarrage du service…': 'Restarting the service…',
+  'Exécution de la commande…': 'Running the command…',
+  "Attente de l'API…": 'Waiting for the API…',
+  'Test des LLM…': 'Testing LLMs…',
+  'Installation…': 'Installing…',
 };
 
 type Rule = [RegExp, (...groups: string[]) => string];
+
+// Nombre déjà formaté par le moteur (séparateurs de la langue du Mac) : seul « 1 » est au singulier.
+const count = (n: string, singular: string, plural = `${singular}s`) =>
+  `${n} ${n.replace(/\D/g, '') === '1' ? singular : plural}`;
+const toRestore = (banks?: string) => (banks ? ` To restore as soon as possible: ${banks}.` : '');
+const dashboardParts: Record<string, string> = {
+  version: 'version',
+  entités: 'entities',
+  'série temporelle': 'time series',
+  documents: 'documents',
+  tags: 'tags',
+  échecs: 'failures',
+  configuration: 'settings',
+};
+const serverActions: Record<string, string> = {
+  démarré: 'Server started',
+  redémarré: 'Server restarted',
+  'redémarré, file gelée': 'Server restarted, queue frozen',
+  'redémarré, file reprise': 'Server restarted, queue resumed',
+};
+
+// Messages d’état composés par le moteur. Les noms, identifiants, chemins et erreurs du serveur
+// capturés sont réinsérés tels quels. Avant les règles générales (« Échec : … »).
+const engineRules: Rule[] = [
+  [
+    /^Impossible de lister les banques : ([\s\S]*)$/,
+    (detail) => `Unable to list memory banks: ${detail}`,
+  ],
+  [/^La banque « (.*) » existe déjà\.$/, (id) => `Memory bank “${id}” already exists.`],
+  [/^Création impossible : ([\s\S]*)$/, (detail) => `Could not create the memory bank: ${detail}`],
+  [
+    /^La banque porte déjà le nom « (.*) »\.$/,
+    (name) => `The memory bank is already named “${name}”.`,
+  ],
+  [/^Banque renommée « (.*) »\.$/, (name) => `Memory bank renamed “${name}”.`],
+  [
+    /^« (.*) » est déjà l'identifiant d'une autre banque\.$/,
+    (alias) => `“${alias}” is already the ID of another memory bank.`,
+  ],
+  [
+    /^« (.*) » s'affiche désormais comme « (.*) »\.$/,
+    (bank, alias) => `“${bank}” is now displayed as “${alias}”.`,
+  ],
+  [
+    /^Identifiant changé : « (.*?) »(?: \(« (.*) » y mène encore\))?\.$/,
+    (target, old) => `ID changed to “${target}”${old ? ` (“${old}” still leads to it)` : ''}.`,
+  ],
+  [
+    /^Échec : ([\s\S]*)\. Vérifiez l'état des deux banques avant de recommencer\.$/,
+    (detail) => `Failed: ${detail}. Check both memory banks before trying again.`,
+  ],
+  [
+    /^Fusion terminée( \([^)]*\))?(?: ; « (.*?) » (?:mène désormais à « (.*?) »|supprimée))?\. Lancez la consolidation de « (.*) » pour intégrer les nouveaux faits aux observations\.$/,
+    (counts, source, aliasTarget, target) =>
+      `Merge complete${counts || ''}${source ? (aliasTarget ? `; “${source}” now leads to “${aliasTarget}”` : `; “${source}” deleted`) : ''}. Run consolidation on “${target}” to add the new facts to its observations.`,
+  ],
+  [
+    /^Fusion terminée( \([^)]*\))?\. « (.*) » est CONSERVÉE : ([\d\s,.]+) document\(s\) ignoré\(s\) n'existent que dans la source\. Vérifiez, puis supprimez-la depuis « Réglages › Banque »\.$/,
+    (counts, source, n) =>
+      `Merge complete${counts || ''}. “${source}” was KEPT: ${count(n, 'skipped document')} ${n.replace(/\D/g, '') === '1' ? 'exists' : 'exist'} only in the source. Check, then delete it from Settings › Memory bank.`,
+  ],
+  [
+    /^Fusion faite et « (.*) » supprimée, mais l'alias n'a pas pu être créé : ([\s\S]*)\. Recréez-le depuis « Renommer… »\.$/,
+    (source, detail) =>
+      `Merge done and “${source}” deleted, but the alias could not be created: ${detail}. Recreate it from Rename….`,
+  ],
+  [
+    /^Échec de la fusion : ([\s\S]*)\. La banque source n'a pas été supprimée\.$/,
+    (detail) => `Merge failed: ${detail}. The source memory bank was not deleted.`,
+  ],
+  [/^« (.*) » mis à jour\.$/, (key) => `“${key}” updated.`],
+  [/^Refusé par le serveur : ([\s\S]*)$/, (detail) => `Rejected by the server: ${detail}`],
+  [
+    /^Modèle mental créé ; génération lancée \((.*)\)\.$/,
+    (id) => `Mental model created; generation started (${id}).`,
+  ],
+  [/^Rafraîchissement lancé \((.*)\)\.$/, (id) => `Refresh started (${id}).`],
+  [/^Archive prête \((.*)\)\.$/, (size) => `Archive ready (${size}).`],
+  [/^Échec de l'export : ([\s\S]*)$/, (detail) => `Export failed: ${detail}`],
+  [/^Échec du clonage : ([\s\S]*)$/, (detail) => `Clone failed: ${detail}`],
+  [/^Échec de l'import : ([\s\S]*)$/, (detail) => `Import failed: ${detail}`],
+  [/^Fichier de modèle invalide : ([\s\S]*)$/, (detail) => `Invalid template file: ${detail}`],
+  [/^Échec de la validation : ([\s\S]*)$/, (detail) => `Validation failed: ${detail}`],
+  [/^([\d\s,.]+) observation\(s\) effacée\(s\)\.$/, (n) => `${count(n, 'observation')} cleared.`],
+  [/^([\d\s,.]+) observation\(s\) supprimée\(s\)\.$/, (n) => `${count(n, 'observation')} deleted.`],
+  [/^([\d\s,.]+) fait\(s\) supprimé\(s\)\.$/, (n) => `${count(n, 'fact')} deleted.`],
+  [
+    /^L'opération (.*) n'est pas terminée ; suivez-la dans « Activité › Traitements »\.$/,
+    (id) => `Operation ${id} is not finished yet. Follow it in Activity › Processing.`,
+  ],
+  [
+    /^La banque « (.*) » est en pause : rien n'y est envoyé\. Reprenez-la pour continuer\.$/,
+    (bank) => `Memory bank “${bank}” is paused: nothing is sent to it. Resume it to continue.`,
+  ],
+  [
+    /^(?:« (.*?) » est en pause|Toutes les banques sont en pause)\.( Rien n'est envoyé ; la consolidation automatique et les rafraîchissements de modèles mentaux seront coupés dès que le serveur répondra\.)?(?: ([\d\s,.]+) rafraîchissements? de modèles? menta(?:l|ux) annulés?\.)?(?: Consolidation automatique pas encore coupée pour (.*) \(nouvel essai à la reconnexion\)\.)?$/,
+    (bank, nothing, cancelled, failures) =>
+      (bank ? `“${bank}” is paused.` : 'All memory banks are paused.') +
+      (nothing
+        ? ' Nothing is sent. Automatic consolidation and mental model refreshes will be turned off as soon as the server responds.'
+        : '') +
+      (cancelled
+        ? ` ${count(cancelled, 'mental model refresh', 'mental model refreshes')} cancelled.`
+        : '') +
+      (failures
+        ? ` Automatic consolidation is not turned off yet for ${failures} (it will be retried on reconnect).`
+        : ''),
+  ],
+  [/^Impossible de lister la file : ([\s\S]*)$/, (detail) => `Unable to list the queue: ${detail}`],
+  [
+    /^Aucun rafraîchissement de modèle mental en double(?: dans « (.*) »)?\.$/,
+    (bank) => `No duplicate mental model refreshes${bank ? ` in “${bank}”` : ''}.`,
+  ],
+  [
+    /^« (.*?) » n'est plus en pause à part, mais la pause de toutes les banques s'applique encore\.(?: À rétablir dès que possible : (.*)\.)?$/,
+    (bank, restore) =>
+      `“${bank}” is no longer paused on its own, but the pause on all memory banks still applies.${toRestore(restore)}`,
+  ],
+  [
+    /^« (.*?) » reprend : sa consolidation automatique retrouve son réglage d'avant la pause\.(?: À rétablir dès que possible : (.*)\.)?$/,
+    (bank, restore) =>
+      `“${bank}” resumes: automatic consolidation returns to its setting from before the pause.${toRestore(restore)}`,
+  ],
+  [
+    /^Toutes les banques reprennent : la consolidation automatique retrouve son réglage d'avant la pause\.(?: Restent en pause : (.*?)\.)?(?: À rétablir dès que possible : (.*)\.)?$/,
+    (paused, restore) =>
+      `All memory banks resume: automatic consolidation returns to its setting from before the pause.${paused ? ` Still paused: ${paused}.` : ''}${toRestore(restore)}`,
+  ],
+  [
+    /^Toutes les banques reprennent\.(?: À rétablir dès que possible : (.*)\.)?$/,
+    (restore) => `All memory banks resume.${toRestore(restore)}`,
+  ],
+  [
+    /^Aucune opération en attente dans « (.*) »\.$/,
+    (bank) => `No pending operations in “${bank}”.`,
+  ],
+  [
+    /^([\d\s,.]+) opérations? annulées?(?:\.|, ([\d\s,.]+) non annulée\(s\) : ([\s\S]*))$/,
+    (n, failed, detail) =>
+      `${count(n, 'operation')} cancelled${failed ? `, ${failed} not cancelled: ${detail}` : '.'}`,
+  ],
+  [/^Le test des LLM n'a pas abouti : ([\s\S]*)$/, (detail) => `The LLM test failed: ${detail}`],
+  [
+    /^Décision (recall|reflect|consolidation) : l'URL Cloud hériterait de la clé du modèle local\. Choisissez l'URL locale ou une clé propre à cette opération avant d'enregistrer\.$/,
+    (operation) =>
+      `Decision model for ${operation}: the Cloud URL would inherit the local model’s key. Choose the local URL or a key specific to this operation before saving.`,
+  ],
+  [
+    /^Décision (recall|reflect|consolidation) sur Hindsight Cloud : connectez le compte ou configurez (\S+)\. Pour un modèle local, choisissez l'URL de ce Mac\.$/,
+    (operation, key) =>
+      `Decision model for ${operation} on Hindsight Cloud: connect the account or configure ${key}. For a local model, choose this Mac’s URL.`,
+  ],
+  [
+    /^Redémarrage refusé : ([\s\S]*)$/,
+    (detail) => `Restart refused: ${nativeSystemMessage(detail)}`,
+  ],
+  [/^La commande a échoué \(code (-?\d+)\)\.$/, (code) => `The command failed (code ${code}).`],
+  [
+    /^Impossible d'exécuter la commande : ([\s\S]*)$/,
+    (detail) => `Unable to run the command: ${detail}`,
+  ],
+  [
+    /^L'API ne répond pas après (\d+) s\. Consultez la sortie ci-dessous et les journaux du serveur\.$/,
+    (seconds) =>
+      `The API is not responding after ${seconds} s. Check the output below and the server logs.`,
+  ],
+  [
+    /^Serveur redémarré, mais la vérification des LLM a échoué : ([\s\S]*)$/,
+    (detail) => `Server restarted, but the LLM check failed: ${detail}`,
+  ],
+  [
+    /^L'historique local a divergé de (.*) : mettez à jour à la main\.$/,
+    (remote) => `Local history has diverged from ${remote}. Update manually.`,
+  ],
+  [
+    /^Impossible d'utiliser ce script : ([\s\S]*)$/,
+    (detail) => `Unable to use this script: ${nativeSystemMessage(detail)}`,
+  ],
+  [/^Démarrage refusé : ([\s\S]*)$/, (detail) => `Start refused: ${nativeSystemMessage(detail)}`],
+  [
+    /^Serveur (démarré|redémarré|redémarré, file gelée|redémarré, file reprise) : l'API répond\.$/,
+    (action) => `${serverActions[action]}: the API is responding.`,
+  ],
+  [
+    /^Structure enregistrée \(([\d\s,.]+) réglage\(s\)\)\.$/,
+    (n) => `Memory structure saved (${count(n, 'setting')}).`,
+  ],
+  [
+    /^Impossible de préparer la relance : ([\s\S]*)$/,
+    (detail) => `Unable to prepare the retry: ${detail}`,
+  ],
+  [
+    /^Relance interrompue : ([\d\s,.]+) opération\(s\) remise\(s\) en file\.$/,
+    (n) => `Retry interrupted: ${count(n, 'operation')} requeued.`,
+  ],
+  [
+    /^Retraitement lancé \(opération (.*)\)\. Suivez-le dans « Activité › Traitements »\.$/,
+    (id) => `Reprocessing started (operation ${id}). Follow it in Activity › Processing.`,
+  ],
+  [/^Supprimé \(([\d\s,.]+) fait\(s\)\)\.$/, (n) => `Deleted (${count(n, 'fact')}).`],
+  [/^Script illisible : ([\s\S]*)$/, (path) => `The script could not be read: ${path}`],
+  [
+    /^Ce script n'écrit pas dans la banque « (.*) » : rien n'est lancé\.$/,
+    (bank) => `This script does not write to memory bank “${bank}”: nothing was started.`,
+  ],
+  [
+    /^La banque traite encore ([\d\s,.]+) envois? : attendez la fin, sinon les mêmes documents seraient renvoyés et payés deux fois\.$/,
+    (n) =>
+      `The memory bank is still processing ${count(n, 'upload')}. Wait for it to finish, otherwise the same documents would be sent and paid for twice.`,
+  ],
+  [/^Aperçu impossible : ([\s\S]*)$/, (detail) => `Preview failed: ${detail}`],
+  [
+    /^Aperçu impossible( \(délai dépassé\))? :\n([\s\S]*)$/,
+    (timedOut, output) => `Preview failed${timedOut ? ' (timed out)' : ''}:\n${output}`,
+  ],
+  [
+    /^Rien à envoyer : la banque est à jour(?:\.| ; ([\d\s,.]+) documents? sans source en mémoire, rien n'est supprimé\.)$/,
+    (orphans) =>
+      `Nothing to send: the memory bank is up to date${orphans ? `; ${count(orphans, 'document')} without a source in memory, nothing is deleted.` : '.'}`,
+  ],
+  [
+    /^([\s\S]*) La banque les traite maintenant \(voir « Activité › Traitements »\)\.$/,
+    (sent) =>
+      `${sent === 'Envoi terminé.' ? 'Upload complete.' : sent} The memory bank is processing them now (see Activity › Processing).`,
+  ],
+  [
+    /^Échec de l'envoi( \(délai dépassé\))? :\n([\s\S]*)$/,
+    (timedOut, output) => `Upload failed${timedOut ? ' (timed out)' : ''}:\n${output}`,
+  ],
+  [/^Échec de l'envoi : ([\s\S]*)$/, (detail) => `Upload failed: ${detail}`],
+  [/^Catalogue illisible : ([\s\S]*)$/, (detail) => `The catalog could not be read: ${detail}`],
+  [/^Fichier inaccessible : ([\s\S]*)$/, (detail) => `File unavailable: ${detail}`],
+  [
+    /^([\d\s,.]+) document\(s\) ajouté\(s\) ou mis à jour, ([\d\s,.]+) déjà à jour\. Aucun traitement Hindsight\.$/,
+    (added, unchanged) =>
+      `${count(added, 'document')} added or updated, ${unchanged} already up to date. Nothing was processed by Hindsight.`,
+  ],
+  [/^Collecte impossible : ([\s\S]*)$/, (detail) => `Collection failed: ${detail}`],
+  [/^Serveur redémarré, mais : ([\s\S]*)$/, (detail) => `Server restarted, but: ${detail}`],
+  [
+    /^Source remplacée ou non ordinaire : ([\s\S]*)$/,
+    (path) => `Source replaced or not a regular file: ${path}`,
+  ],
+  [
+    /^Source hors des dossiers suivis : ([\s\S]*)$/,
+    (path) => `Source outside tracked folders: ${path}`,
+  ],
+  [/^Le chemin de la source a changé : ([\s\S]*)$/, (path) => `The source path changed: ${path}`],
+  [
+    /^Source hors du dossier suivi : ([\s\S]*)$/,
+    (path) => `Source outside the tracked folder: ${path}`,
+  ],
+  [
+    /^Le fichier a changé pendant la lecture : ([\s\S]*)$/,
+    (path) => `The file changed while it was being read: ${path}`,
+  ],
+  [
+    /^([\d\s,.]+) sources envoyées ; traitement à suivre dans cette liste\.$/,
+    (n) => `${count(n, 'source')} uploaded. Follow processing in this list.`,
+  ],
+  [/^Relecture impossible : ([\s\S]*)$/, (detail) => `Reload failed: ${detail}`],
+  [
+    /^Aucun fichier lisible parmi la sélection : ([\s\S]*)$/,
+    (files) => `No readable files in the selection: ${files}`,
+  ],
+  [/^Vérification impossible : ([\s\S]*)$/, (detail) => `Check failed: ${detail}`],
+  [
+    /^(\d+)\/(\d+) document\(s\) retiré\(s\) de « (.*?) »\.(?: Échecs : ([\s\S]*))?$/,
+    (removed, total, bank, failures) =>
+      `${removed}/${total} document(s) removed from “${bank}”.${failures ? ` Failures: ${failures}` : ''}`,
+  ],
+  [
+    /^(\d+)\/(\d+) fichier\(s\) mis en file d'extraction dans « (.*?) » \((\d+) opération\(s\)\)\.(?: Refusés : ([\s\S]*))?$/,
+    (sent, total, bank, operations, rejected) =>
+      `${sent}/${total} file(s) queued for extraction in “${bank}” (${operations} operation(s)).${rejected ? ` Rejected: ${rejected}` : ''}`,
+  ],
+  [
+    /^(version|entités|série temporelle|documents|tags|échecs|configuration) : ([\s\S]*)$/,
+    (part, detail) => `${dashboardParts[part]}: ${detail}`,
+  ],
+];
+
 const rules: Rule[] = [
   [
     /^Hindsight Cloud : connectez votre compte ou configurez (.*)\. Pour un modèle local, choisissez « Sur ce Mac »\.$/,
@@ -210,6 +701,11 @@ const rules: Rule[] = [
       `Hindsight Cloud: connect your account or configure ${key}. For a local model, choose “On this Mac”.`,
   ],
   [/^Démarrage impossible : ([\s\S]*)$/, (detail) => `Startup failed: ${detail}`],
+  [
+    /^Ce dossier est rattaché à la banque « (.*) »\. Sélectionnez-la pour envoyer ou retirer ses sources\.$/,
+    (bank) =>
+      `This folder belongs to the “${bank}” memory bank. Select it to upload or remove its sources.`,
+  ],
   [/^Redémarrage impossible : ([\s\S]*)$/, (detail) => `Restart failed: ${detail}`],
   [/^Créer la banque « (.*) » \?$/, (id) => `Create memory bank “${id}”?`],
   [/^Renommer « (.*) » en « (.*) » \?$/, (id, name) => `Rename “${id}” to “${name}”?`],
@@ -244,9 +740,10 @@ const rules: Rule[] = [
   [/^Créer la directive « (.*) » \?$/, (name) => `Create directive “${name}”?`],
   [/^Modifier la directive « (.*) » \?$/, (name) => `Edit directive “${name}”?`],
   [/^Supprimer la directive « (.*) » \?$/, (name) => `Delete directive “${name}”?`],
-  [/^Créer le modèle mental « (.*) » \?$/, (name) => `Create summary “${name}”?`],
+  [/^Créer le modèle mental « (.*) » \?$/, (name) => `Create mental model “${name}”?`],
   [/^Rafraîchir « (.*) » \?$/, (name) => `Refresh “${name}”?`],
-  [/^Supprimer le modèle mental « (.*) » \?$/, (name) => `Delete summary “${name}”?`],
+  [/^Supprimer le modèle mental « (.*) » \?$/, (name) => `Delete mental model “${name}”?`],
+  [/^Supprimer la page de connaissance « (.*) » \?$/, (name) => `Delete knowledge page “${name}”?`],
   [/^Cloner « (.*) » vers « (.*) » \?$/, (source, target) => `Clone “${source}” into “${target}”?`],
   [/^Fusionner l'archive dans « (.*) » \?$/, (id) => `Merge the archive into “${id}”?`],
   [/^Appliquer le modèle à « (.*) » \?$/, (id) => `Apply the template to “${id}”?`],
@@ -279,16 +776,44 @@ const rules: Rule[] = [
   [/^Action inconnue : (.*)$/, (action) => `Unknown action: ${action}`],
   [/^Application construite : (.*)$/, (path) => `Application built: ${path}`],
   [/^Banque « (.*) » créée\.$/, (id) => `Memory bank “${id}” created.`],
+  [
+    /^Clés non prises en charge ici : (.*)\. Modifiez-les dans Réglages › Banque › Configuration avancée de la banque\.$/,
+    (keys) =>
+      `Keys not supported here: ${keys}. Change them in Settings › Memory bank › Advanced bank configuration.`,
+  ],
+  [
+    /^Le serveur a refusé \(([\s\S]*)\)\. Pour l'activer côté serveur : ajouter `([A-Z0-9_]+)=true` à l'environnement du processus Hindsight, puis le redémarrer\.$/,
+    (detail, name) =>
+      `The server refused (${nativeSystemMessage(detail)}). To enable it on the server, add \`${name}=true\` to the Hindsight process environment, then restart it.`,
+  ],
 ];
 
 export function nativeSystemMessage(message: string): string {
   if (getLanguage() !== 'en') return message;
   if (Object.hasOwn(exact, message)) return exact[message];
-  for (const [pattern, render] of rules) {
-    const match = pattern.exec(message);
-    if (match) return render(...match.slice(1));
-  }
+  for (const list of [engineRules, rules])
+    for (const [pattern, render] of list) {
+      const match = pattern.exec(message);
+      if (match) return render(...match.slice(1));
+    }
   return message;
+}
+
+// Raisons affichées par source dans le catalogue (`memory.reason`, jusqu’à ~20 000 lignes) :
+// traduites à l’affichage plutôt que recopiées dans l’instantané.
+const sourceReasons: Record<string, string> = {
+  'En attente de revue': 'Pending review',
+  'Retrait validé': 'Removal approved',
+  'Source contenant des documents retirés ou en attente de revue':
+    'Source containing removed documents or documents pending review',
+  'Source à relier au catalogue': 'Not linked to the catalog yet',
+  'Commit déjà classé hors mémoire': 'Commit already classified as outside memory',
+};
+
+export function nativeSourceReason(text: unknown): string {
+  if (typeof text !== 'string') return '';
+  if (getLanguage() !== 'en') return text;
+  return Object.hasOwn(sourceReasons, text) ? sourceReasons[text] : nativeSystemMessage(text);
 }
 
 const bodies: Record<string, string> = {
@@ -462,9 +987,9 @@ const messageRules: Array<[RegExp, Rule]> = [
   [
     /^Rafraîchir « .* » \?$/,
     [
-      /^Le modèle mental est régénéré par le LLM \(opération asynchrone\)\.(?:\n\n([^\n]+))?$/,
-      (cost) =>
-        `The summary will be regenerated by the LLM (asynchronous operation).${cost ? '\n\n' + costSummary(cost) : ''}`,
+      /^(Le modèle mental est régénéré|La page de connaissance est régénérée) par le LLM \(opération asynchrone\)\.(?:\n\n([^\n]+))?$/,
+      (kind, cost) =>
+        `The ${kind.startsWith('La page') ? 'knowledge page' : 'mental model'} will be regenerated by the LLM (asynchronous operation).${cost ? '\n\n' + costSummary(cost) : ''}`,
     ],
   ],
   [
@@ -486,9 +1011,9 @@ const messageRules: Array<[RegExp, Rule]> = [
   [
     /^Envoyer les sources à Hindsight \?$/,
     [
-      /^(\d+) sources complètes vers « (.*) », environ (\d+) jetons de texte avant extraction\.\n\n([\s\S]*)\n\nLes sources modifiées remplacent leur version mémorisée\. Aucune suppression d’autres documents\. La consolidation dépend des réglages de la banque\.$/,
-      (n, bank, tokens, items) =>
-        `${n} complete sources to “${bank}”, approximately ${tokens} text tokens before extraction.\n\n${items}\n\nChanged sources replace their stored version. Other documents are kept. Consolidation follows the memory bank settings.`,
+      /^(\d+) sources complètes vers « (.*) », environ (\d+) jetons de texte avant extraction\.\n\n([\s\S]*)\n\nLes sources modifiées remplacent leur version mémorisée\. Aucune suppression d’autres documents\. La consolidation dépend des réglages de la banque\.(\n\nCe dossier sera rattaché à « .* » : ses sources ne pourront pas être envoyées à une autre banque\.)?$/,
+      (n, bank, tokens, items, binds) =>
+        `${n} complete sources to “${bank}”, approximately ${tokens} text tokens before extraction.\n\n${items}\n\nChanged sources replace their stored version. Other documents are kept. Consolidation follows the memory bank settings.${binds ? `\n\nThis folder will be linked to “${bank}”: its sources cannot be uploaded to another memory bank.` : ''}`,
     ],
   ],
   [
@@ -577,7 +1102,12 @@ export function localizeNativeSnapshot(snapshot: Snapshot): Snapshot {
   if (getLanguage() !== 'en') return snapshot;
   const data: Row = { ...snapshot.data };
   if (snapshot.section === 'server' || snapshot.section === 'model-settings') {
-    const text = (value: unknown) => (typeof value === 'string' ? nativeCatalogText(value) : value);
+    // Libellés fixes du catalogue d’abord, puis messages d’état du moteur (service, problèmes de réglage).
+    const text = (value: unknown) => {
+      if (typeof value !== 'string') return value;
+      const label = nativeCatalogText(value);
+      return label === value ? nativeSystemMessage(value) : label;
+    };
     const fields = (items: Row[]) =>
       items.map((field) => ({
         ...field,
@@ -623,8 +1153,25 @@ export function localizeNativeSnapshot(snapshot: Snapshot): Snapshot {
       };
   }
 
-  for (const key of ['error', 'memoryMessage', 'actionMessage', 'activityMessage'])
+  for (const key of [
+    'error',
+    'memoryMessage',
+    'actionMessage',
+    'activityMessage',
+    'servicesError',
+    'traceError',
+    'trialError',
+    'diagnosticError',
+    'modelError',
+    'detailError',
+  ])
     if (typeof data[key] === 'string') data[key] = nativeSystemMessage(data[key]);
+  // Listes courtes de messages système (tableau de bord, comportement de la mémoire, dossiers suivis).
+  for (const key of ['partialErrors', 'problems', 'warnings'])
+    if (Array.isArray(data[key]))
+      data[key] = data[key].map((item: unknown) =>
+        typeof item === 'string' ? nativeSystemMessage(item) : item,
+      );
   return {
     ...snapshot,
     app: {

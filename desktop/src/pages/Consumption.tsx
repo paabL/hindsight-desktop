@@ -15,6 +15,7 @@ import {
   Zap,
 } from 'lucide-react';
 import type { PageProps, Row } from '../types';
+import { nativeSystemMessage } from '../native-messages';
 import {
   Button,
   CardHeader,
@@ -138,14 +139,22 @@ export default function Consumption({ data, run, busy, notify }: PageProps) {
   const today = summary.today || {};
   const events: Row[] = data.events || [];
   const gauges: Row[] = (data.gauges || []).filter((gauge: Row) => gauge.id === 'dollars.day');
+  // La période se compte jusqu’au dernier relevé (l’heure actuelle à défaut), pas jusqu’au dernier appel :
+  // une banque au repos depuis deux jours n’affiche rien sur 24 heures. Le graphique, la répartition et le
+  // nombre d’appels portent tous sur cette même période.
+  const periodEvents = useMemo(() => {
+    const reference = Date.parse(data.lastPoll) || Date.now();
+    const cutoff = reference - (period === 'day' ? 86_400_000 : 7 * 86_400_000);
+    return events.filter((event) => (Date.parse(event.date) || 0) >= cutoff);
+  }, [events, period, data.lastPoll]);
   const chart = useMemo(() => {
     const groups = new Map<string, { tokens: number; calls: number; label: string }>();
-    const latest = events.reduce((latest, e) => Math.max(latest, Date.parse(e.date) || 0), 0);
-    const cutoff = latest - (period === 'day' ? 86_400_000 : 7 * 86_400_000);
-    for (const event of events) {
-      if ((Date.parse(event.date) || 0) < cutoff) continue;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    for (const event of periodEvents) {
       const d = new Date(event.date);
-      const key = period === 'day' ? d.toISOString().slice(0, 13) : d.toISOString().slice(0, 10);
+      // Regroupement à l’heure locale, comme les libellés des barres.
+      const day = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+      const key = period === 'day' ? `${day} ${pad(d.getHours())}` : day;
       const current = groups.get(key) || {
         tokens: 0,
         calls: 0,
@@ -158,11 +167,11 @@ export default function Consumption({ data, run, busy, notify }: PageProps) {
     return [...groups.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([key, value]) => ({ key, ...value }));
-  }, [events, period, language]);
+  }, [periodEvents, period, language]);
   const peak = Math.max(1, ...chart.map((c) => c.tokens));
   const distribution = useMemo(() => {
     const groups = new Map<string, number>();
-    for (const e of events)
+    for (const e of periodEvents)
       groups.set(
         e.operation || t('Autre', 'Other'),
         (groups.get(e.operation || t('Autre', 'Other')) || 0) +
@@ -170,7 +179,8 @@ export default function Consumption({ data, run, busy, notify }: PageProps) {
           (e.tokens?.output || 0),
       );
     return [...groups.entries()].sort((a, b) => b[1] - a[1]);
-  }, [events, language]);
+  }, [periodEvents, language]);
+  const periodLabel = period === 'day' ? t('24 heures', '24 hours') : t('7 jours', '7 days');
   const sum = distribution.reduce((n, [, v]) => n + v, 0) || 1;
   function editBudgets() {
     setDollars(String(data.budgets?.dailyDollars ?? ''));
@@ -283,7 +293,7 @@ export default function Consumption({ data, run, busy, notify }: PageProps) {
                 {t('Jetons en entrée et sortie', 'Input and output tokens')}
                 <span className="spacer" />
                 <span>
-                  {number(events.length)} {t('appels chargés', 'calls loaded')}
+                  {number(periodEvents.length)} {t('appels sur', 'calls in')} {periodLabel}
                 </span>
               </div>
             </>
@@ -301,7 +311,7 @@ export default function Consumption({ data, run, busy, notify }: PageProps) {
         <section className="card distribution-card">
           <CardHeader
             title={t('Répartition', 'Breakdown')}
-            subtitle={t('Par type de traitement', 'By operation type')}
+            subtitle={`${t('Par type de traitement', 'By operation type')} · ${periodLabel}`}
           />
           {distribution.length ? (
             distribution.map(([key, value], i) => (
@@ -313,7 +323,7 @@ export default function Consumption({ data, run, busy, notify }: PageProps) {
                       retain: t('Extraction de faits', 'Fact extraction'),
                       consolidation: t('Consolidation', 'Consolidation'),
                       reflect: t('Réponses', 'Answers'),
-                      mental_model: t('Synthèses', 'Knowledge pages'),
+                      mental_model: t('Connaissances', 'Knowledge'),
                     }[key] || key}
                   </span>
                   <strong>{number((value / sum) * 100)} %</strong>
@@ -324,7 +334,9 @@ export default function Consumption({ data, run, busy, notify }: PageProps) {
               </div>
             ))
           ) : (
-            <p className="card-placeholder">{t('Aucun appel enregistré.', 'No calls recorded.')}</p>
+            <p className="card-placeholder">
+              {t('Aucun appel sur cette période.', 'No calls in this period.')}
+            </p>
           )}
           <div className="distribution-note">
             <ShieldCheck size={17} />
@@ -412,17 +424,26 @@ export default function Consumption({ data, run, busy, notify }: PageProps) {
             }
           />
           <div className="budget-gauges">
-            {gauges.map((gauge) => (
-              <div key={gauge.id}>
-                <strong>{gauge.title}</strong>
-                <span>
-                  {number(gauge.used)} / {number(gauge.limit)}
-                </span>
-                <div className="progress-track">
-                  <span style={{ width: `${Math.min(100, (gauge.used / gauge.limit) * 100)}%` }} />
+            {gauges.map((gauge) => {
+              // Les plafonds en dollars gardent leurs centimes : « 0,42 $ / 1,00 $ », pas « 0 / 1 ».
+              const amount =
+                gauge.unit === 'dollars' || String(gauge.id).startsWith('dollars.')
+                  ? money
+                  : number;
+              return (
+                <div key={gauge.id}>
+                  <strong>{nativeSystemMessage(gauge.title)}</strong>
+                  <span>
+                    {amount(gauge.used)} / {amount(gauge.limit)}
+                  </span>
+                  <div className="progress-track">
+                    <span
+                      style={{ width: `${Math.min(100, (gauge.used / gauge.limit) * 100)}%` }}
+                    />
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       )}
@@ -454,12 +475,11 @@ export default function Consumption({ data, run, busy, notify }: PageProps) {
                 notify(t('Indiquez des plafonds valides.', 'Enter valid limits.'));
                 return;
               }
+              // Seuls les champs encore pris en charge sont envoyés : pas d’anciens quotas d’abonnement.
               void run('budget.save', {
                 budget: {
-                  ...data.budgets,
                   dailyDollars,
-                  codexQuotaPercent: null,
-                  subscriptions: {},
+                  warnAt: data.budgets?.warnAt ?? 0.8,
                   action: autoPause ? budgetAction : 'alert',
                   actionConfirmed: autoPause,
                 },

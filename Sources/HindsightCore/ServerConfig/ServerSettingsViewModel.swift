@@ -60,8 +60,29 @@ public final class ServerSettingsViewModel {
     @ObservationIgnored private var originalText = ""
     @ObservationIgnored private var loadedScriptURL: URL?
     public private(set) var backups: [LaunchScriptStore.Backup] = []
-    /// Le fichier a été enregistré depuis le dernier redémarrage réussi.
-    public private(set) var needsRestart = false
+    /// Le fichier a été enregistré depuis le dernier redémarrage réussi. Mémorisé avec le chemin du script et le
+    /// processus serveur qui tournait alors : l'avis survit à la relance de l'app, et tombe dès qu'un autre
+    /// processus a pris le relais (redémarrage hors de l'app, session rouverte), qui a donc lu le script enregistré.
+    public private(set) var needsRestart = false {
+        didSet {
+            guard needsRestart != oldValue else { return }
+            guard needsRestart else { return settings.set(nil, forKey: SettingsKey.launchScriptRestartPending) }
+            // `@Observable` passe aussi par ici quand l'init restaure l'avis : garder le processus déjà noté.
+            if pendingRestart?.path == store.url.path { return }
+            let pid = service?.job.pid.map(String.init) ?? ""
+            settings.set(store.url.path + "\n" + pid, forKey: SettingsKey.launchScriptRestartPending)
+        }
+    }
+    private var pendingRestart: (path: String, pid: Int?)? {
+        guard let value = settings.string(forKey: SettingsKey.launchScriptRestartPending) else { return nil }
+        let parts = value.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+        return (parts[0], parts.count > 1 ? Int(parts[1]) : nil)
+    }
+    /// À appeler après une lecture de l'état du service : un serveur lancé depuis l'enregistrement applique déjà le script.
+    public func reconcilePendingRestart() {
+        guard needsRestart, let pending = pendingRestart, let running = service?.job.pid, running != pending.pid else { return }
+        needsRestart = false
+    }
     public private(set) var restartState: RestartState = .idle
     public private(set) var restartLog = ""
     public private(set) var llmHealth: BankLlmHealthResponse?
@@ -87,6 +108,8 @@ public final class ServerSettingsViewModel {
         self.connections = connections ?? LLMConnections()
         self.scriptPath = settings.string(forKey: SettingsKey.launchScriptPath) ?? Self.defaultScriptPath
         self.restartCommand = settings.string(forKey: SettingsKey.restartCommand) ?? ""
+        self.needsRestart = settings.string(forKey: SettingsKey.launchScriptRestartPending)?
+            .split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) == store.url.path
     }
 
     var store: LaunchScriptStore { LaunchScriptStore(url: LaunchScriptStore.expand(scriptPath)) }

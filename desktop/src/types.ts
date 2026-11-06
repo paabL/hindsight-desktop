@@ -42,6 +42,8 @@ export type Snapshot = {
   section: Section;
   data: Row;
   messages: string[];
+  /** Clé d’occurrence de chaque message (moteur natif) : un même texte produit de nouveau change de clé. */
+  messageKeys?: string[];
   confirmations: Confirmation[];
 };
 export type Request = (command: string, args?: Row) => Promise<any>;

@@ -154,7 +154,8 @@ check(
     await page.evaluate(() => {
       window.modelFixture.failure = '';
       window.modelFixture.update({
-        items: [{ id: 'obsolete-id', title: 'Old source', state: 'current' }],
+        // Le bouton n’annonce que les fichiers réellement envoyables (`canSend`, fourni par le moteur).
+        items: [{ id: 'obsolete-id', title: 'Old source', state: 'modified', canSend: true }],
       });
     });
     await page.getByRole('checkbox', { name: 'Select all', exact: true }).check();

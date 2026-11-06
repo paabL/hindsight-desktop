@@ -51,7 +51,7 @@ try {
     .getByRole('button', { name: /^Sources/ })
     .click();
   await page.keyboard.press('Meta+6');
-  await expect(page.getByRole('heading', { name: 'Sources', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Catalogue', exact: true })).toBeVisible();
   await page.locator('.source-row').first().click();
   await expect(page.locator('.modal .markdown')).toBeVisible();
   const originalDocument = await page.locator('.modal .markdown').textContent();

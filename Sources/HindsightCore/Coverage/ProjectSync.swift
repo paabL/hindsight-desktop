@@ -190,7 +190,7 @@ public final class ProjectSyncViewModel {
             let output = try await runner.run(invocation(script, filters + ["--approve", approval], timeout: 600))
             if output.succeeded {
                 let sent = output.stdout.components(separatedBy: .newlines).last { $0.hasPrefix("Envoyé") }
-                actionMessage = (sent ?? "Envoi terminé.") + " La banque les traite maintenant (voir Opérations)."
+                actionMessage = (sent ?? "Envoi terminé.") + " La banque les traite maintenant (voir « Activité › Traitements »)."
             } else {
                 actionMessage = "Échec de l'envoi" + (output.timedOut ? " (délai dépassé)" : "") + " :\n" + Self.tail(output.combined)
             }

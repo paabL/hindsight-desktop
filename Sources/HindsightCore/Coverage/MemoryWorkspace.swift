@@ -45,6 +45,23 @@ public final class MemoryWorkspace {
     public private(set) var previousRevision: UUID?
     public private(set) var changedRecords: [[String: Any]] = []
     public var pauseGate: PauseGate?
+    /// Banque déclarée par `memory-policy.json` : le dossier lui appartient. Une autre banque
+    /// sélectionnée peut parcourir le catalogue, jamais en envoyer, retirer ou relier les sources.
+    public private(set) var boundBank: String?
+    public var bankMismatch: Bool {
+        guard let boundBank, let selected = bank() else { return false }
+        return boundBank != selected
+    }
+    private var mismatchMessage: String {
+        "Ce dossier est rattaché à la banque « \(boundBank ?? "") ». Sélectionnez-la pour envoyer ou retirer ses sources."
+    }
+    private func readBoundBank() { boundBank = Self.declaredBank(in: folder.repository) }
+    /// Banque déclarée par la politique d'un dossier mémoire, sans charger le reste.
+    public static func declaredBank(in repository: URL?) -> String? {
+        guard let url = repository?.appendingPathComponent("memory-policy.json"), FileManager.default.fileExists(atPath: url.path),
+              let data = try? Data(contentsOf: url), let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return (value["bank_id"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+    }
 
     private struct Context: Equatable {
         let bank: String?
@@ -75,6 +92,8 @@ public final class MemoryWorkspace {
     public init(folder: MemoryFolderViewModel, client: @escaping () -> HindsightClient, bank: @escaping () -> String?) {
         self.folder = folder; self.client = client; self.bank = bank
     }
+    /// Format sans version texte (PDF seul…) : la source n'est pas en erreur, elle n'est pas envoyable.
+    static let unsupportedFormatCode = 2
     private func failure(_ text: String) -> NSError { NSError(domain: "MemoryWorkspace", code: 1, userInfo: [NSLocalizedDescriptionKey: text]) }
     private var ledgerURL: URL? { folder.collection?.appendingPathComponent(".memory-workspace.json") }
     private var policyURL: URL? { folder.repository?.appendingPathComponent("memory-policy.json") }
@@ -92,6 +111,7 @@ public final class MemoryWorkspace {
             policy = try decode(url)
             guard policy["version"] as? Int == 1, policy["excluded_document_ids"] is [String: Any], policy["deferred_document_ids"] is [String: Any] else { throw failure("Politique mémoire incompatible ; envoi suspendu.") }
         }
+        boundBank = (policy["bank_id"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         if policy["bank_id"] as? String == bank(), let root = folder.repository?.resolvingSymlinksInPath() {
             for (id, value) in policy["excluded_document_ids"] as? [String: Any] ?? [:] where id.hasPrefix("gitlog:") {
                 let repo = String(id.dropFirst(7))
@@ -289,7 +309,9 @@ public final class MemoryWorkspace {
     private func sourceURL(_ record: [String: Any], root: URL?) throws -> URL {
         guard let root, let files = record["files"] as? [String: String] else { throw failure("Source locale indisponible.") }
         let chosen = files["document.md"] ?? files.keys.sorted().first(where: { ["md", "tex", "txt", "markdown"].contains(($0 as NSString).pathExtension.lowercased()) }).flatMap { files[$0] }
-        guard let relative = chosen else { throw failure("Une source TeX ou Markdown est requise pour ce document.") }
+        guard let relative = chosen else {
+            throw NSError(domain: "MemoryWorkspace", code: Self.unsupportedFormatCode, userInfo: [NSLocalizedDescriptionKey: "Une source TeX ou Markdown est requise pour ce document."])
+        }
         let url = root.appendingPathComponent(relative).standardizedFileURL.resolvingSymlinksInPath()
         guard !relative.hasPrefix("/"), !relative.split(separator: "/").contains(".."), url.path.hasPrefix(root.path + "/"),
               try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else { throw failure("Source hors du dossier commun.") }
@@ -336,13 +358,15 @@ public final class MemoryWorkspace {
            loadedServer == client().baseURL { return }
         invalidate()
         folder.reload()
+        readBoundBank()
+        let foreign = bankMismatch
         do {
             try loadCatalog()
             records = (catalog?["records"] as? [[String: Any]] ?? []).compactMap { row in
                 guard let id = row["id"] as? String else { return nil }
                 var row = row
-                row["memory"] = ["state": "unknown", "enabled": false, "locked": true, "stored": false,
-                                 "can_remove": false, "document_id": "source:" + id, "reason": "", "hash": ""]
+                row["memory"] = ["state": foreign ? "other_bank" : "unknown", "enabled": false, "locked": true, "stored": false,
+                                 "can_remove": false, "document_id": "source:" + id, "reason": foreign ? mismatchMessage : "", "hash": ""]
                 return row
             }
             revision = UUID()
@@ -447,6 +471,7 @@ public final class MemoryWorkspace {
         let ids = Set(raw.compactMap { $0["id"] as? String })
         sourceDigests = sourceDigests.filter { ids.contains($0.key) }
         var claimed = Set<String>()
+        let foreign = bankMismatch
         let root = folder.collection?.resolvingSymlinksInPath()
         // Index des documents, dans l'ordre de parcours de `documents` : le premier porteur de chaque
         // `source_record_id` et le suffixe « /dépôt/chemin » de chacun, au lieu de deux parcours par source.
@@ -465,7 +490,11 @@ public final class MemoryWorkspace {
             let repo = (record["repository"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? folder.repository?.lastPathComponent ?? ""
             var readError: String?
             let digest: SourceDigest?
-            do { digest = try sourceDigest(record, root: root) } catch { digest = nil; readError = error.localizedDescription }
+            var unsupported = false
+            do { digest = try sourceDigest(record, root: root) } catch {
+                digest = nil; readError = error.localizedDescription
+                unsupported = (error as NSError).code == Self.unsupportedFormatCode
+            }
             let canonical = "source:" + id
             let aliases = [bindings[id], canonical, id, originalKey(record, boardID: digest?.boardID)].compactMap { $0 }
             let original = (context["original_path"] as? String)?.precomposedStringWithCanonicalMapping
@@ -491,20 +520,26 @@ public final class MemoryWorkspace {
             let enabled = hold == nil && digest != nil && (preferences[id] ?? !aside)
             let hash = digest?.hash
             var state = !enabled ? "excluded" : documents[target] == nil ? "new" : documents[target]?.contentHash == hash ? "current" : "modified"
-            if enabled && failures[target] != nil { state = "error" }
+            if enabled && failures[target] != nil { state = "failed" }
             if enabled && !comparisonAvailable { state = "unknown" }
-            if preferences[id] != false && readError != nil && hold == nil && !aside { state = "error" }
+            if preferences[id] != false && readError != nil && hold == nil && !aside { state = unsupported ? "unsupported" : "error" }
             if pending[target] != nil && comparisonAvailable {
                 if operations[target] == nil && documents[target]?.contentHash == pending[target] { pending[target] = nil }
                 else { state = "queued" }
             }
             if let matched { claimed.insert(matched) }
             record["memory"] = ["state": state, "enabled": enabled, "document_id": target, "stored": matched != nil,
-                                "can_remove": hold == nil || ownExclusion, "locked": (hold != nil && !ownExclusion) || digest == nil, "reason": hold ?? readError ?? failures[target] ?? "", "hash": hash ?? "", "stored_hash": documents[target]?.contentHash ?? ""]
+                                "can_remove": matched != nil && (hold == nil || ownExclusion), "locked": (hold != nil && !ownExclusion) || digest == nil, "reason": hold ?? readError ?? failures[target] ?? "", "hash": hash ?? "", "stored_hash": documents[target]?.contentHash ?? ""]
+            if foreign {
+                // Catalogue d'une autre banque : consultable, jamais envoyé ni retiré depuis celle-ci.
+                record["memory"] = ["state": "other_bank", "enabled": false, "document_id": target, "stored": matched != nil,
+                                    "can_remove": false, "locked": true, "reason": mismatchMessage, "hash": hash ?? "", "stored_hash": documents[target]?.contentHash ?? ""]
+            }
             records.append(record); if digest != nil { readable.insert(id) }; targets[id] = target
         }
         // Sources imported by other tools stay visible; do not infer that their file disappeared.
-        for doc in documents.values.sorted(by: { $0.id < $1.id }) where !claimed.contains(doc.id) {
+        // Sous un catalogue d'une autre banque, les documents de celle-ci n'ont rien à y relier.
+        for doc in documents.values.sorted(by: { $0.id < $1.id }) where !foreign && !claimed.contains(doc.id) {
             let id = "bank:" + doc.id
             let hold = policyReason(id: doc.id, repo: doc.documentMetadata?["repo"]?.stringValue ?? "", path: doc.documentMetadata?["path"]?.stringValue ?? "")
             records.append(["id": id, "title": doc.id, "kind": "documents", "project": "", "project_name": "En mémoire", "repository": doc.documentMetadata?["repo"]?.stringValue ?? "", "files": [:], "source_updated_at": doc.updatedAt,
@@ -555,7 +590,7 @@ public final class MemoryWorkspace {
         return document.originalText ?? ""
     }
     private func checkQueue(_ bank: String, client currentClient: HindsightClient) async throws {
-        if try await hasActiveWork(bank, client: currentClient) { throw failure("Des opérations sont encore en cours. Consultez Opérations puis actualisez.") }
+        if try await hasActiveWork(bank, client: currentClient) { throw failure("Des opérations sont encore en cours. Consultez « Activité › Traitements » puis actualisez.") }
     }
     /// Refreshes only the local archive. It does not require or contact Hindsight.
     public func refreshSources() async {
@@ -582,6 +617,7 @@ public final class MemoryWorkspace {
         let expected = context, currentClient = client()
         await refresh()
         guard preparationID == preparation, context == expected, error == nil else { return }
+        guard !bankMismatch else { error = mismatchMessage; return }
         do { try await checkQueue(bank, client: currentClient) } catch {
             if preparationID == preparation, context == expected { self.error = error.localizedDescription }
             return
@@ -589,7 +625,7 @@ public final class MemoryWorkspace {
         guard preparationID == preparation, context == expected, !Task.isCancelled else { return }
         let selected = records.filter { row in
             let s = row["memory"] as? [String: Any] ?? [:]
-            return s["enabled"] as? Bool == true && ["new", "modified", "error"].contains(s["state"] as? String ?? "")
+            return s["enabled"] as? Bool == true && ["new", "modified", "failed"].contains(s["state"] as? String ?? "")
         }
         guard !records.contains(where: { ($0["memory"] as? [String: Any])?["state"] as? String == "queued" }) else { error = "Un envoi est encore en cours. Actualisez après son traitement."; return }
         guard !selected.isEmpty else { message = "Toutes les sources activées sont à jour."; return }
@@ -610,8 +646,9 @@ public final class MemoryWorkspace {
                               tags: ["source:catalog", "project:" + (row["project"] as? String ?? ""), "repo:" + (row["repository"] as? String ?? "")], observationScopes: .string("shared"), strategy: "doc")
         }
         let chars = selected.reduce(0) { $0 + (texts[$1["id"] as? String ?? ""]?.count ?? 0) }
+        let binds = boundBank == nil
         var consumed = false
-        confirmation = ConfirmationRequest(title: "Envoyer les sources à Hindsight ?", message: "\(items.count) sources complètes vers « \(bank) », environ \(chars / 4) jetons de texte avant extraction.\n\n" + selected.map { "• " + ($0["title"] as? String ?? "") + " — " + (targets[$0["id"] as? String ?? ""] ?? "") }.joined(separator: "\n") + "\n\nLes sources modifiées remplacent leur version mémorisée. Aucune suppression d’autres documents. La consolidation dépend des réglages de la banque.", confirmTitle: "Envoyer") { [weak self] in
+        confirmation = ConfirmationRequest(title: "Envoyer les sources à Hindsight ?", message: "\(items.count) sources complètes vers « \(bank) », environ \(chars / 4) jetons de texte avant extraction.\n\n" + selected.map { "• " + ($0["title"] as? String ?? "") + " — " + (targets[$0["id"] as? String ?? ""] ?? "") }.joined(separator: "\n") + "\n\nLes sources modifiées remplacent leur version mémorisée. Aucune suppression d’autres documents. La consolidation dépend des réglages de la banque." + (binds ? "\n\nCe dossier sera rattaché à « \(bank) » : ses sources ne pourront pas être envoyées à une autre banque." : ""), confirmTitle: "Envoyer") { [weak self] in
             guard let self else { return }
             guard !consumed else { return }; consumed = true
             guard self.context == expected else { self.error = "Le contexte a changé ; préparez un nouvel aperçu."; return }
@@ -631,9 +668,11 @@ public final class MemoryWorkspace {
                   selected.allSatisfy({ row in let id = row["id"] as? String ?? ""; return currentTexts?[id] == frozenTexts[id] && self.targets[id] == frozenTargets[id] && (self.records.first(where: { $0["id"] as? String == id })?["memory"] as? [String: Any])?["enabled"] as? Bool == true }) else {
                 self.error = "Les sources, la sélection ou la banque ont changé. Préparez un nouvel aperçu."; return
             }
+            guard !self.bankMismatch else { self.error = self.mismatchMessage; return }
             do {
                 try await self.checkQueue(bank, client: currentClient)
                 try self.requireContext(expected)
+                if binds { try self.bindFolder(to: bank) }
                 for batch in RetainBatching.batches(items.map { ($0, (frozenTexts[$0.metadata?["source_record_id"] ?? ""]?.utf8.count ?? 0) + 2000) }, byteLimit: 8_000_000, itemLimit: 10) {
                     try self.requireContext(expected)
                     if let reason = self.pauseGate?(bank) { throw self.failure(reason) }
@@ -659,10 +698,24 @@ public final class MemoryWorkspace {
             self.buildRows()
         }
     }
+    /// Le premier envoi rattache le dossier à sa banque, dans la politique que lisent tous les outils.
+    private func bindFolder(to bank: String) throws {
+        guard let url = policyURL else { throw failure("Choisissez un dossier mémoire et une banque.") }
+        var latest: [String: Any] = FileManager.default.fileExists(atPath: url.path)
+            ? try decode(url) : ["version": 1, "excluded_document_ids": [String: Any](), "deferred_document_ids": [String: Any]()]
+        if let existing = (latest["bank_id"] as? String).flatMap({ $0.isEmpty ? nil : $0 }) {
+            guard existing == bank else { boundBank = existing; throw failure(mismatchMessage) }
+        } else {
+            latest["bank_id"] = bank
+            try write(latest, to: url)
+        }
+        policy = latest; boundBank = bank
+    }
     /// Reuses the exact request and operation UUID: a timeout must never create a second extraction.
     public func requestRetry(_ id: String) {
         confirmation = nil; error = nil; message = nil
         do { try requireLoadedContext() } catch { self.error = error.localizedDescription; return }
+        guard !bankMismatch else { error = mismatchMessage; return }
         guard let bank = bank(), let root = folder.repository, let target = targets[id], let operation = operations[target], UUID(uuidString: operation) != nil else { error = "Aucun envoi à vérifier pour cette source."; return }
         let expected = context, currentClient = client()
         do {

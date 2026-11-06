@@ -183,8 +183,6 @@ try {
           budget: {
             dailyDollars: 12.5,
             warnAt: 0.8,
-            codexQuotaPercent: null,
-            subscriptions: {},
             action: 'freezeQueue',
             actionConfirmed: true,
           },
@@ -203,8 +201,6 @@ try {
     assert.deepEqual(requests.at(-1).args.budget, {
       dailyDollars: null,
       warnAt: 0.8,
-      codexQuotaPercent: null,
-      subscriptions: {},
       action: 'alert',
       actionConfirmed: false,
     });

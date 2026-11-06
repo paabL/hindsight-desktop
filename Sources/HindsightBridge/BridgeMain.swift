@@ -113,6 +113,12 @@ final class DesktopBridge {
     var graphMode = GraphViewModel.Mode.entities
     var graphLimit = 300
     var catalogCache: (stamp: [String], header: Any)?
+    /// Clé d'occurrence de chaque message émis (voir `forgetEmittedMessages`), préfixée par cette exécution du
+    /// moteur pour qu'un moteur relancé ne réutilise pas les clés déjà vues par la coque.
+    var messageKeys: [String: String] = [:]
+    var messageSerial = 0
+    let messageSession = String(UUID().uuidString.prefix(8))
+    var banksRefreshedAt = Date.distantPast
     let testing = ProcessInfo.processInfo.environment["HINDSIGHT_DESKTOP_TEST_MODE"] == "1"
 
     init() {
@@ -140,6 +146,8 @@ final class DesktopBridge {
     func handle(_ command: String, _ p: [String: Any]) async throws -> Any {
         func str(_ key: String, _ fallback: String = "") -> String { p[key] as? String ?? fallback }
         func strings(_ key: String) -> [String] { p[key] as? [String] ?? [] }
+        // Lectures et sondages ne touchent pas aux messages ; toute autre commande repart de résultats neufs.
+        if !["bootstrap", "snapshot", "section", "updates.releaseReady", "document.status"].contains(command) { forgetEmittedMessages() }
         switch command {
         case "bootstrap", "snapshot": break
         case "connect":
@@ -258,10 +266,22 @@ final class DesktopBridge {
             let asset = try await s.attachmentLoader.load(attachment)
             guard asset.data.count <= 12_000_000 else { throw BridgeFailure("Cette pièce jointe dépasse 12 Mo.") }
             return ["base64": asset.data.base64EncodedString(), "mediaType": attachment.mediaType, "id": attachment.id]
-        case "document.delete": (try session()).documents.reader?.requestDelete()
-        case "document.reprocess": (try session()).documents.reader?.requestReprocess()
-        case "document.tags": (try session()).documents.reader?.requestUpdateTags(strings("tags"))
-        case "document.scope": (try session()).documents.reader?.requestUpdateScope(str("scope"))
+        case "document.status":
+            // Le lecteur se ferme côté moteur après une suppression réussie : la fenêtre suit cet état.
+            let reader = app.session?.documents.reader
+            return ["open": reader != nil && (str("id").isEmpty || reader?.documentID == str("id")),
+                    "confirming": reader?.confirmation != nil]
+        case "document.delete", "document.reprocess", "document.tags", "document.scope":
+            // Après une suppression, le lecteur n'existe plus : refuser au lieu d'ignorer l'action.
+            guard let reader = try session().documents.reader, str("id").isEmpty || reader.documentID == str("id") else {
+                throw BridgeFailure("Ce document n’est plus ouvert.")
+            }
+            switch command {
+            case "document.delete": reader.requestDelete()
+            case "document.reprocess": reader.requestReprocess()
+            case "document.tags": reader.requestUpdateTags(strings("tags"))
+            default: reader.requestUpdateScope(str("scope"))
+            }
         case "documents.more": await (try session()).documents.loadMore()
         case "model.open":
             let admin = try session().admin
@@ -270,7 +290,7 @@ final class DesktopBridge {
         case "model.create": (try session()).admin.requestCreateMentalModel(name: str("name"), sourceQuery: str("query"), tags: strings("tags"))
         case "model.refresh", "model.delete":
             let admin = try session().admin
-            guard let model = admin.mentalModels.value?.first(where: { $0.id == str("id") }) else { throw BridgeFailure("Synthèse inconnue.") }
+            guard let model = admin.mentalModels.value?.first(where: { $0.id == str("id") }) else { throw BridgeFailure("Connaissance inconnue.") }
             if command == "model.refresh" { admin.requestRefreshMentalModel(model) } else { admin.requestDeleteMentalModel(model) }
         case "operations.more": await (try session()).operations.loadMore()
         case "operation.open":
@@ -312,6 +332,11 @@ final class DesktopBridge {
             let memory = try session().memoryDesign
             // La projection inverse passe par les clés de configuration officielles.
             let updates = try decode([String: JSONValue].self, p["config"] ?? [:])
+            // Une clé que cet écran ne relit pas serait ignorée sans le dire : la refuser.
+            let unsupported = updates.keys.filter { !MemoryDesign.editableKeys.contains($0) }.sorted()
+            guard unsupported.isEmpty else {
+                throw BridgeFailure("Clés non prises en charge ici : \(unsupported.joined(separator: ", ")). Modifiez-les dans Réglages › Banque › Configuration avancée de la banque.")
+            }
             let config = try await app.client.bankConfig(try session().bank)
             memory.draft = MemoryDesign(config: config.config.merging(updates) { _, new in new })
             if command == "memory.trial" { memory.sampleText = str("sample"); memory.requestTrial() }
@@ -422,6 +447,8 @@ final class DesktopBridge {
         case "sync.script": app.projectSync.setScript(str("path"))
         case "sync.run": await app.projectSync.requestSync(ids: strings("ids"))
         case "diagnostic.llm":
+            // Le serveur teste les modèles au nom d'une banque (`POST …/banks/{id}/health/llm`).
+            guard app.session != nil else { throw BridgeFailure("Choisissez une banque : le test des modèles passe par une banque du serveur.") }
             let dashboard = try session().dashboard
             await dashboard.loadIfNeeded()
             ownConfirmation = ConfirmationRequest(title: "Tester les modèles du serveur ?", message: "Un court appel sera effectué pour chaque rôle LLM configuré. Cette vérification consomme des jetons.", confirmTitle: "Tester les modèles", severity: .normal) { [weak self] in
@@ -492,6 +519,12 @@ final class DesktopBridge {
     }
 
     func load(_ name: String, _ p: [String: Any]) async throws {
+        // Nombre de faits de la barre latérale : la liste des banques (une requête légère) est relue à
+        // l'ouverture d'une section, au plus toutes les 5 s et jamais pendant les sondages.
+        if app.connection.isConnected, !testing, p["polling"] as? Bool != true, Date().timeIntervalSince(banksRefreshedAt) > 5 {
+            banksRefreshedAt = Date()
+            await app.refreshBanks()
+        }
         if name == "sources" {
             if p["background"] as? Bool == true { startSourcesRefresh() } else { await workspace.refresh() }
             return
@@ -503,16 +536,20 @@ final class DesktopBridge {
         }
         if name == "server" {
             await app.serverSettings.loadIfNeeded(); await app.service.refresh(); await app.localDecision.refresh()
+            app.serverSettings.reconcilePendingRestart()
             await app.serverSettings.connections.refresh(app.serverSettings.connectionContext)
             return
         }
         if name == "model-settings" {
             await app.serverSettings.loadIfNeeded()
             await app.service.refresh()
+            app.serverSettings.reconcilePendingRestart()
             await app.localDecision.refresh()
             return
         }
         if name == "settings" { return }
+        // Réglages › Banque sans banque : la page ne propose que la création, rien à charger.
+        if name == "admin", app.session == nil { return }
         let s = try session()
         switch name {
         case "dashboard": await s.dashboard.reload()
@@ -574,11 +611,14 @@ final class DesktopBridge {
         var connected = false, error: String?
         if case .connected = app.connection { connected = true }
         if case .failed(let text) = app.connection { error = text }
-        let messages = [note, app.bannerError, app.pause.message, app.bankManagement.message,
-                        app.service.message, app.serverSettings.actionMessage, app.coverage.actionMessage,
-                        app.session?.admin.actionMessage, app.session?.operations.actionMessage,
-                        app.session?.memoryDesign.actionMessage, app.session?.documents.reader?.actionMessage,
-                        app.projectSync.actionMessage, app.memoryFolder.importSummary].compactMap { $0 }
+        let messages = currentMessages()
+        // Une clé par occurrence : un message encore affiché garde la sienne, un message réapparu en reçoit une neuve.
+        var keys: [String: String] = [:]
+        for message in messages where keys[message] == nil {
+            if let key = messageKeys[message] { keys[message] = key }
+            else { messageSerial += 1; keys[message] = "\(messageSession)-\(messageSerial)" }
+        }
+        messageKeys = keys
         return [
             "app": ["connected": connected, "connectionError": wire(error), "serverURLNotice": wire(app.serverURLNotice), "serverURL": app.serverURL.absoluteString,
                     "version": wire(app.connection.version), "banks": wire(app.banks), "bank": wire(app.selectedBankID),
@@ -586,10 +626,43 @@ final class DesktopBridge {
             "serviceBusy": serviceTask != nil || app.service.isBusy,
             "updates": updateSnapshot(),
             "section": section, "data": sectionData(sourceRevision: sourceRevision), "messages": messages.map { SecretMasker.mask($0) },
+            "messageKeys": messages.map { keys[$0] ?? "" },
             "confirmations": pending().map { ["id": $0.id.uuidString, "title": $0.title, "message": SecretMasker.mask($0.message),
                                                "confirmTitle": $0.confirmTitle, "destructive": $0.severity == .destructive,
                                                "requiredText": wire($0.requiredText)] }
         ]
+    }
+
+    /// Résultats d'action et alertes affichés en bandeau par la coque.
+    func currentMessages() -> [String] {
+        [note, app.bannerError, app.pause.message, app.bankManagement.message,
+         app.service.message, app.serverSettings.actionMessage, app.coverage.actionMessage,
+         app.session?.admin.actionMessage, app.session?.operations.actionMessage,
+         app.session?.memoryDesign.actionMessage, app.session?.documents.reader?.actionMessage,
+         app.session?.audit.actionMessage, app.projectSync.actionMessage, app.memoryFolder.importSummary].compactMap { $0 }
+    }
+
+    /// Avant une nouvelle action, efface les résultats d'action déjà émis : si l'action produit la même phrase,
+    /// elle reçoit une nouvelle clé et la coque l'affiche de nouveau au lieu de la prendre pour l'ancienne.
+    /// L'état du service et le résumé d'import, affichés aussi hors bandeau, ne sont pas effacés.
+    func forgetEmittedMessages() {
+        func emitted(_ text: String?) -> Bool { text.map { messageKeys[$0] != nil } ?? false }
+        if emitted(note) { note = nil }
+        if emitted(app.bannerError) { app.bannerError = nil }
+        if emitted(app.pause.message) { app.pause.message = nil }
+        if emitted(app.bankManagement.message) { app.bankManagement.message = nil }
+        if emitted(app.serverSettings.actionMessage) { app.serverSettings.actionMessage = nil }
+        if emitted(app.coverage.actionMessage) { app.coverage.actionMessage = nil }
+        if emitted(app.projectSync.actionMessage) { app.projectSync.actionMessage = nil }
+        if let s = app.session {
+            if emitted(s.admin.actionMessage) { s.admin.actionMessage = nil }
+            if emitted(s.operations.actionMessage) { s.operations.actionMessage = nil }
+            if emitted(s.memoryDesign.actionMessage) { s.memoryDesign.actionMessage = nil }
+            if emitted(s.audit.actionMessage) { s.audit.actionMessage = nil }
+            if let reader = s.documents.reader, emitted(reader.actionMessage) { reader.actionMessage = nil }
+        }
+        let remaining = Set(currentMessages())
+        messageKeys = messageKeys.filter { remaining.contains($0.key) }
     }
 
     func updateSnapshot() -> [String: Any] {
@@ -597,8 +670,9 @@ final class DesktopBridge {
         switch updater.phase {
         case .idle: state = "idle"; message = "Recherchez les mises à jour ou reconstruisez cette copie."
         case .checking: state = "checking"; message = "Recherche des mises à jour…"
-        case .upToDate: state = "current"; message = "Vous utilisez la version à jour."
-        case .available: state = "available"; message = "Une mise à jour est disponible."
+        // Bloc « Construire depuis les sources » : l'état décrit le dépôt local, pas les versions publiées.
+        case .upToDate: state = "current"; message = "Aucun nouveau commit : cette copie du code source est à jour."
+        case .available: state = "available"; message = "De nouveaux commits sont disponibles dans le dépôt source."
         case .rebuildAvailable: state = "rebuild"; message = "La copie locale est plus récente que l’app."
         case .working(let text): state = "working"; message = text
         case .readyToRelaunch: state = "ready"; message = "Mise à jour installée. Relancez l’application."
@@ -619,7 +693,9 @@ final class DesktopBridge {
             let revision = workspace.revision.uuidString
             var data: [String: Any] = ["folder": wire(folder.repository?.path), "error": wire(workspace.error ?? folder.error), "memoryMessage": wire(workspace.message),
                 "canCollect": folder.canCollect, "collecting": folder.collecting || collectionTask != nil, "importing": folder.importing,
-                "refreshing": sourcesTask != nil, "catalogRevision": revision, "output": folder.output]
+                "refreshing": sourcesTask != nil, "catalogRevision": revision, "output": folder.output,
+                "boundBank": wire(workspace.boundBank), "bankMismatch": workspace.bankMismatch, "bank": wire(app.selectedBankID),
+                "catalogMissing": workspace.catalog == nil]
             if sourceRevision == revision { data["catalogUnchanged"] = true; return data }
             if let sourceRevision, sourceRevision == workspace.previousRevision?.uuidString,
                workspace.changedRecords.count < max(1, workspace.records.count / 2), var header = workspace.catalog {
@@ -648,16 +724,28 @@ final class DesktopBridge {
                     "serverIs120": s?.search.serverIs120 ?? false]
         case "documents":
             return ["items": wire(s?.documents.sortedItems ?? []), "total": s?.documents.total ?? 0,
-                    "canLoadMore": s?.documents.canLoadMore ?? false, "error": wire(s?.documents.state.errorMessage)]
+                    "canLoadMore": s?.documents.canLoadMore ?? false, "error": wire(s?.documents.state.errorMessage),
+                    "query": s?.documents.query ?? ""]
         case "coverage":
-            return ["items": wire(app.coverage.visibleItems), "roots": wire(app.coverage.roots),
+            // Dossiers suivis : seuls les fichiers suivis ; les autres documents de la banque ont leur page (Mémoire › Documents).
+            let catalogBank = MemoryWorkspace.declaredBank(in: app.memoryFolder.repository)
+            return ["items": wire(app.coverage.visibleItems.filter { $0.state != .stored }.map { item -> [String: Any] in
+                        var row = (wire(item) as? [String: Any]) ?? [:]
+                        row["state"] = item.state.rawValue
+                        row["canSend"] = item.entry?.canSend ?? false
+                        return row
+                    }), "roots": wire(app.coverage.roots),
+                    "catalogBank": wire(catalogBank), "bank": wire(app.selectedBankID),
                     "catalogFolder": wire(app.memoryFolder.repository?.path), "loading": app.coverage.state.isLoading, "error": wire(app.coverage.state.errorMessage), "warnings": app.coverage.warnings]
         case "operations":
             return ["items": wire(s?.operations.rows.map(\.raw) ?? []), "total": s?.operations.total ?? 0,
                     "statusFilter": s?.operations.statusFilter.rawValue ?? "all", "refreshing": s?.operations.isRefreshing ?? false,
                     "counts": wire(s?.operations.operationCounts), "loadingMore": s?.operations.isLoadingMore ?? false,
                     "canLoadMore": s?.operations.canLoadMore ?? false, "error": wire(s?.operations.state.errorMessage),
-                    "consultationOnly": s?.operations.consultationOnly ?? false]
+                    "consultationOnly": s?.operations.consultationOnly ?? false,
+                    // « Exécuter maintenant » n'est proposé que là où le moteur l'accepte (serveur 1.1, prochaine tentative à venir).
+                    "runNowIDs": s.map { s in s.operations.rows.filter { s.operations.canRunNow($0) }.map(\.id) } ?? [],
+                    "failedConsolidation": wire(s?.operations.stats?.failedConsolidation)]
         case "consumption":
             let m = app.consumption!
             return ["summary": wire(m.summary), "gauges": wire(m.gauges),
@@ -681,7 +769,16 @@ final class DesktopBridge {
                     "totalNodes": graph?.serverNodeTotal ?? 0, "totalEdges": graph?.serverEdgeTotal ?? 0,
                     "selectedNodeID": wire(graph?.selectedNodeID), "nodeFacts": wire(facts), "entity": wire(graph?.entityDetail.value),
                     "detailError": wire(graph?.nodeFacts.errorMessage ?? graph?.selectedFact?.detail.errorMessage), "error": wire(graph?.state.errorMessage)]
-        case "audit": return ["audit": wire(s?.audit.audit.value ?? []), "traces": wire(s?.audit.llm.value ?? []), "reads": wire(s?.reads.events ?? []), "error": wire(s?.audit.audit.errorMessage), "traceError": wire(s?.audit.llm.errorMessage)]
+        case "audit":
+            // État du journal d'audit de la banque : le bouton propose l'action inverse de l'état réel.
+            let auditStatus: String
+            switch s?.audit.auditStatus {
+            case .enabled?: auditStatus = "enabled"
+            case .disabled?: auditStatus = "disabled"
+            default: auditStatus = "unknown"
+            }
+            return ["audit": wire(s?.audit.audit.value ?? []), "traces": wire(s?.audit.llm.value ?? []), "reads": wire(s?.reads.events ?? []), "error": wire(s?.audit.audit.errorMessage), "traceError": wire(s?.audit.llm.errorMessage),
+                    "auditStatus": auditStatus, "auditTotal": s?.audit.auditTotal ?? 0, "traceTotal": s?.audit.llmTotal ?? 0]
         case "memory": return ["draft": wire(s?.memoryDesign.draft), "config": wire(s?.admin.config.value), "error": wire(s?.memoryDesign.state.errorMessage), "trial": wire(s?.memoryDesign.trial.value), "trialError": wire(s?.memoryDesign.trial.errorMessage), "problems": s?.memoryDesign.problems ?? [], "serverIs120": s?.memoryDesign.serverIs120 ?? false]
         case "server", "model-settings": return serverSnapshot()
         default: return [:]
@@ -733,6 +830,7 @@ final class DesktopBridge {
                 "authorizationURL": wire(settings.connections.authorizationURL?.absoluteString),
                 "diff": wire(settings.compactDiff), "backups": wire(settings.backups), "error": wire(settings.state.errorMessage),
                 "diagnostic": wire(app.session?.dashboard.snapshot?.llmHealth), "diagnosticError": wire(app.session?.dashboard.llmTestMessage),
+                "canTestModels": app.session != nil,
                 "service": ["installed": service.isInstalled, "running": service.job.running, "reachable": service.apiReachable,
                             "busy": service.isBusy || serviceTask != nil, "phase": serviceTask != nil && !service.isBusy ? "starting" : service.phase,
                             "error": wire(service.failure), "message": wire(service.message), "lastExitCode": wire(service.job.lastExitCode),
@@ -765,7 +863,8 @@ final class DesktopBridge {
 
     func readerSnapshot(_ reader: DocumentReaderViewModel) -> [String: Any] {
         ["document": wire(reader.document), "text": reader.sourceText, "note": wire(reader.sourceNote),
-         "facts": wire(reader.facts.value ?? []), "history": wire(reader.history), "error": wire(reader.state.errorMessage),
+         "facts": wire(reader.facts.value ?? []), "factsTotal": reader.factsTotal, "factsError": wire(reader.facts.errorMessage),
+         "history": wire(reader.history), "error": wire(reader.state.errorMessage),
          "blocks": reader.blocks.map { block -> [String: Any] in
              if let text = block.text { return ["id": block.id, "type": "text", "text": text] }
              if let ref = block.attachmentRef { return ["id": block.id, "type": "attachment", "attachmentID": ref.attachment?.id ?? ref.id, "image": ref.isImage, "attachment": wire(ref.attachment)] }

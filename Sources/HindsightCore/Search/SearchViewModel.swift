@@ -52,7 +52,7 @@ public final class SearchViewModel {
 
     public private(set) var state: LoadState<Void> = .idle
     public private(set) var hits: [FactHit] = []
-    /// Nombre de résultats côté serveur (mode texte) ; en recall, nombre avant filtres locaux.
+    /// Nombre de résultats côté serveur (mode texte) ; en recall, nombre affiché après filtres locaux.
     public private(set) var total = 0
     /// Résultats écartés par les filtres appliqués localement (entité, période en recall).
     public private(set) var locallyFiltered = 0
@@ -91,7 +91,7 @@ public final class SearchViewModel {
                 let all = r.results.map(FactHit.init)
                 hits = all.filter { filter.matchesLocally($0) }
                 locallyFiltered = all.count - hits.count
-                total = all.count
+                total = hits.count
                 chunks = r.chunks ?? [:]
             case .text:
                 let page = try await client.listMemories(bank, filter.memoryListQuery(q: q, limit: 100, offset: 0))

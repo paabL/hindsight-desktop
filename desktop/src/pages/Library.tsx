@@ -1,5 +1,5 @@
-import { useI18n } from '../i18n';
-import { useRef, useState } from 'react';
+import { getLocale, useI18n } from '../i18n';
+import { useEffect, useRef, useState } from 'react';
 import {
   ArrowDownToLine,
   ArrowRight,
@@ -26,6 +26,7 @@ import {
   Empty,
   ErrorNotice,
   IconButton,
+  Loading,
   Markdown,
   Modal,
   PageHeader,
@@ -34,6 +35,8 @@ import {
   number,
 } from '../ui';
 import { pickDirectory } from '../transport';
+import { nativeSystemMessage } from '../native-messages';
+import { factTypeLabel, factTypePluralLabel } from '../fact-types';
 import DocumentContent from './DocumentContent';
 
 export function DocumentReader({
@@ -52,6 +55,22 @@ export function DocumentReader({
   const [tags, setTags] = useState<string>((reader.document?.tags || []).join(', '));
   const document = reader.document || {};
   const [find, setFind] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const facts: Row[] = reader.facts || [];
+  const factsTotal = Math.max(Number(reader.factsTotal) || 0, facts.length);
+  // Une suppression confirmée ferme le lecteur côté moteur : la fenêtre se ferme avec lui.
+  useEffect(() => {
+    if (!deleting || busy) return;
+    let current = true;
+    void run('document.status', { id: document.id, polling: true }).then((status) => {
+      if (!current || typeof status?.open !== 'boolean') return;
+      if (!status.open) onClose();
+      else if (!status.confirming) setDeleting(false);
+    });
+    return () => {
+      current = false;
+    };
+  }, [deleting, busy]);
   return (
     <Modal
       title={document.document_metadata?.title || document.id || 'Document'}
@@ -69,17 +88,19 @@ export function DocumentReader({
         <Badge tone="sage">{t('En mémoire', 'In memory')}</Badge>
         <span>{date(document.updated_at || document.created_at, true)}</span>
         <span>
-          {number(reader.facts?.length || 0)} {t('faits affichés', 'facts shown')}
+          {number(facts.length)}
+          {factsTotal > facts.length ? ` ${t('sur', 'of')} ${number(factsTotal)}` : ''}{' '}
+          {t('faits affichés', 'facts shown')}
         </span>
       </div>
-      <ErrorNotice message={reader.error} />
-      {reader.note && <div className="notice">{reader.note}</div>}
+      <ErrorNotice message={reader.error && nativeSystemMessage(reader.error)} />
+      {reader.note && <div className="notice">{nativeSystemMessage(reader.note)}</div>}
       <Tabs
         value={tab}
         onChange={setTab}
         items={[
           { id: 'text', label: 'Document' },
-          { id: 'facts', label: t('Faits', 'Facts'), count: reader.facts?.length },
+          { id: 'facts', label: t('Faits', 'Facts'), count: factsTotal },
           { id: 'history', label: t('Historique', 'History') },
           { id: 'manage', label: t('Gérer', 'Manage') },
         ]}
@@ -99,23 +120,41 @@ export function DocumentReader({
         (reader.text ? (
           <DocumentContent reader={reader} run={run} find={find} />
         ) : (
-          <Empty
-            title={t('Texte non conservé', 'Text not stored')}
-            description={t(
-              'Cette banque ne contient que les faits extraits du document.',
-              'This bank only contains facts extracted from the document.',
-            )}
-          />
+          !reader.error && (
+            <Empty
+              title={t('Texte non conservé', 'Text not stored')}
+              description={t(
+                'Cette banque ne contient que les faits extraits du document.',
+                'This bank only contains facts extracted from the document.',
+              )}
+            />
+          )
         ))}
       {tab === 'facts' && (
-        <div className="fact-list">
-          {reader.facts?.map((fact: Row) => (
-            <article className="fact-card" key={fact.id}>
-              <Badge>{fact.fact_type || t('Fait', 'Fact')}</Badge>
-              <p>{fact.text}</p>
-            </article>
-          ))}
-        </div>
+        <>
+          <ErrorNotice message={reader.factsError && nativeSystemMessage(reader.factsError)} />
+          {facts.length ? (
+            <div className="fact-list">
+              {facts.map((fact: Row) => (
+                <article className="fact-card" key={fact.id}>
+                  <Badge>{factTypeLabel(fact.fact_type)}</Badge>
+                  <p>{fact.text}</p>
+                </article>
+              ))}
+            </div>
+          ) : (
+            !reader.factsError &&
+            !reader.error && (
+              <Empty
+                title={t('Aucun fait extrait', 'No extracted facts')}
+                description={t(
+                  'Aucun fait de la mémoire ne provient de ce document.',
+                  'No fact in memory comes from this document.',
+                )}
+              />
+            )
+          )}
+        </>
       )}
       {tab === 'history' &&
         (reader.history?.length ? (
@@ -159,6 +198,7 @@ export function DocumentReader({
             disabled={busy}
             onClick={() =>
               void run('document.tags', {
+                id: document.id,
                 tags: tags
                   .split(',')
                   .map((t) => t.trim())
@@ -175,7 +215,8 @@ export function DocumentReader({
             <select
               defaultValue=""
               onChange={(e) => {
-                if (e.target.value) void run('document.scope', { scope: e.target.value });
+                if (e.target.value)
+                  void run('document.scope', { id: document.id, scope: e.target.value });
               }}
             >
               <option value="">{t('Choisir une portée…', 'Choose a scope…')}</option>
@@ -185,7 +226,11 @@ export function DocumentReader({
             </select>
           </label>
           <div className="action-row">
-            <Button icon={RefreshCw} disabled={busy} onClick={() => void run('document.reprocess')}>
+            <Button
+              icon={RefreshCw}
+              disabled={busy}
+              onClick={() => void run('document.reprocess', { id: document.id })}
+            >
               {' '}
               {t('Retraiter le document', 'Reprocess document')}
             </Button>
@@ -193,7 +238,10 @@ export function DocumentReader({
               icon={Trash2}
               kind="danger"
               disabled={busy}
-              onClick={() => void run('document.delete')}
+              onClick={() => {
+                setDeleting(true);
+                void run('document.delete', { id: document.id });
+              }}
             >
               {' '}
               {t('Supprimer', 'Delete')}
@@ -205,21 +253,32 @@ export function DocumentReader({
   );
 }
 
-export function Models({ data, run, busy }: PageProps) {
+export function Models({ data, run, busy, notify }: PageProps) {
   const { t } = useI18n();
   const [query, setQuery] = useState('');
   const [model, setModel] = useState<Row | null>(null);
   const [create, setCreate] = useState(false);
   const [name, setName] = useState('');
   const [question, setQuestion] = useState('');
-  const models: Row[] = (data.models || []).filter((m: Row) =>
+  const allModels: Row[] | undefined = Array.isArray(data.models) ? data.models : undefined;
+  const models: Row[] = (allModels || []).filter((m: Row) =>
     `${m.name} ${m.source_query}`.toLocaleLowerCase('fr').includes(query.toLocaleLowerCase('fr')),
   );
+  const modelError = data.modelError ? nativeSystemMessage(data.modelError) : null;
+  // Après une suppression confirmée, la liste rechargée ne contient plus l’élément ouvert.
+  useEffect(() => {
+    if (model && allModels && !modelError && !allModels.some((m) => m.id === model.id))
+      setModel(null);
+  }, [allModels, model, modelError]);
   async function open(id: string) {
     const result = await run('model.open', { id });
-    if (result.error) throw new Error(result.error);
+    if (result?.error) throw new Error(nativeSystemMessage(result.error));
     setModel(result.model);
   }
+  const refreshFailed = (m: Row) =>
+    !!m.last_refresh_failed_at &&
+    (!m.last_refreshed_at ||
+      Date.parse(m.last_refresh_failed_at) > Date.parse(m.last_refreshed_at));
   return (
     <>
       <PageHeader
@@ -247,13 +306,16 @@ export function Models({ data, run, busy }: PageProps) {
           <p>
             {' '}
             {t(
-              'Ces synthèses rassemblent ce que votre banque sait d’un sujet, à partir des faits mémorisés.',
-              'These summaries bring together what your bank knows about a topic, using its stored facts.',
+              'Chacune rassemble ce que votre banque sait d’un sujet, à partir des faits mémorisés.',
+              'Each one brings together what your bank knows about a topic, using its stored facts.',
             )}
           </p>
         </div>
         <Badge>
-          {number(data.models?.length || 0)} {t('éléments', 'items')}
+          {query.trim() && allModels && models.length !== allModels.length
+            ? `${number(models.length)} ${t('sur', 'of')} `
+            : ''}
+          {number(allModels?.length || 0)} {t('éléments', 'items')}
         </Badge>
       </div>
       <div className="standalone-search input-with-icon">
@@ -265,34 +327,43 @@ export function Models({ data, run, busy }: PageProps) {
           onChange={(e) => setQuery(e.target.value)}
         />
       </div>
-      <ErrorNotice message={data.error || data.modelError} />
-      {models.length ? (
+      <ErrorNotice message={modelError} />
+      {!allModels && !modelError ? (
+        <Loading />
+      ) : models.length ? (
         <div className="model-grid">
           {models.map((m, i) => (
             <button
               key={m.id}
               className="model-card"
-              onClick={() => void open(m.id).catch(() => {})}
+              onClick={() =>
+                void open(m.id).catch((error: unknown) =>
+                  notify(
+                    error instanceof Error && error.message
+                      ? error.message
+                      : t('Impossible d’ouvrir cet élément.', 'This item could not be opened.'),
+                  ),
+                )
+              }
             >
               <div className="model-card-top">
                 <span className={`model-glyph color-${i % 4}`}>
                   <BookOpen size={23} strokeWidth={1.5} />
                 </span>
-                <Badge tone={m.is_stale ? 'amber' : 'sage'}>
-                  {m.is_stale
-                    ? t('À actualiser', 'Needs updating')
-                    : m.last_refreshed_at
-                      ? t('Actualisée', 'Updated')
-                      : t('À générer', 'Not generated')}
+                <Badge tone={refreshFailed(m) ? 'red' : m.is_stale ? 'amber' : 'sage'}>
+                  {refreshFailed(m)
+                    ? t('Échec de l’actualisation', 'Refresh failed')
+                    : m.is_stale
+                      ? t('À actualiser', 'Needs updating')
+                      : m.last_refreshed_at
+                        ? t('Actualisée', 'Updated')
+                        : t('À générer', 'Not generated')}
                 </Badge>
               </div>
               <h2>{m.name}</h2>
               <p>
                 {m.source_query ||
-                  t(
-                    'Synthèse de connaissances de la banque.',
-                    "A summary of the bank's knowledge.",
-                  )}
+                  t('Construite à partir des faits de la banque.', "Built from the bank's facts.")}
               </p>
               <div className="model-card-bottom">
                 <span>
@@ -304,7 +375,7 @@ export function Models({ data, run, busy }: PageProps) {
             </button>
           ))}
         </div>
-      ) : (
+      ) : modelError ? null : (
         <Empty
           icon={BookOpen}
           title={
@@ -333,9 +404,15 @@ export function Models({ data, run, busy }: PageProps) {
                 : t('Modèle mental', 'Mental model')}
             </Badge>
             <span>
-              {' '}
-              {t('Actualisée le', 'Updated on')} {date(model.last_refreshed_at, true)}
+              {model.last_refreshed_at
+                ? `${t('Actualisée le', 'Updated on')} ${date(model.last_refreshed_at, true)}`
+                : t('Jamais générée', 'Never generated')}
             </span>
+            {refreshFailed(model) && (
+              <Badge tone="red">
+                {t('Échec de la dernière actualisation', 'Last refresh failed')}
+              </Badge>
+            )}
             <div className="spacer" />
             <Button
               icon={RefreshCw}
@@ -358,8 +435,8 @@ export function Models({ data, run, busy }: PageProps) {
             <Empty
               icon={Sparkles}
               title={t(
-                'Cette synthèse attend sa première génération',
-                'This page has not been generated yet',
+                'Ce contenu attend sa première génération',
+                'This content has not been generated yet',
               )}
               description={t(
                 'Actualisez-la pour générer son contenu à partir de la mémoire.',
@@ -459,6 +536,8 @@ export function SearchPage({ data, run, busy, notify }: PageProps) {
     t('Les prochaines étapes', 'Next steps'),
   ];
   const hits: Row[] = data.hits || [];
+  // Questionner la mémoire (reflect) n’applique ni l’entité ni la période : ces filtres sont masqués.
+  const reflect = mode === 'reflect';
   async function search(text = query) {
     setQuery(text);
     setSearched(true);
@@ -473,10 +552,13 @@ export function SearchPage({ data, run, busy, notify }: PageProps) {
         .map((t) => t.trim())
         .filter(Boolean),
       types: type ? [type] : [],
-      entity,
+      entity: reflect ? '' : entity,
       task,
-      start: start ? new Date(start + 'T00:00:00').toISOString() : null,
-      end: end ? new Date(new Date(end + 'T00:00:00').getTime() + 86400000).toISOString() : null,
+      start: !reflect && start ? new Date(start + 'T00:00:00').toISOString() : null,
+      end:
+        !reflect && end
+          ? new Date(new Date(end + 'T00:00:00').getTime() + 86400000).toISOString()
+          : null,
     });
   }
   return (
@@ -573,23 +655,25 @@ export function SearchPage({ data, run, busy, notify }: PageProps) {
                 {t('Type de fait', 'Fact type')}
                 <select value={type} onChange={(e) => setType(e.target.value)}>
                   <option value="">{t('Tous les types', 'All types')}</option>
-                  <option value="world">{t('Faits du monde', 'World facts')}</option>
-                  <option value="experience">{t('Expériences', 'Experiences')}</option>
-                  <option value="observation">Observations</option>
+                  <option value="world">{factTypePluralLabel('world')}</option>
+                  <option value="experience">{factTypePluralLabel('experience')}</option>
+                  <option value="observation">{factTypePluralLabel('observation')}</option>
                 </select>
               </label>
-              <label>
-                {' '}
-                {t('Entité', 'Entity')}
-                <select value={entity} onChange={(e) => setEntity(e.target.value)}>
-                  <option value="">{t('Toutes les entités', 'All entities')}</option>
-                  {(data.entities || []).map((item: Row) => (
-                    <option value={item.id} key={item.id}>
-                      {item.canonical_name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {!reflect && (
+                <label>
+                  {' '}
+                  {t('Entité', 'Entity')}
+                  <select value={entity} onChange={(e) => setEntity(e.target.value)}>
+                    <option value="">{t('Toutes les entités', 'All entities')}</option>
+                    {(data.entities || []).map((item: Row) => (
+                      <option value={item.id} key={item.id}>
+                        {item.canonical_name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label>
                 {' '}
                 {t('Tâche', 'Task')}
@@ -599,16 +683,20 @@ export function SearchPage({ data, run, busy, notify }: PageProps) {
                   placeholder={t('Numéro de tâche', 'Task number')}
                 />
               </label>
-              <label>
-                {' '}
-                {t('À partir du', 'From')}
-                <input type="date" value={start} onChange={(e) => setStart(e.target.value)} />
-              </label>
-              <label>
-                {' '}
-                {t('Jusqu’au', 'Until')}
-                <input type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
-              </label>
+              {!reflect && (
+                <>
+                  <label>
+                    {' '}
+                    {t('À partir du', 'From')}
+                    <input type="date" value={start} onChange={(e) => setStart(e.target.value)} />
+                  </label>
+                  <label>
+                    {' '}
+                    {t('Jusqu’au', 'Until')}
+                    <input type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
+                  </label>
+                </>
+              )}
               {mode === 'recall' && data.serverIs120 && (
                 <>
                   <label>
@@ -709,11 +797,7 @@ export function SearchPage({ data, run, busy, notify }: PageProps) {
               <article key={hit.id} className="fact-card">
                 <div className="fact-card-top">
                   <Badge tone={hit.type === 'observation' ? 'lavender' : 'sage'}>
-                    {hit.type === 'observation'
-                      ? 'Observation'
-                      : hit.type === 'experience'
-                        ? t('Expérience', 'Experience')
-                        : t('Fait', 'Fact')}
+                    {factTypeLabel(hit.type)}
                   </Badge>
                   <span>{date(hit.occurredStart || hit.mentionedAt)}</span>
                   {hit.score != null && (
@@ -739,7 +823,7 @@ export function SearchPage({ data, run, busy, notify }: PageProps) {
                       }
                     >
                       {' '}
-                      {t('Voir la source', 'View source')}
+                      {t('Voir le document source', 'View source document')}
                       <ArrowRight size={14} />
                     </button>
                   )}
@@ -777,13 +861,20 @@ export function Documents({ data, run, busy, refresh, navigate }: PageProps) {
   const [query, setQuery] = useState('');
   const [reader, setReader] = useState<Row | null>(null);
   const [sort, setSort] = useState('recent');
+  const documentName = (item: Row): string =>
+    item.document_metadata?.title || item.title || item.id;
   const items: Row[] = [...(data.items || [])].sort((a, b) =>
     sort === 'facts'
       ? b.memory_unit_count - a.memory_unit_count
       : sort === 'name'
-        ? a.id.localeCompare(b.id)
+        ? documentName(a).localeCompare(documentName(b), getLocale(), {
+            numeric: true,
+            sensitivity: 'base',
+          })
         : 0,
   );
+  // Requête réellement appliquée par le moteur (le champ peut avoir été modifié depuis).
+  const activeQuery = (typeof data.query === 'string' ? data.query : query).trim();
   return (
     <>
       <PageHeader
@@ -837,7 +928,9 @@ export function Documents({ data, run, busy, refresh, navigate }: PageProps) {
           </select>
         </form>
         <ErrorNotice message={data.error} />
-        {items.length ? (
+        {!data.items && !data.error ? (
+          <Loading />
+        ) : items.length ? (
           <div className="table-scroll">
             <table>
               <thead>
@@ -865,7 +958,7 @@ export function Documents({ data, run, busy, refresh, navigate }: PageProps) {
                           <FileText size={19} />
                         </span>
                         <span>
-                          <strong>{item.document_metadata?.title || item.title || item.id}</strong>
+                          <strong>{documentName(item)}</strong>
                           <small>{(item.tags || []).slice(0, 2).join(' · ') || item.id}</small>
                         </span>
                       </button>
@@ -882,7 +975,7 @@ export function Documents({ data, run, busy, refresh, navigate }: PageProps) {
                     <td>
                       <IconButton
                         icon={ArrowRight}
-                        label={`Lire ${item.id}`}
+                        label={`${t('Lire', 'Read')} ${documentName(item)}`}
                         onClick={() =>
                           void run('document.open', { id: item.id })
                             .then(setReader)
@@ -895,6 +988,15 @@ export function Documents({ data, run, busy, refresh, navigate }: PageProps) {
               </tbody>
             </table>
           </div>
+        ) : data.error ? null : activeQuery ? (
+          <Empty
+            icon={Search}
+            title={t('Aucun document ne correspond', 'No matching document')}
+            description={t(
+              'Essayez un autre mot ou effacez la recherche.',
+              'Try another word or clear the search.',
+            )}
+          />
         ) : (
           <Empty
             title={t('La bibliothèque est vide', 'The library is empty')}
@@ -942,6 +1044,11 @@ export function Coverage({ data, run, busy }: PageProps) {
   const disabled = busy || working || loading;
   const itemIDs = items.map((item, index) => item.id || item.key || String(index));
   const currentSelection = new Set(itemIDs.filter((id) => selected.has(id)));
+  const selectedItems = items.filter((item, index) =>
+    currentSelection.has(item.id || item.key || String(index)),
+  );
+  const sendable = selectedItems.filter((item) => item.canSend);
+  const removable = selectedItems.filter((item) => (item.documents || []).length > 0);
   function normalizedPath(path: string) {
     const parts: string[] = [];
     for (const part of path.normalize('NFC').split('/')) {
@@ -952,8 +1059,13 @@ export function Coverage({ data, run, busy }: PageProps) {
     return '/' + parts.join('/');
   }
   const catalogFolder = typeof data.catalogFolder === 'string' ? data.catalogFolder : '';
+  // Un dossier rattaché à une autre banque ne se propose pas au suivi de celle-ci.
+  const catalogOfOtherBank = Boolean(
+    data.catalogBank && data.bank && data.catalogBank !== data.bank,
+  );
   const offerCatalogFolder =
     !loading &&
+    !catalogOfOtherBank &&
     catalogFolder.startsWith('/') &&
     !roots.some(
       (root) =>
@@ -1022,22 +1134,21 @@ export function Coverage({ data, run, busy }: PageProps) {
               />{' '}
               {t('Tous les fichiers texte', 'All text files')}
             </label>
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={root.autoSync || false}
-                disabled={disabled || !root.autoSync}
-                onChange={(e) =>
-                  void perform(() =>
-                    run('coverage.auto', { id: root.path, enabled: e.target.checked }),
-                  )
+            {root.autoSync && (
+              <Button
+                kind="ghost"
+                disabled={disabled}
+                title={t(
+                  'La synchronisation automatique est suspendue : chaque envoi demande une validation.',
+                  'Automatic sync is suspended: every upload needs approval.',
+                )}
+                onClick={() =>
+                  void perform(() => run('coverage.auto', { id: root.path, enabled: false }))
                 }
-              />{' '}
-              {t(
-                'Synchronisation auto. suspendue : validation requise',
-                'Automatic sync paused: approval required',
-              )}
-            </label>
+              >
+                {t('Désactiver l’ancienne synchro auto.', 'Turn off legacy auto-sync')}
+              </Button>
+            )}
             <IconButton
               icon={Trash2}
               label={t('Retirer le dossier du suivi', 'Stop tracking this folder')}
@@ -1092,25 +1203,26 @@ export function Coverage({ data, run, busy }: PageProps) {
               <div className="action-row">
                 <Button
                   icon={Send}
-                  disabled={disabled || !currentSelection.size}
+                  disabled={disabled || !sendable.length}
                   onClick={() =>
                     void perform(() => run('coverage.send', { ids: [...currentSelection] }))
                   }
                 >
                   {' '}
                   {t('Envoyer (', 'Send (')}
-                  {currentSelection.size})
+                  {sendable.length})
                 </Button>
                 <Button
                   icon={Trash2}
                   kind="danger"
-                  disabled={disabled || !currentSelection.size}
+                  disabled={disabled || !removable.length}
                   onClick={() =>
                     void perform(() => run('coverage.remove', { ids: [...currentSelection] }))
                   }
                 >
                   {' '}
-                  {t('Retirer de la mémoire', 'Remove from memory')}
+                  {t('Retirer de la mémoire (', 'Remove from memory (')}
+                  {removable.length})
                 </Button>
               </div>
             }
@@ -1165,7 +1277,7 @@ export function Coverage({ data, run, busy }: PageProps) {
                               noFacts: t('Sans fait', 'No facts'),
                               fileMissing: t('Fichier disparu', 'File missing'),
                               queued: t('En file', 'Queued'),
-                              inMemory: t('En mémoire', 'In memory'),
+                              stored: t('En mémoire', 'In memory'),
                             } as Record<string, string>
                           )[item.state] ||
                             item.state ||

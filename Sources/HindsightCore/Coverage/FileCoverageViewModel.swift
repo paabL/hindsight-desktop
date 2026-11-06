@@ -726,7 +726,8 @@ public final class FileCoverageViewModel {
                 let excluded = policy["excluded_document_ids"] as? [String: Any],
                 let deferred = policy["deferred_document_ids"] as? [String: Any]
             else { return "La politique du dossier mémoire est invalide ; aucun envoi autorisé." }
-            guard target == bank else { return nil }
+            // Le dossier appartient à la banque de sa politique : aucune autre banque n'en reçoit les fichiers.
+            guard target == bank else { return "Ce dossier est rattaché à la banque « \(target) ». Sélectionnez-la pour envoyer ou retirer ses sources." }
             let blocked = Set(excluded.keys).union(deferred.keys)
             let sources = (Array(excluded.values) + Array(deferred.values)).compactMap { ($0 as? [String: Any])?["source"] as? [String: String] }
             let denied = entries.filter { entry in
@@ -783,7 +784,7 @@ public final class FileCoverageViewModel {
         if replaced > 0 { lines.append("\(replaced) document(s) existant(s) seront REMPLACÉS : leurs faits sont supprimés puis réextraits.") }
         if !upload.unreadable.isEmpty { lines.append("Ignoré(s) : " + upload.unreadable.joined(separator: ", ")) }
         if let e = estimate?(bank, .retain(characters: upload.characters, images: 0, consolidation: true)) { lines.append(e.summary) }
-        lines.append("Les images intégrées aux HTML sont retirées. L'extraction se fait en tâche de fond ; suivez-la dans « Opérations ».")
+        lines.append("Les images intégrées aux HTML sont retirées. L'extraction se fait en tâche de fond ; suivez-la dans « Activité › Traitements ».")
         confirmation = ConfirmationRequest(
             title: "Envoyer à « \(bank) » ?", message: lines.joined(separator: "\n"), confirmTitle: "Envoyer",
             severity: replaced > 0 ? .destructive : .normal

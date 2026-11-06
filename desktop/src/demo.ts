@@ -1,4 +1,5 @@
 import type { Row, Section, Snapshot } from './types';
+import { translate as t } from './i18n-core.ts';
 import { changeModelWorkflowDemo, modelWorkflowDemo } from './model-workflow-demo';
 
 // Données entièrement fictives, accessibles uniquement par une activation explicite du mode exemple.
@@ -78,12 +79,13 @@ const documents = demoRecords.map((r, i) => ({
 const facts = demoRecords.map((r, i) => ({
   id: `fact-${i}`,
   text: [
-    'La navigation principale doit donner accès au dossier mémoire, aux synthèses et à la recherche en un clic.',
+    'La navigation principale doit donner accès au dossier mémoire, aux connaissances et à la recherche en un clic.',
     'Les sources sont collectées dans une archive commune avant tout traitement par Hindsight.',
     'Une décision doit être reliée à sa source pour rester vérifiable et compréhensible dans le temps.',
     'Les expériences de recherche sont définies avant le lancement, puis vérifiées avec un test court.',
   ][i % 4],
-  type: i % 3 ? 'world' : 'observation',
+  // Les trois types de la vue d’ensemble (faits du monde, expériences, observations) sont représentés.
+  type: ['observation', 'world', 'experience'][i % 3],
   documentID: r.id,
   document_id: r.id,
   mentionedAt: r.collected_at,
@@ -201,6 +203,8 @@ const operations = ['completed', 'processing', 'pending', 'completed', 'failed',
     },
   }),
 );
+// Volume de la banque fictive : seuls quelques faits sont chargés, mais les totaux restent ceux de la banque.
+const bankFacts: Record<string, number> = { world: 1546, experience: 916, observation: 186 };
 const data: Partial<Record<Section, Row>> = {
   sources: {
     folder: '/Exemple/horizon-memory',
@@ -252,13 +256,14 @@ const data: Partial<Record<Section, Row>> = {
   dashboard: {
     snapshot: {
       stats: {
-        total_nodes: 2648,
+        total_nodes: bankFacts.world + bankFacts.experience + bankFacts.observation,
         total_documents: documents.length,
-        total_observations: 186,
+        total_observations: bankFacts.observation,
         total_links: 4820,
-        pending_operations: 2,
-        failed_operations: 1,
-        nodes_by_fact_type: { world: 1546, experience: 916, observation: 186 },
+        // Mêmes comptes que la file de l’exemple (Activité › Traitements).
+        pending_operations: operations.filter((operation) => operation.status === 'pending').length,
+        failed_operations: operations.filter((operation) => operation.status === 'failed').length,
+        nodes_by_fact_type: bankFacts,
       },
       recentDocuments: documents.slice(0, 5),
       topTags: [
@@ -408,9 +413,15 @@ function factsData() {
       (factType === 'all' || fact.type === factType) &&
       fact.text.toLocaleLowerCase().includes(factQuery.toLocaleLowerCase()),
   );
+  // Comme le serveur : le total compte toute la banque (ou le type demandé), pas seulement les faits chargés.
+  const total = factQuery
+    ? matching.length
+    : factType === 'all'
+      ? bankFacts.world + bankFacts.experience + bankFacts.observation
+      : bankFacts[factType];
   return {
     facts: matching,
-    total: matching.length,
+    total,
     truncated: false,
     query: factQuery,
     type: factType,
@@ -463,9 +474,12 @@ export async function exampleRequest(command: string, args: Row, section: Sectio
       snapshot.confirmations = [
         {
           id: 'example-model-save',
-          title: 'Enregistrer les modèles ?',
-          message: 'Démonstration : aucune donnée réelle ne sera modifiée.',
-          confirmTitle: 'Enregistrer',
+          title: t('Enregistrer les modèles ?', 'Save models?'),
+          message: t(
+            'Démonstration : aucune donnée réelle ne sera modifiée.',
+            'Example: no real data will be changed.',
+          ),
+          confirmTitle: t('Enregistrer', 'Save'),
           destructive: false,
         },
       ];
@@ -495,6 +509,8 @@ export async function exampleRequest(command: string, args: Row, section: Sectio
       history: [],
     };
   if (command === 'operation.open') return operations.find((o) => o.id === args.id);
+  // Le lecteur sonde son état après une suppression : en exemple, rien n’est supprimé.
+  if (command === 'document.status') return { open: true, confirming: false };
   if (command === 'search' || command === 'search.more') {
     snapshot.data.hits = facts;
     snapshot.data.total = facts.length;
@@ -507,7 +523,9 @@ export async function exampleRequest(command: string, args: Row, section: Sectio
     snapshot.data.nodeFacts =
       graphMode === 'facts' ? facts.filter((f) => f.id === args.id) : facts.slice(0, 3);
   } else if (command === 'confirm') {
-    snapshot.messages = ['Exemple : aucune donnée réelle n’a été modifiée.'];
+    snapshot.messages = [
+      t('Exemple : aucune donnée réelle n’a été modifiée.', 'Example: no real data was changed.'),
+    ];
   } else if (
     ![
       'bootstrap',
@@ -520,7 +538,10 @@ export async function exampleRequest(command: string, args: Row, section: Sectio
     ].includes(command)
   ) {
     snapshot.messages = [
-      'Cette action est disponible avec vos données dans l’application desktop. Aucune donnée réelle n’est modifiée en mode exemple.',
+      t(
+        'Cette action est disponible avec vos données dans l’application desktop. Aucune donnée réelle n’est modifiée en mode exemple.',
+        'This action is available with your own data in the desktop app. No real data is changed in example mode.',
+      ),
     ];
   }
   return snapshot;

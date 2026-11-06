@@ -12,7 +12,7 @@ public enum OperationWaiter {
 
     public struct TimedOut: Error, CustomStringConvertible {
         public let operationID: String
-        public var description: String { "L'opération \(operationID) n'est pas terminée ; suivez-la dans « Opérations »." }
+        public var description: String { "L'opération \(operationID) n'est pas terminée ; suivez-la dans « Activité › Traitements »." }
     }
 
     public static func wait(

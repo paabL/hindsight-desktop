@@ -114,7 +114,7 @@ function mergeIntro(
     'les importer sous un nouvel identifiant': 'import them with a new identifier',
     'remplacer ceux de la cible': 'replace the target documents',
   };
-  return `Documents from “${source}” (${sourceFacts} facts) will be added to “${target}” (${targetFacts} facts).\nNo LLM calls: facts are reindexed with the target’s embedding model and their entities merged with the target’s entities.\nDocuments whose identifiers already exist in the target: ${conflicts[conflict]}.\nThe source’s settings, directives and summaries are NOT copied. Target observations will be updated by its next consolidation (LLM calls).`;
+  return `Documents from “${source}” (${sourceFacts} facts) will be added to “${target}” (${targetFacts} facts).\nNo LLM calls: facts are reindexed with the target’s embedding model and their entities merged with the target’s entities.\nDocuments whose identifiers already exist in the target: ${conflicts[conflict]}.\nThe source’s settings, directives and mental models are NOT copied. Target observations will be updated by its next consolidation (LLM calls).`;
 }
 
 function restartMessage(message: string): string {

@@ -34,6 +34,8 @@ public enum SettingsKey {
     public static let lastBank = "lastBank"
     public static let launchScriptPath = "launchScriptPath"
     public static let restartCommand = "restartCommand"
+    /// Chemin résolu du script de lancement enregistré depuis le dernier redémarrage réussi du serveur.
+    public static let launchScriptRestartPending = "launchScriptRestartPending"
     /// Empreinte SHA-256 du script de lancement approuvé pour le service.
     public static let serviceScriptHash = "serviceScriptHash"
     /// Dépôt git source des mises à jour (sinon celui inscrit dans l'Info.plist à la construction).

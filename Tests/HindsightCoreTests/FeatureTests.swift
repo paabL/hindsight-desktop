@@ -76,6 +76,16 @@ final class MemoryDesignTests: XCTestCase {
         XCTAssertNotNil(vm.actionMessage)
     }
 
+    func testSavingWithoutChangesSaysSoAndOnlyModelledKeysAreEditable() async {
+        let vm = make(MockTransport())
+        await vm.reload()
+        vm.requestSave()
+        XCTAssertNil(vm.confirmation)
+        XCTAssertEqual(vm.actionMessage, "Aucun changement à enregistrer.")
+        XCTAssertTrue(MemoryDesign.editableKeys.isSuperset(of: ["retain_mission", "entity_labels", "retain_strategies", "memory_defense"]))
+        XCTAssertFalse(MemoryDesign.editableKeys.contains("audit_log_enabled"), "réglage d'administration : refusé par l'écran Comportement")
+    }
+
     func testEmptyingAMissionResetsItToServerValue() async throws {
         let vm = make(MockTransport())
         await vm.reload()
@@ -203,6 +213,9 @@ final class BankManagementTests: XCTestCase {
         t.on("GET", "\(bankPath)/aliases", json: #"{"bank_id":"b","aliases":[]}"#)
         t.on("POST", "\(bankPath)/aliases", json: #"{"bank_id":"b","aliases":[{"alias":"codex","primary":true}]}"#)
         let vm = make(t)
+        vm.requestRename(testBank, name: "Codex diag")
+        XCTAssertNil(vm.confirmation, "même nom : rien à confirmer")
+        XCTAssertEqual(vm.message, "La banque porte déjà le nom « Codex diag ».")
         vm.requestRename(testBank, name: "Mémoire Codex")
         await vm.confirmation!.perform()
         XCTAssertEqual(t.requests.first { $0.method == "PATCH" }?.bodyJSON?["name"], "Mémoire Codex")
@@ -250,6 +263,10 @@ final class BankManagementTests: XCTestCase {
         let vm = make(t)
         vm.requestMerge(source: testBank, into: testBank)
         XCTAssertNil(vm.confirmation)
+        XCTAssertEqual(vm.message, "Choisissez deux banques différentes.")
+        vm.requestMerge(source: "inconnue", into: testBank)
+        XCTAssertNil(vm.confirmation)
+        XCTAssertEqual(vm.message, "Banque inconnue.", "un identifiant absent n'est pas présenté comme un doublon")
         vm.requestMerge(source: "scratch", into: testBank, conflict: .newID, after: .deleteAndAlias)
         let c = try XCTUnwrap(vm.confirmation)
         XCTAssertEqual(c.requiredText, "scratch", "suppression de la source : saisie exigée")

@@ -305,7 +305,7 @@ try {
   await check('obsolete source response cannot open over a new selection', async () => {
     await resolve(await choose(0));
     await factsTab();
-    await page.getByRole('button', { name: 'Consulter la source', exact: true }).click();
+    await page.getByRole('button', { name: 'Voir le document source', exact: true }).click();
     const sourceKey = await page.evaluate(
       () => window.readStress.pending().find((r) => r.command === 'document.open').key,
     );

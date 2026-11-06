@@ -37,6 +37,7 @@ import {
   Modal,
   PageHeader,
   Tabs,
+  bankLabel,
   date,
   number,
 } from '../ui';
@@ -49,6 +50,7 @@ import {
   isBooleanField,
   decisionProviderValue,
   localDecisionURL,
+  localDecisionStateLabel,
 } from '../model-field-options';
 
 const memoryFields = {
@@ -155,8 +157,8 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
         eyebrow={t('Une mémoire à votre image', 'Memory that works for you')}
         title={t('Comportement de la mémoire', 'Memory behavior')}
         description={t(
-          'Choisissez ce que la banque sélectionnée retient, comment elle consolide ses souvenirs et répond aux questions.',
-          'Choose what the selected bank remembers, how it consolidates memories and answers questions.',
+          'Choisissez ce que la banque sélectionnée retient, comment elle consolide ses faits et répond aux questions.',
+          'Choose what the selected bank remembers, how it consolidates facts and answers questions.',
         )}
         actions={
           <Button kind="primary" icon={Save} disabled={busy} onClick={() => action('memory.save')}>
@@ -370,12 +372,12 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
               {toggle(
                 'mentalModelDeltaUseDecisionModel',
                 t(
-                  'Pages de connaissance : ignorer les mémoires sans effet',
-                  'Knowledge pages: skip memories that make no difference',
+                  'Pages de connaissance : ignorer les faits sans effet',
+                  'Knowledge pages: skip facts that make no difference',
                 ),
                 t(
-                  'Une mise à jour dont aucune nouvelle mémoire ne change la page ne fait aucun appel LLM.',
-                  'An update makes no LLM call when no new memories change the page.',
+                  'Une mise à jour dont aucun nouveau fait ne change la page ne fait aucun appel LLM.',
+                  'An update makes no LLM call when no new facts change the page.',
                 ),
               )}
             </>
@@ -505,7 +507,15 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
   );
 }
 
-export function Admin({ data, run, busy, notify }: PageProps) {
+export function Admin({
+  data,
+  run,
+  busy,
+  notify,
+  demo,
+  bank,
+  banks = [],
+}: PageProps & { bank?: Row; banks?: Row[] }) {
   const { t } = useI18n();
   const [modal, setModal] = useState<string | null>(null);
   const modalGeneration = useRef(0);
@@ -515,6 +525,11 @@ export function Admin({ data, run, busy, notify }: PageProps) {
     modalGeneration.current++;
     setModal(value);
   }
+  // Nom et identifiant : la fusion agit sur des banques existantes, jamais sur un identifiant à retaper.
+  const bankOption = (b: Row) => {
+    const label = bankLabel(b);
+    return label && label !== b.bank_id ? `${label} · ${b.bank_id}` : String(b.bank_id);
+  };
   const [name, setName] = useState('');
   const [content, setContent] = useState('');
   const [target, setTarget] = useState('');
@@ -576,261 +591,309 @@ export function Admin({ data, run, busy, notify }: PageProps) {
         }
       />
       <ErrorNotice message={data.error} />
-      <section className="card settings-card">
-        <CardHeader
-          title={t('Identité de la banque', 'Bank identity')}
-          subtitle={t(
-            'Un nom clair pour retrouver le bon contexte.',
-            'A clear name to find the right context.',
-          )}
-        />
-        <div className="action-row">
-          <Button
-            icon={Database}
-            onClick={() => {
-              setName('');
-              showModal('rename');
-            }}
-          >
-            {' '}
-            {t('Renommer', 'Rename')}
-          </Button>
-          <Button
-            icon={Copy}
-            onClick={() => {
-              setTarget('');
-              showModal('clone');
-            }}
-          >
-            {' '}
-            {t('Cloner', 'Clone')}
-          </Button>
-          <Button
-            icon={Layers3}
-            onClick={() => {
-              setSource('');
-              setTarget('');
-              showModal('merge');
-            }}
-          >
-            {' '}
-            {t('Fusionner des banques', 'Merge banks')}
-          </Button>
-        </div>
-      </section>
-      <section className="card">
-        <CardHeader
-          title="Directives"
-          subtitle={t(
-            'Des consignes explicites pour guider les réponses.',
-            'Explicit instructions to guide answers.',
-          )}
-          action={
-            <Button
-              icon={Plus}
-              onClick={() => {
-                setName('');
-                setContent('');
-                showModal('directive');
-              }}
-            >
-              {' '}
-              {t('Ajouter', 'Add')}
-            </Button>
-          }
-        />
-        {data.directives?.length ? (
-          data.directives.map((directive: Row) => (
-            <div className="directive-row" key={directive.id}>
-              <span className="category-icon sage">
-                <ShieldCheck size={20} />
-              </span>
-              <div>
-                <strong>{directive.name}</strong>
-                <p>{directive.content}</p>
-              </div>
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={directive.is_active ?? true}
-                  onChange={(e) =>
-                    void run('directive.update', { id: directive.id, active: e.target.checked })
-                  }
-                />
-                Active
-              </label>
-              <IconButton
-                icon={Trash2}
-                label={t('Supprimer la directive', 'Delete directive')}
-                onClick={() => void run('directive.delete', { id: directive.id })}
-              />
-            </div>
-          ))
-        ) : (
-          <Empty
-            icon={ShieldCheck}
-            title={t('Aucune directive', 'No directives')}
-            description={t(
-              'Les directives donnent des consignes persistantes au modèle de réponse.',
-              'Directives provide persistent instructions to the answer model.',
-            )}
-          />
-        )}
-      </section>
-      <section className="card settings-card">
-        <CardHeader
-          title={t('Sauvegarder et transférer', 'Back up and transfer')}
-          subtitle={t(
-            'Conservez une archive ou réutilisez la structure dans une autre banque.',
-            'Keep an archive or reuse the structure in another bank.',
-          )}
-        />
-        <div className="transfer-grid">
-          <button onClick={() => void exportFile('admin.export')}>
-            <FileArchive size={24} />
-            <strong>{t('Exporter la banque', 'Export bank')}</strong>
-            <span>{t('Données et configuration', 'Data and configuration')}</span>
-          </button>
-          <button onClick={() => void exportFile('admin.template')}>
-            <BookOpen size={24} />
-            <strong>{t('Exporter la structure', 'Export structure')}</strong>
-            <span>{t('Modèle de configuration JSON', 'JSON configuration template')}</span>
-          </button>
-          <label className="file-upload">
-            <Upload size={24} />
-            <strong>{t('Importer une archive', 'Import archive')}</strong>
-            <span>{t('Archive ZIP ou structure JSON', 'ZIP archive or JSON structure')}</span>
-            <input
-              type="file"
-              accept=".zip,.json"
-              onChange={(e) => void importFile(e.target.files?.[0])}
-            />
-          </label>
-        </div>
-        {data.templateDryRun && (
-          <div className="form-stack">
-            <pre className="json-view">{JSON.stringify(data.templateDryRun, null, 2)}</pre>
-            <Button icon={Check} onClick={() => void run('admin.template.apply')}>
-              {' '}
-              {t('Appliquer ce modèle', 'Apply this template')}
-            </Button>
-          </div>
-        )}
-      </section>
-      <details className="card advanced-details">
-        <summary>{t('Synchronisation du dossier commun', 'Shared folder sync')}</summary>
-        <div className="form-stack">
-          <p className="muted">
-            {' '}
-            {t(
-              'Prépare un aperçu avec le script de synchronisation du projet, puis présente le volume et le coût avant l’envoi.',
-              "Prepares a preview using the project's sync script, then shows the volume and cost before sending.",
-            )}
-          </p>
-          <label>
-            {' '}
-            {t('Script de synchronisation', 'Sync script')}
-            <input
-              value={syncScript || data.syncScript || ''}
-              onChange={(e) => setSyncScript(e.target.value)}
-              placeholder={t('/chemin/du/projet/sync.py', '/path/to/project/sync.py')}
-            />
-          </label>
-          <label>
-            {' '}
-            {t(
-              'Identifiants à inclure (facultatif, un par ligne)',
-              'IDs to include (optional, one per line)',
-            )}
-            <textarea
-              value={syncIds}
-              onChange={(e) => setSyncIds(e.target.value)}
-              placeholder={t(
-                'Laisser vide pour examiner tous les candidats',
-                'Leave empty to review all candidates',
+      {bank ? (
+        <>
+          <section className="card settings-card">
+            <CardHeader
+              title={t('Identité de la banque', 'Bank identity')}
+              subtitle={t(
+                'Un nom clair pour retrouver le bon contexte.',
+                'A clear name to find the right context.',
               )}
             />
-          </label>
-          <Button
-            disabled={busy || !(syncScript || data.syncScript)}
-            onClick={() =>
-              void run('sync.script', { path: syncScript || data.syncScript }).then(() =>
-                run('sync.run', {
-                  ids: syncIds
-                    .split('\n')
-                    .map((id) => id.trim())
-                    .filter(Boolean),
-                }),
-              )
-            }
-          >
-            {' '}
-            {t('Préparer la synchronisation', 'Prepare sync')}
-          </Button>
-        </div>
-      </details>
-      <details className="card advanced-details">
-        <summary> {t('Configuration avancée de la banque', 'Advanced bank configuration')}</summary>
-        <div className="form-stack">
-          <pre className="json-view">{JSON.stringify(data.config?.overrides || {}, null, 2)}</pre>
-          <div className="two-fields">
-            <label>
-              {' '}
-              {t('Clé', 'Key')}
-              <input
-                value={key}
-                onChange={(e) => setKey(e.target.value)}
-                placeholder="retain_mission"
+            <dl className="bank-identity">
+              <dt>{t('Nom', 'Name')}</dt>
+              <dd>{bank?.name || '—'}</dd>
+              <dt>{t('Identifiant', 'ID')}</dt>
+              <dd>{bank?.bank_id}</dd>
+              {bank?.display_alias && (
+                <>
+                  <dt>{t('Alias affiché', 'Display alias')}</dt>
+                  <dd>{bank.display_alias}</dd>
+                </>
+              )}
+            </dl>
+            <p className="form-hint">
+              {t(
+                'Renommer change seulement le nom affiché. L’identifiant reste celui qu’utilisent les clients (MCP, scripts).',
+                'Renaming changes only the displayed name. Clients (MCP, scripts) keep using the ID.',
+              )}
+            </p>
+            <div className="action-row">
+              <Button
+                icon={Database}
+                onClick={() => {
+                  setName(String(bank?.name || ''));
+                  showModal('rename');
+                }}
+              >
+                {' '}
+                {t('Renommer', 'Rename')}
+              </Button>
+              <Button
+                icon={Copy}
+                onClick={() => {
+                  setTarget('');
+                  showModal('clone');
+                }}
+              >
+                {' '}
+                {t('Cloner', 'Clone')}
+              </Button>
+              <Button
+                icon={Layers3}
+                disabled={banks.length < 2}
+                onClick={() => {
+                  setSource(String(bank?.bank_id || ''));
+                  setTarget(String(banks.find((b) => b.bank_id !== bank?.bank_id)?.bank_id || ''));
+                  showModal('merge');
+                }}
+              >
+                {' '}
+                {t('Fusionner des banques', 'Merge banks')}
+              </Button>
+            </div>
+          </section>
+          <section className="card">
+            <CardHeader
+              title="Directives"
+              subtitle={t(
+                'Des consignes explicites pour guider les réponses.',
+                'Explicit instructions to guide answers.',
+              )}
+              action={
+                <Button
+                  icon={Plus}
+                  onClick={() => {
+                    setName('');
+                    setContent('');
+                    showModal('directive');
+                  }}
+                >
+                  {' '}
+                  {t('Ajouter', 'Add')}
+                </Button>
+              }
+            />
+            {data.directives?.length ? (
+              data.directives.map((directive: Row) => (
+                <div className="directive-row" key={directive.id}>
+                  <span className="category-icon sage">
+                    <ShieldCheck size={20} />
+                  </span>
+                  <div>
+                    <strong>{directive.name}</strong>
+                    <p>{directive.content}</p>
+                  </div>
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={directive.is_active ?? true}
+                      onChange={(e) =>
+                        void run('directive.update', { id: directive.id, active: e.target.checked })
+                      }
+                    />
+                    Active
+                  </label>
+                  <IconButton
+                    icon={Trash2}
+                    label={t('Supprimer la directive', 'Delete directive')}
+                    onClick={() => void run('directive.delete', { id: directive.id })}
+                  />
+                </div>
+              ))
+            ) : (
+              <Empty
+                icon={ShieldCheck}
+                title={t('Aucune directive', 'No directives')}
+                description={t(
+                  'Les directives donnent des consignes persistantes au modèle de réponse.',
+                  'Directives provide persistent instructions to the answer model.',
+                )}
               />
-            </label>
-            <label>
+            )}
+          </section>
+          <section className="card settings-card">
+            <CardHeader
+              title={t('Sauvegarder et transférer', 'Back up and transfer')}
+              subtitle={t(
+                'Conservez une archive ou réutilisez la structure dans une autre banque.',
+                'Keep an archive or reuse the structure in another bank.',
+              )}
+            />
+            <div className="transfer-grid">
+              <button onClick={() => void exportFile('admin.export')}>
+                <FileArchive size={24} />
+                <strong>{t('Exporter la banque', 'Export bank')}</strong>
+                <span>{t('Données et configuration', 'Data and configuration')}</span>
+              </button>
+              <button onClick={() => void exportFile('admin.template')}>
+                <BookOpen size={24} />
+                <strong>{t('Exporter la structure', 'Export structure')}</strong>
+                <span>{t('Modèle de configuration JSON', 'JSON configuration template')}</span>
+              </button>
+              <label className="file-upload">
+                <Upload size={24} />
+                <strong>{t('Importer une archive', 'Import archive')}</strong>
+                <span>{t('Archive ZIP ou structure JSON', 'ZIP archive or JSON structure')}</span>
+                <input
+                  type="file"
+                  accept=".zip,.json"
+                  onChange={(e) => void importFile(e.target.files?.[0])}
+                />
+              </label>
+            </div>
+            {data.templateDryRun && (
+              <div className="form-stack">
+                <pre className="json-view">{JSON.stringify(data.templateDryRun, null, 2)}</pre>
+                <Button icon={Check} onClick={() => void run('admin.template.apply')}>
+                  {' '}
+                  {t('Appliquer ce modèle', 'Apply this template')}
+                </Button>
+              </div>
+            )}
+          </section>
+          <details className="card advanced-details">
+            <summary>{t('Synchronisation du dossier commun', 'Shared folder sync')}</summary>
+            <div className="form-stack">
+              <p className="muted">
+                {' '}
+                {t(
+                  'Prépare un aperçu avec le script de synchronisation du projet, puis présente le volume et le coût avant l’envoi.',
+                  "Prepares a preview using the project's sync script, then shows the volume and cost before sending.",
+                )}
+              </p>
+              <label>
+                {' '}
+                {t('Script de synchronisation', 'Sync script')}
+                <input
+                  value={syncScript || data.syncScript || ''}
+                  onChange={(e) => setSyncScript(e.target.value)}
+                  placeholder={t('/chemin/du/projet/sync.py', '/path/to/project/sync.py')}
+                />
+              </label>
+              <label>
+                {' '}
+                {t(
+                  'Identifiants à inclure (facultatif, un par ligne)',
+                  'IDs to include (optional, one per line)',
+                )}
+                <textarea
+                  value={syncIds}
+                  onChange={(e) => setSyncIds(e.target.value)}
+                  placeholder={t(
+                    'Laisser vide pour examiner tous les candidats',
+                    'Leave empty to review all candidates',
+                  )}
+                />
+              </label>
+              <Button
+                disabled={busy || !(syncScript || data.syncScript)}
+                onClick={() =>
+                  void run('sync.script', { path: syncScript || data.syncScript }).then(() =>
+                    run('sync.run', {
+                      ids: syncIds
+                        .split('\n')
+                        .map((id) => id.trim())
+                        .filter(Boolean),
+                    }),
+                  )
+                }
+              >
+                {' '}
+                {t('Préparer la synchronisation', 'Prepare sync')}
+              </Button>
+            </div>
+          </details>
+          <details className="card advanced-details">
+            <summary>
               {' '}
-              {t('Valeur', 'Value')}
-              <input
-                value={value}
-                onChange={(e) => setValue(e.target.value)}
-                placeholder={t('Texte ou valeur JSON', 'Text or JSON value')}
-              />
-            </label>
-          </div>
-          <Button
-            icon={Save}
-            disabled={busy || !key.trim()}
-            onClick={() => void run('admin.override', { key, value })}
-          >
-            {' '}
-            {t('Préparer la modification', 'Prepare change')}
-          </Button>
-          <Button kind="ghost" onClick={() => void run('admin.reset')}>
-            {' '}
-            {t('Réinitialiser les surcharges', 'Reset overrides')}
-          </Button>
-        </div>
-      </details>
-      <details className="card danger-zone">
-        <summary>{t('Actions de suppression', 'Delete actions')}</summary>
-        <p>
-          {' '}
-          {t(
-            'Ces actions retirent des connaissances. Une confirmation séparée précisera ce qui sera supprimé.',
-            'These actions remove knowledge. A separate confirmation will explain what will be deleted.',
-          )}
-        </p>
-        <div className="action-row">
-          <Button kind="danger" onClick={() => void run('admin.clearObservations')}>
-            {' '}
-            {t('Effacer les observations', 'Clear observations')}
-          </Button>
-          <Button kind="danger" onClick={() => void run('admin.deleteMemories')}>
-            {' '}
-            {t('Effacer tous les faits', 'Clear all facts')}
-          </Button>
-          <Button kind="danger" icon={Trash2} onClick={() => void run('admin.deleteBank')}>
-            {' '}
-            {t('Supprimer la banque', 'Delete bank')}
-          </Button>
-        </div>
-      </details>
+              {t('Configuration avancée de la banque', 'Advanced bank configuration')}
+            </summary>
+            <div className="form-stack">
+              <pre className="json-view">
+                {JSON.stringify(data.config?.overrides || {}, null, 2)}
+              </pre>
+              <div className="two-fields">
+                <label>
+                  {' '}
+                  {t('Clé', 'Key')}
+                  <input
+                    value={key}
+                    onChange={(e) => setKey(e.target.value)}
+                    placeholder="retain_mission"
+                  />
+                </label>
+                <label>
+                  {' '}
+                  {t('Valeur', 'Value')}
+                  <input
+                    value={value}
+                    onChange={(e) => setValue(e.target.value)}
+                    placeholder={t('Texte ou valeur JSON', 'Text or JSON value')}
+                  />
+                </label>
+              </div>
+              <Button
+                icon={Save}
+                disabled={busy || !key.trim()}
+                onClick={() => void run('admin.override', { key, value })}
+              >
+                {' '}
+                {t('Préparer la modification', 'Prepare change')}
+              </Button>
+              <Button kind="ghost" onClick={() => void run('admin.reset')}>
+                {' '}
+                {t('Réinitialiser les surcharges', 'Reset overrides')}
+              </Button>
+            </div>
+          </details>
+          <details className="card danger-zone">
+            <summary>{t('Actions de suppression', 'Delete actions')}</summary>
+            <p>
+              {' '}
+              {t(
+                'Ces actions retirent des connaissances. Une confirmation séparée précisera ce qui sera supprimé.',
+                'These actions remove knowledge. A separate confirmation will explain what will be deleted.',
+              )}
+            </p>
+            <div className="action-row">
+              <Button kind="danger" onClick={() => void run('admin.clearObservations')}>
+                {' '}
+                {t('Effacer les observations', 'Clear observations')}
+              </Button>
+              <Button kind="danger" onClick={() => void run('admin.deleteMemories')}>
+                {' '}
+                {t('Effacer tous les faits', 'Clear all facts')}
+              </Button>
+              <Button kind="danger" icon={Trash2} onClick={() => void run('admin.deleteBank')}>
+                {' '}
+                {t('Supprimer la banque', 'Delete bank')}
+              </Button>
+            </div>
+          </details>
+        </>
+      ) : (
+        <Empty
+          icon={Database}
+          title={
+            banks.length
+              ? t('Aucune banque sélectionnée', 'No memory bank selected')
+              : t('Aucune banque sur ce serveur', 'No memory banks on this server')
+          }
+          description={
+            banks.length
+              ? t(
+                  'Choisissez une banque dans la barre latérale pour gérer son identité, ses directives et ses sauvegardes.',
+                  'Select a memory bank in the sidebar to manage its identity, directives and backups.',
+                )
+              : t(
+                  'Créez une banque avec « Nouvelle banque » pour commencer à mémoriser vos sources.',
+                  'Create a memory bank with New bank to start remembering your sources.',
+                )
+          }
+        />
+      )}
       {modal && (
         <Modal
           title={
@@ -868,7 +931,11 @@ export function Admin({ data, run, busy, notify }: PageProps) {
                 source,
               })
                 .then((result) => {
-                  if (!result?.error && generation === modalGeneration.current) showModal(null);
+                  // Une demande valide ouvre une confirmation ; un refus (identifiant pris, même nom…)
+                  // n’arrive que comme message : le formulaire reste ouvert pour être corrigé.
+                  const accepted = demo || !!result?.confirmations?.length;
+                  if (!result?.error && accepted && generation === modalGeneration.current)
+                    showModal(null);
                 })
                 .catch((error) => notify(error instanceof Error ? error.message : String(error)))
                 .finally(() => {
@@ -884,11 +951,9 @@ export function Admin({ data, run, busy, notify }: PageProps) {
                 <input required value={name} onChange={(e) => setName(e.target.value)} />
               </label>
             )}
-            {['create', 'clone', 'merge'].includes(modal) && (
+            {['create', 'clone'].includes(modal) && (
               <label>
-                {modal === 'merge'
-                  ? t('Identifiant de la banque de destination', 'Destination bank ID')
-                  : t('Identifiant de la nouvelle banque', 'New bank ID')}
+                {t('Identifiant de la nouvelle banque', 'New bank ID')}
                 <input
                   required
                   pattern="[A-Za-z0-9][A-Za-z0-9._-]*"
@@ -898,12 +963,55 @@ export function Admin({ data, run, busy, notify }: PageProps) {
                 />
               </label>
             )}
+            {modal === 'clone' && bank && (
+              <p className="form-hint">
+                {t(
+                  `Copie de « ${bankOption(bank)} » dans une nouvelle banque, qui ne doit pas encore exister.`,
+                  `Copies “${bankOption(bank)}” into a new bank, which must not exist yet.`,
+                )}
+              </p>
+            )}
             {modal === 'merge' && (
-              <label>
-                {' '}
-                {t('Identifiant de la banque source', 'Source bank ID')}
-                <input required value={source} onChange={(e) => setSource(e.target.value)} />
-              </label>
+              <>
+                <label>
+                  {t('Banque source', 'Source bank')}
+                  <select
+                    required
+                    value={source}
+                    onChange={(e) => {
+                      setSource(e.target.value);
+                      if (e.target.value === target)
+                        setTarget(
+                          String(banks.find((b) => b.bank_id !== e.target.value)?.bank_id || ''),
+                        );
+                    }}
+                  >
+                    {banks.map((b) => (
+                      <option key={b.bank_id} value={b.bank_id}>
+                        {bankOption(b)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  {t('Banque de destination', 'Destination bank')}
+                  <select required value={target} onChange={(e) => setTarget(e.target.value)}>
+                    {banks
+                      .filter((b) => b.bank_id !== source)
+                      .map((b) => (
+                        <option key={b.bank_id} value={b.bank_id}>
+                          {bankOption(b)}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                <p className="form-hint">
+                  {t(
+                    'Les documents de la source sont ajoutés à la destination. La confirmation suivante détaille le volume et ce qui advient de la source.',
+                    'Documents from the source are added to the destination. The next confirmation shows the volume and what happens to the source.',
+                  )}
+                </p>
+              </>
             )}
             {['create', 'directive'].includes(modal) && (
               <label>
@@ -1058,7 +1166,7 @@ function HindsightModels({ models, run, busy }: Pick<PageProps, 'run' | 'busy'> 
           {' '}
           {t(
             'Le modèle de décision de ce Mac n’est pas en marche : démarrez-le avant le serveur.',
-            'The decision model on this Mac is stopped: start it before the server.',
+            'The decision model on this Mac is not running: start it before the server.',
           )}
         </div>
       )}
@@ -1080,11 +1188,7 @@ function HindsightModels({ models, run, busy }: Pick<PageProps, 'run' | 'busy'> 
         </div>
         <Badge tone={running ? 'sage' : local.installed ? 'amber' : 'neutral'}>
           <span className={`status-dot ${running ? 'green' : 'warning'}`} />
-          {running
-            ? t('En marche', 'Running')
-            : local.installed
-              ? t('Arrêté', 'Stopped')
-              : t('Non installé', 'Not installed')}
+          {localDecisionStateLabel(local.phase)}
         </Badge>
         {!local.installed ? (
           <Button
@@ -1411,8 +1515,20 @@ export function ServerSettings({ data, run, busy, notify, navigate }: PageProps)
                 'Roles inherit global values until you customize them.',
               )}
             </p>
+            {data.canTestModels === false && (
+              <p className="form-hint">
+                {t(
+                  'Choisissez une banque pour tester les modèles : le test passe par une banque du serveur.',
+                  'Choose a memory bank to test models: the test runs through a server memory bank.',
+                )}
+              </p>
+            )}
           </div>
-          <Button disabled={busy} icon={FlaskConical} onClick={() => void run('diagnostic.llm')}>
+          <Button
+            disabled={busy || data.canTestModels === false}
+            icon={FlaskConical}
+            onClick={() => void run('diagnostic.llm')}
+          >
             {' '}
             {t('Tester les modèles', 'Test models')}
           </Button>

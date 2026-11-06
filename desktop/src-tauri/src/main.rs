@@ -66,7 +66,7 @@ async fn call_running_bridge(guard: &mut Option<NativeBridge>, command: &str, ar
         // action can create a fresh bridge rather than reusing a dead pipe indefinitely.
         Ok(Err(BridgeFailure::Transport)) | Err(_) => {
             *guard = None;
-            Err("Le moteur Hindsight s'est interrompu. Vérifiez les opérations avant de réessayer, puis reconnectez le serveur.".into())
+            Err("Le moteur Hindsight s'est interrompu. Vérifiez « Activité › Traitements » avant de réessayer, puis reconnectez le serveur.".into())
         }
     }
 }
