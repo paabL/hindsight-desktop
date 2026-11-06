@@ -1,10 +1,10 @@
 # Release a macOS beta
 
-Public repository: `paabL/hindsight-desktop`. Keep the development repository
-private and export only reviewed source files. Preserve the public history when
-publishing updates. Exclude `.git`,
-`.claude`, personal data, real-data screenshots, build folders, `node_modules`,
-local toolchains and secrets from the export.
+Repository: `paabL/hindsight-desktop`. Development happens directly in this
+public repository: every pushed commit is public. Personal notes and scripts
+stay in the ignored `private/` folder. Never commit `.claude`, personal data,
+real bank names, real-data screenshots, build folders, `node_modules`, local
+toolchains or secrets; tests and captures use fictional data only.
 
 1. Verify Swift tests, the native bridge, frontend tests, rendering and the
    TypeScript build. Open the bundle with test settings and no personal data.

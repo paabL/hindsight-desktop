@@ -7,3 +7,6 @@ DerivedData/
 build/
 *.app
 Package.resolved
+
+# Notes et scripts personnels, jamais publiés
+private/
