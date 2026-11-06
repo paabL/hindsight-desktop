@@ -130,8 +130,8 @@ test('les messages d’état composés du moteur sont traduits sans toucher aux 
     'Merge complete (documents_imported 3); “brouillon” deleted. Run consolidation on “équipe” to add the new facts to its observations.',
   );
   assert.equal(
-    nativeSystemMessage('« équipe » est en pause. 2 rafraîchissements de modèles mentaux annulés.'),
-    '“équipe” is paused. 2 mental model refreshes cancelled.',
+    nativeSystemMessage('« équipe » est en pause. 2 régénérations de connaissances annulées.'),
+    '“équipe” is paused. 2 knowledge regenerations cancelled.',
   );
   assert.equal(nativeSystemMessage('1 fait(s) supprimé(s).'), '1 fact deleted.');
   assert.equal(

@@ -272,10 +272,11 @@ export function ModelWorkflowSettings({
     (!on && !canEnable) ||
     (flow === 'recall' && on && !recall.shared);
   const labels: Record<Flow, string> = {
-    reflect: t('Répondre', 'Answer'),
-    retain: t('Mémoriser', 'Remember'),
-    pages: 'Pages',
-    recall: t('Rechercher', 'Search'),
+    // Mêmes noms de fonctions que la barre latérale, la recherche, le comportement et l’activité.
+    reflect: t('Réponses', 'Answers'),
+    retain: t('Extraction et consolidation', 'Extraction & consolidation'),
+    pages: t('Connaissances', 'Knowledge'),
+    recall: t('Recherche', 'Search'),
   };
   function modelSelect(id: string, title: string) {
     const r = role(id),
@@ -387,7 +388,7 @@ export function ModelWorkflowSettings({
       content: (
         <div className="mw-row">
           <Help
-            title={t('Recherche mémoire', 'Memory search')}
+            title={t('Recherche', 'Search')}
             text={t(
               'Retrouve les faits et classe les candidats. Le classement peut lui aussi utiliser le modèle de décision, indépendamment de la réflexion.',
               'Finds facts and ranks candidates. Ranking can also use the decision model, independently of reflection.',
@@ -399,7 +400,7 @@ export function ModelWorkflowSettings({
               <>
                 <span>{recall.model || recall.provider}</span>
                 <button className="mw-related" onClick={() => setFlow('recall')}>
-                  {t('Réglé dans Rechercher', 'Set in Search')} <ArrowUpRight size={13} />
+                  {t('Réglé dans Recherche', 'Set in Search')} <ArrowUpRight size={13} />
                 </button>
               </>
             ) : (
@@ -539,7 +540,7 @@ export function ModelWorkflowSettings({
     nodes = [
       gen(
         'query',
-        t('Réflexion', 'Reflection'),
+        t('Rédaction', 'Writing'),
         modelRole,
         t(
           'Formule la recherche et rédige la réponse. Sans décision spécialisée, choisit aussi quand arrêter de chercher.',
@@ -560,7 +561,10 @@ export function ModelWorkflowSettings({
         ),
       );
     nodes.push(
-      result(modelRole, flow === 'pages' ? t('Actualiser la page', 'Update page') : undefined),
+      result(
+        modelRole,
+        flow === 'pages' ? t('Régénérer la page', 'Regenerate the page') : undefined,
+      ),
     );
     edges = on
       ? [
@@ -603,7 +607,7 @@ export function ModelWorkflowSettings({
         t('Consolidation', 'Consolidation'),
         'consolidation',
         t(
-          'Rassemble les faits pour créer ou actualiser les observations.',
+          'Rassemble les faits pour créer ou mettre à jour les observations.',
           'Combines facts to create or update observations.',
         ),
         Database,
@@ -648,13 +652,13 @@ export function ModelWorkflowSettings({
         'write',
         t('Rédaction', 'Writing'),
         'mental_model',
-        t('Actualise la page avec les faits utiles.', 'Updates the page using relevant facts.'),
+        t('Réécrit la page avec les faits utiles.', 'Rewrites the page using relevant facts.'),
         NotebookText,
       ),
       memory(
         'page',
         'Page',
-        t('Conservée ou actualisée', 'Kept or updated'),
+        t('Conservée ou régénérée', 'Kept or regenerated'),
         t(
           'La page reste intacte si aucun changement utile n’est détecté.',
           'The page remains unchanged when no relevant change is found.',
@@ -724,8 +728,8 @@ export function ModelWorkflowSettings({
           <Help
             title={t('Modèle de décision', 'Decision model')}
             text={t(
-              'Active la décision spécialisée pour cette fonction. Les banques peuvent remplacer ces valeurs. Le classement dans Rechercher et l’évaluation dans Répondre sont indépendants.',
-              'Enables specialized decisions for this function. Banks may override these defaults. Search ranking and Answer evidence evaluation are independent.',
+              'Active la décision spécialisée pour cette fonction. Les banques peuvent remplacer ces valeurs. Le classement dans Recherche et l’évaluation dans Réponses sont indépendants.',
+              'Enables specialized decisions for this function. Banks may override these defaults. Ranking in Search and evidence evaluation in Answers are independent.',
             )}
             icon={GitBranch}
           />

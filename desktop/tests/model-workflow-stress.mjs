@@ -33,7 +33,10 @@ const prepare = (dialog) =>
   dialog.getByRole('button', { name: 'Prepare these changes', exact: true });
 const dialog = (page) => page.getByRole('dialog');
 async function openRole(page, title) {
-  await page.locator('.role-card').filter({ hasText: title }).click();
+  await page
+    .locator('.role-card')
+    .filter({ has: page.getByRole('heading', { name: title, exact: true }) })
+    .click();
   await expect(dialog(page)).toBeVisible();
   return dialog(page);
 }
@@ -190,10 +193,10 @@ check('decision tabs support arrows, Home and End without preparing changes', as
   await page.keyboard.press('ArrowRight');
   await expect(editor.getByRole('tab', { name: 'Search', exact: true })).toBeFocused();
   await expect(
-    editor.getByRole('combobox', { name: 'Fournisseur pour recall', exact: true }),
+    editor.getByRole('combobox', { name: 'Recherche : fournisseur', exact: true }),
   ).toBeVisible();
   await page.keyboard.press('End');
-  await expect(editor.getByRole('tab', { name: 'Pages', exact: true })).toHaveAttribute(
+  await expect(editor.getByRole('tab', { name: 'Knowledge', exact: true })).toHaveAttribute(
     'aria-selected',
     'true',
   );
@@ -245,11 +248,11 @@ check(
   'cancelling role edits sends nothing and reopening uses the unchanged provider',
   async (page) => {
     await open(page);
-    let editor = await openRole(page, 'Réflexion');
+    let editor = await openRole(page, 'Réponses');
     await editor.getByRole('combobox', { name: 'Fournisseur', exact: true }).selectOption('gemini');
     await editor.getByRole('button', { name: 'Cancel', exact: true }).click();
     assert.deepEqual(await calls(page), []);
-    editor = await openRole(page, 'Réflexion');
+    editor = await openRole(page, 'Réponses');
     await expect(editor.getByRole('combobox', { name: 'Fournisseur', exact: true })).toHaveValue(
       'claude-code',
     );
@@ -260,7 +263,7 @@ check(
   'a delayed rejected field stops the batch, retains the editor and accepts one retry',
   async (page) => {
     await open(page);
-    const editor = await openRole(page, 'Réflexion');
+    const editor = await openRole(page, 'Réponses');
     await editor.getByRole('combobox', { name: 'Fournisseur', exact: true }).selectOption('gemini');
     await editor.locator('.model-advanced > summary').click();
     await editor
@@ -332,7 +335,7 @@ check(
   'changed script/revision blocks stale edits, including a context change during a delayed response',
   async (page) => {
     await open(page);
-    let editor = await openRole(page, 'Réflexion');
+    let editor = await openRole(page, 'Réponses');
     await editor.getByRole('combobox', { name: 'Fournisseur', exact: true }).selectOption('gemini');
     await page.evaluate(() =>
       window.modelFixture.update({
@@ -342,7 +345,7 @@ check(
     await expect(prepare(editor)).toBeDisabled();
     await expect(editor.getByRole('alert')).toContainText('Settings changed');
     await editor.getByRole('button', { name: 'Cancel', exact: true }).click();
-    editor = await openRole(page, 'Réflexion');
+    editor = await openRole(page, 'Réponses');
     await editor.getByRole('combobox', { name: 'Fournisseur', exact: true }).selectOption('gemini');
     await page.evaluate(() => {
       window.modelFixture.delay = 200;
@@ -424,7 +427,7 @@ check(
       }));
       f.update({ modelsByProvider: { ...f.data.modelsByProvider, gemini: models } });
     });
-    const editor = await openRole(page, 'Réflexion');
+    const editor = await openRole(page, 'Réponses');
     const start = performance.now();
     await editor.getByRole('combobox', { name: 'Fournisseur', exact: true }).selectOption('gemini');
     const models = editor.getByRole('combobox', { name: 'Modèle', exact: true });

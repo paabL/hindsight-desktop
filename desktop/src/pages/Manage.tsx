@@ -15,7 +15,8 @@ import {
   Pause,
   Play,
   Plus,
-  RefreshCw,
+  RotateCcw,
+  RotateCw,
   Save,
   Search,
   Server,
@@ -361,8 +362,8 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
               {toggle(
                 'mentalModelRefreshUseDecisionModel',
                 t(
-                  'Pages de connaissance : rafraîchir avec le modèle de décision',
-                  'Knowledge pages: refresh with the decision model',
+                  'Pages de connaissance : régénérer avec le modèle de décision',
+                  'Knowledge pages: regenerate with the decision model',
                 ),
                 t(
                   'Même tri que reflect pendant une régénération complète.',
@@ -388,7 +389,7 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
               {toggle(
                 'enableTextSearch',
                 t('Recherche textuelle', 'Text search'),
-                t('Retrouver des faits par leurs mots.', 'Find facts by their words.'),
+                t('Trouve les faits par leurs mots.', 'Finds facts by their words.'),
               )}
               {toggle(
                 'enableTemporalRetrieval',
@@ -461,7 +462,7 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
                 onChange={(e) => setAdvanced(e.target.value)}
                 placeholder={'{\n  "entity_labels": [],\n  "retain_strategies": []\n}'}
               />
-              <Button kind="danger" icon={RefreshCw} onClick={() => void run('memory.reset')}>
+              <Button kind="danger" icon={RotateCcw} onClick={() => void run('memory.reset')}>
                 {' '}
                 {t('Revenir aux réglages du serveur', 'Reset to server settings')}
               </Button>
@@ -1387,7 +1388,7 @@ export function ServerSettings({ data, run, busy, notify, navigate }: PageProps)
                 {t('Arrêter', 'Stop')}
               </Button>
               <Button
-                icon={RefreshCw}
+                icon={RotateCw}
                 disabled={serviceBusy}
                 onClick={() => void run('service.restart')}
               >
@@ -1685,9 +1686,9 @@ export function ServerSettings({ data, run, busy, notify, navigate }: PageProps)
                 items={[
                   { id: 'general', label: t('Modèle', 'Model') },
                   { id: 'recall', label: t('Recherche', 'Search') },
-                  { id: 'reflect', label: t('Réponse', 'Answer') },
+                  { id: 'reflect', label: t('Réponses', 'Answers') },
                   { id: 'consolidation', label: t('Consolidation', 'Consolidation') },
-                  { id: 'pages', label: t('Pages', 'Pages') },
+                  { id: 'pages', label: t('Connaissances', 'Knowledge') },
                 ]}
               />
             )}

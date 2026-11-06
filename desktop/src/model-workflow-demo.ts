@@ -3,10 +3,10 @@ import type { Row } from './types';
 const P = 'HINDSIGHT_API_';
 const definitions = [
   ['default', 'LLM par défaut', 'LLM_', 'openai-codex', 'gpt-6-luna'],
-  ['retain', 'Extraction', 'RETAIN_LLM_', 'openai-codex', 'gpt-6-luna'],
+  ['retain', 'Extraction des faits', 'RETAIN_LLM_', 'openai-codex', 'gpt-6-luna'],
   ['consolidation', 'Consolidation', 'CONSOLIDATION_LLM_', 'openai-codex', 'gpt-6-luna'],
-  ['reflect', 'Réflexion', 'REFLECT_LLM_', 'claude-code', 'claude-sonnet-5-5'],
-  ['mental_model', 'Pages', 'MENTAL_MODEL_REFRESH_LLM_', 'openai-codex', 'gpt-6-luna'],
+  ['reflect', 'Réponses', 'REFLECT_LLM_', 'claude-code', 'claude-sonnet-5-5'],
+  ['mental_model', 'Connaissances', 'MENTAL_MODEL_REFRESH_LLM_', 'openai-codex', 'gpt-6-luna'],
   ['vlm', 'Vision', 'VLM_', 'gemini', 'gemini-3.5-flash'],
 ];
 const flags = [
@@ -89,25 +89,25 @@ export function modelWorkflowDemo() {
   });
   const decisionRole = roles.find((role) => role.id === 'decision')!;
   decisionRole.fields.push(
-    { name: P + 'RECALL_DECISION_MODEL_PROVIDER', label: 'Fournisseur pour recall', value: '' },
+    { name: P + 'RECALL_DECISION_MODEL_PROVIDER', label: 'Recherche : fournisseur', value: '' },
     {
       name: P + 'RECALL_DECISION_MODEL_PRUNE',
-      label: 'Recall : écarter les faits inutiles',
+      label: 'Recherche : écarter les faits inutiles',
       value: 'false',
     },
     {
       name: P + 'RECALL_DECISION_MODEL_DEDUP',
-      label: 'Recall : retirer les doublons',
+      label: 'Recherche : retirer les doublons',
       value: 'false',
     },
     {
       name: P + 'MENTAL_MODEL_DELTA_USE_DECISION_MODEL',
-      label: 'Pages : filtrage des nouveautés',
+      label: 'Pages de connaissance : filtrage des nouveaux faits',
       value: 'true',
     },
     {
       name: P + 'MENTAL_MODEL_REFRESH_USE_DECISION_MODEL',
-      label: 'Pages : décision dans la réflexion',
+      label: 'Pages de connaissance : décision pendant la régénération',
       value: 'true',
     },
     { name: P + 'DECISION_MODEL_BASE_URL', label: 'URL de base', value: 'http://127.0.0.1:8766' },

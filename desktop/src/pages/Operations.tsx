@@ -6,7 +6,6 @@ import {
   Clock3,
   Layers3,
   ListTodo,
-  RefreshCw,
   RotateCcw,
   Sparkles,
   Trash2,
@@ -37,12 +36,20 @@ export default function Operations({ data, run, busy, refresh }: PageProps) {
     cancelled: t('Annulée', 'Cancelled'),
   };
   const typeNames: Record<string, string> = {
-    retain: t('Extraction de faits', 'Fact extraction'),
+    // Mêmes noms que l’écran Consommation et les confirmations du moteur (OperationRow.typeTitle).
+    retain: t('Extraction des faits', 'Fact extraction'),
     batch_retain: t('Extraction par lot', 'Batch extraction'),
     consolidation: t('Consolidation', 'Consolidation'),
-    refresh_mental_model: t('Actualisation des connaissances', 'Knowledge refresh'),
+    refresh_mental_model: t('Régénération des connaissances', 'Knowledge regeneration'),
     reprocess_document: t('Retraitement', 'Reprocessing'),
     file_convert_retain: t('Conversion et extraction', 'Conversion and extraction'),
+    webhook_delivery: t('Envoi de webhook', 'Webhook delivery'),
+    bank_export: t('Export', 'Export'),
+    export: t('Export', 'Export'),
+    bank_import: t('Import', 'Import'),
+    import: t('Import', 'Import'),
+    bank_clone: t('Clonage', 'Clone'),
+    clone: t('Clonage', 'Clone'),
   };
 
   const [filter, setFilter] = useState(data.statusFilter || 'all');
@@ -110,6 +117,10 @@ export default function Operations({ data, run, busy, refresh }: PageProps) {
               icon={Layers3}
               kind="primary"
               disabled={busy || readOnly}
+              title={t(
+                'Fusionne les faits récents en observations (appels LLM).',
+                'Merges recent facts into observations (LLM calls).',
+              )}
               onClick={() => void run('operations.consolidate')}
             >
               {t('Consolider', 'Consolidate')}
@@ -166,6 +177,13 @@ export default function Operations({ data, run, busy, refresh }: PageProps) {
           {t('Récupérer la consolidation', 'Recover consolidation')}
         </Button>
       </div>
+      {/* Ce que fait chaque action, sans survol : consolider, relancer et récupérer sont trois choses distinctes. */}
+      <p className="form-hint operations-help">
+        {t(
+          'Consolider fusionne les faits récents en observations (appels LLM). Relancer les échecs remet en file les opérations échouées. Récupérer la consolidation remet en file les faits dont la consolidation a échoué.',
+          'Consolidate merges recent facts into observations (LLM calls). Retry failed operations requeues failed operations. Recover consolidation requeues facts whose consolidation failed.',
+        )}
+      </p>
       <Tabs
         value={filter}
         onChange={(value) => {
@@ -243,7 +261,7 @@ export default function Operations({ data, run, busy, refresh }: PageProps) {
                 <div className="operation-actions">
                   {item.status === 'failed' && (
                     <IconButton
-                      icon={RefreshCw}
+                      icon={RotateCcw}
                       label={t('Relancer cette opération', 'Retry this operation')}
                       disabled={busy || readOnly}
                       onClick={() => void run('operation.retry', { id: item.id })}
@@ -296,8 +314,8 @@ export default function Operations({ data, run, busy, refresh }: PageProps) {
                 : t('Aucune opération dans ce filtre', 'No operations match this filter')
             }
             description={t(
-              'Les extractions, consolidations et actualisations des connaissances apparaîtront ici.',
-              'Extractions, consolidations and knowledge refreshes will appear here.',
+              'Les extractions de faits, consolidations et régénérations des connaissances apparaîtront ici.',
+              'Fact extractions, consolidations and knowledge regenerations will appear here.',
             )}
           />
         )}

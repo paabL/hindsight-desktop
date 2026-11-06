@@ -320,7 +320,7 @@ export default function Consumption({ data, run, busy, notify }: PageProps) {
                   <span className={`legend-dot color-${i % 4}`} />
                   <span>
                     {{
-                      retain: t('Extraction de faits', 'Fact extraction'),
+                      retain: t('Extraction des faits', 'Fact extraction'),
                       consolidation: t('Consolidation', 'Consolidation'),
                       reflect: t('Réponses', 'Answers'),
                       mental_model: t('Connaissances', 'Knowledge'),

@@ -46,7 +46,7 @@ try {
   await expect(dedup).toHaveValue('true');
   await page.getByRole('tab', { name: 'Texte exact', exact: true }).click();
   await expect(prune).toHaveCount(0);
-  await page.getByRole('tab', { name: 'Retrouver des faits', exact: true }).click();
+  await page.getByRole('tab', { name: 'Recherche par le sens', exact: true }).click();
   await expect(prune).toHaveValue('false');
   await nav.getByRole('button', { name: /^Activité/ }).click();
   await page

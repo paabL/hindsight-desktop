@@ -78,7 +78,7 @@ final class MemoryWorkspaceTests: XCTestCase {
         XCTAssertTrue(s.transport.requests.isEmpty)
         XCTAssertNil(s.vm.confirmation)
         XCTAssertNil(s.vm.error)
-        XCTAssertTrue(s.vm.message?.contains("Dossier actualisé") == true)
+        XCTAssertTrue(s.vm.message?.contains("Sources collectées") == true)
     }
     func testPreparingCatalogueDoesNotNeedACollectorScript() async throws {
         let s = try setup()

@@ -1,5 +1,5 @@
 import { getLanguage } from './i18n-core.ts';
-import { advancedConfirmationMessage } from './native-confirmations.ts';
+import { advancedConfirmationMessage, operationTitle } from './native-confirmations.ts';
 import { nativeCatalogText, nativeRoleEffective } from './native-catalog.ts';
 import type { Confirmation, Row, Snapshot } from './types';
 
@@ -40,7 +40,7 @@ const exact: Record<string, string> = {
   Rétablir: 'Restore',
   Invalider: 'Invalidate',
   Retraiter: 'Reprocess',
-  Rafraîchir: 'Refresh',
+  Régénérer: 'Regenerate',
   Cloner: 'Clone',
   Fusionner: 'Merge',
   Restaurer: 'Restore',
@@ -316,8 +316,9 @@ const exact: Record<string, string> = {
   'La collecte a dépassé le délai prévu. Les archives déjà enregistrées sont conservées.':
     'Collection timed out. Archives that were already saved are kept.',
   'Connectez Hindsight pour comparer les versions.': 'Connect Hindsight to compare versions.',
-  'Dossier actualisé. Aucun envoi ni traitement Hindsight.':
-    'Folder refreshed. Nothing was uploaded or processed by Hindsight.',
+  'Sources collectées. Aucun envoi ni traitement Hindsight.':
+    'Sources collected. Nothing was uploaded or processed by Hindsight.',
+  'Recherche des régénérations en double…': 'Looking for duplicate regenerations…',
   'Choisissez un dossier mémoire et une banque.': 'Choose a memory folder and a memory bank.',
   'Choisissez un catalogue existant.': 'Choose an existing catalog.',
   'Un envoi est encore en cours. Actualisez après son traitement.':
@@ -488,7 +489,7 @@ const engineRules: Rule[] = [
     /^Modèle mental créé ; génération lancée \((.*)\)\.$/,
     (id) => `Mental model created; generation started (${id}).`,
   ],
-  [/^Rafraîchissement lancé \((.*)\)\.$/, (id) => `Refresh started (${id}).`],
+  [/^Régénération lancée \((.*)\)\.$/, (id) => `Regeneration started (${id}).`],
   [/^Archive prête \((.*)\)\.$/, (size) => `Archive ready (${size}).`],
   [/^Échec de l'export : ([\s\S]*)$/, (detail) => `Export failed: ${detail}`],
   [/^Échec du clonage : ([\s\S]*)$/, (detail) => `Clone failed: ${detail}`],
@@ -507,23 +508,21 @@ const engineRules: Rule[] = [
     (bank) => `Memory bank “${bank}” is paused: nothing is sent to it. Resume it to continue.`,
   ],
   [
-    /^(?:« (.*?) » est en pause|Toutes les banques sont en pause)\.( Rien n'est envoyé ; la consolidation automatique et les rafraîchissements de modèles mentaux seront coupés dès que le serveur répondra\.)?(?: ([\d\s,.]+) rafraîchissements? de modèles? menta(?:l|ux) annulés?\.)?(?: Consolidation automatique pas encore coupée pour (.*) \(nouvel essai à la reconnexion\)\.)?$/,
+    /^(?:« (.*?) » est en pause|Toutes les banques sont en pause)\.( Rien n'est envoyé ; la consolidation automatique et les régénérations de connaissances seront coupées dès que le serveur répondra\.)?(?: ([\d\s,.]+) régénérations? de connaissances? annulées?\.)?(?: Consolidation automatique pas encore coupée pour (.*) \(nouvel essai à la reconnexion\)\.)?$/,
     (bank, nothing, cancelled, failures) =>
       (bank ? `“${bank}” is paused.` : 'All memory banks are paused.') +
       (nothing
-        ? ' Nothing is sent. Automatic consolidation and mental model refreshes will be turned off as soon as the server responds.'
+        ? ' Nothing is sent. Automatic consolidation and knowledge regenerations will be turned off as soon as the server responds.'
         : '') +
-      (cancelled
-        ? ` ${count(cancelled, 'mental model refresh', 'mental model refreshes')} cancelled.`
-        : '') +
+      (cancelled ? ` ${count(cancelled, 'knowledge regeneration')} cancelled.` : '') +
       (failures
         ? ` Automatic consolidation is not turned off yet for ${failures} (it will be retried on reconnect).`
         : ''),
   ],
   [/^Impossible de lister la file : ([\s\S]*)$/, (detail) => `Unable to list the queue: ${detail}`],
   [
-    /^Aucun rafraîchissement de modèle mental en double(?: dans « (.*) »)?\.$/,
-    (bank) => `No duplicate mental model refreshes${bank ? ` in “${bank}”` : ''}.`,
+    /^Aucune régénération de connaissance en double(?: dans « (.*) »)?\.$/,
+    (bank) => `No duplicate knowledge regenerations${bank ? ` in “${bank}”` : ''}.`,
   ],
   [
     /^« (.*?) » n'est plus en pause à part, mais la pause de toutes les banques s'applique encore\.(?: À rétablir dès que possible : (.*)\.)?$/,
@@ -741,7 +740,7 @@ const rules: Rule[] = [
   [/^Modifier la directive « (.*) » \?$/, (name) => `Edit directive “${name}”?`],
   [/^Supprimer la directive « (.*) » \?$/, (name) => `Delete directive “${name}”?`],
   [/^Créer le modèle mental « (.*) » \?$/, (name) => `Create mental model “${name}”?`],
-  [/^Rafraîchir « (.*) » \?$/, (name) => `Refresh “${name}”?`],
+  [/^Régénérer « (.*) » \?$/, (name) => `Regenerate “${name}”?`],
   [/^Supprimer le modèle mental « (.*) » \?$/, (name) => `Delete mental model “${name}”?`],
   [/^Supprimer la page de connaissance « (.*) » \?$/, (name) => `Delete knowledge page “${name}”?`],
   [/^Cloner « (.*) » vers « (.*) » \?$/, (source, target) => `Clone “${source}” into “${target}”?`],
@@ -757,8 +756,8 @@ const rules: Rule[] = [
   [/^Relancer (\d+) opération\(s\) échouée\(s\) \?$/, (n) => `Retry ${n} failed operation(s)?`],
   [/^Annuler ([\d\s]+) opérations? en attente \?$/, (n) => `Cancel ${n} pending operation(s)?`],
   [
-    /^Annuler ([\d\s]+) rafraîchissements? en double \?$/,
-    (n) => `Cancel ${n} duplicate refresh(es)?`,
+    /^Annuler ([\d\s]+) régénérations? en double \?$/,
+    (n) => `Cancel ${n} duplicate regeneration(s)?`,
   ],
   [/^Activer le journal d'audit pour « (.*) » \?$/, (id) => `Enable the audit log for “${id}”?`],
   [
@@ -834,8 +833,8 @@ const bodies: Record<string, string> = {
     'Irreversible. Documents remain, but their facts are deleted. Export the memory bank first.',
   "Faits, documents, entités, observations, configuration : tout est supprimé, sans retour possible. Exportez-la d'abord.":
     'Facts, documents, entities, observations and settings will all be permanently deleted. Export the memory bank first.',
-  'La banque revient aux valeurs globales du serveur (missions, disposition, réglages de rétention/recall…).':
-    'The memory bank returns to the server’s global settings (missions, disposition, retention and recall settings…).',
+  "La banque revient aux valeurs globales du serveur (missions, disposition, réglages d'extraction et de recherche…).":
+    'The memory bank returns to the server’s global settings (missions, disposition, extraction and search settings…).',
   "Il sera exclu du recall et de la consolidation ; ses liens et observations dérivées sont retirés. C'est réversible (« Rétablir »).":
     'It will be excluded from recall and consolidation. Its derived links and observations will be removed. You can reverse this with Restore.',
   'Il redevient visible du recall et sera reconsolidé.':
@@ -985,7 +984,7 @@ const messageRules: Array<[RegExp, Rule]> = [
     ],
   ],
   [
-    /^Rafraîchir « .* » \?$/,
+    /^Régénérer « .* » \?$/,
     [
       /^(Le modèle mental est régénéré|La page de connaissance est régénérée) par le LLM \(opération asynchrone\)\.(?:\n\n([^\n]+))?$/,
       (kind, cost) =>
@@ -1033,10 +1032,18 @@ const messageRules: Array<[RegExp, Rule]> = [
     ],
   ],
   [
+    /^Annuler ([\d\s]+) régénérations? en double \?$/,
+    [
+      /^([\d\s]+) connaissances? (?:est|sont) dans la file plusieurs fois : ([\d\s]+) régénérations? en trop (?:sera annulée|seront annulées)\.\nChaque connaissance garde une seule régénération \(celle en cours, sinon la plus récente\) : son contenu final est le même, sans payer plusieurs fois\.$/,
+      (items, extra) =>
+        `${count(items, 'knowledge item is', 'knowledge items are')} queued more than once: ${count(extra, 'extra regeneration')} will be cancelled.\nEach knowledge item keeps a single regeneration (the running one, otherwise the most recent): its final content is the same, without paying several times.`,
+    ],
+  ],
+  [
     /^Annuler cette opération \?$/,
     [
       /^« ([\s\S]*) » sera interrompue si elle est en attente ou en cours\.$/,
-      (title) => `“${title}” will be interrupted if it is pending or running.`,
+      (title) => `“${operationTitle(title)}” will be interrupted if it is pending or running.`,
     ],
   ],
   [
@@ -1044,7 +1051,7 @@ const messageRules: Array<[RegExp, Rule]> = [
     [
       /^L'entrée d'historique « ([\s\S]*) » sera supprimée du serveur\. Les faits déjà créés ne sont pas touchés\.$/,
       (title) =>
-        `History entry “${title}” will be deleted from the server. Existing facts are kept.`,
+        `History entry “${operationTitle(title)}” will be deleted from the server. Existing facts are kept.`,
     ],
   ],
   [
@@ -1052,7 +1059,7 @@ const messageRules: Array<[RegExp, Rule]> = [
     [
       /^« ([\s\S]*) »([\s\S]*) sera remise en file\. Selon son type, cela peut consommer des appels LLM\.$/,
       (title, target) =>
-        `“${title}”${target} will be requeued. Depending on its type, this may use LLM calls.`,
+        `“${operationTitle(title)}”${target} will be requeued. Depending on its type, this may use LLM calls.`,
     ],
   ],
   [

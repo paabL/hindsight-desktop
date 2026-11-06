@@ -112,7 +112,7 @@ try {
     await list.locator('.source-row').click();
   }
   await expect(list.locator('.source-row')).toHaveCount(30);
-  await page.getByRole('button', { name: 'Check Hindsight status', exact: true }).click();
+  await page.getByRole('button', { name: 'Refresh Hindsight status', exact: true }).click();
   const check = await page.evaluate(() => window.__sourceFixture.requests.at(-1));
   assert.deepEqual(check, { command: 'section', args: { section: 'sources' } });
   const start = performance.now();

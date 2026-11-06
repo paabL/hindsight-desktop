@@ -51,7 +51,7 @@ export function Dashboard({ data, navigate, run, busy }: PageProps) {
       actions={
         <div className="action-row">
           <Button kind="primary" icon={Search} onClick={() => navigate('search')}>
-            {t('Rechercher et questionner', 'Search and ask')}
+            {t('Rechercher et obtenir des réponses', 'Search and get answers')}
           </Button>
           <Button icon={Layers3} onClick={() => navigate('facts')}>
             {t('Explorer la mémoire', 'Explore memory')}

@@ -96,7 +96,7 @@ try {
   assert.equal(await page.evaluate(() => window.__serviceFixture.starts), 2);
   await page.locator('.role-card').filter({ hasText: 'Décision' }).click();
   const editor = page.getByRole('dialog');
-  for (const name of ['Modèle', 'Recherche', 'Réponse', 'Consolidation', 'Pages']) {
+  for (const name of ['Modèle', 'Recherche', 'Réponses', 'Consolidation', 'Connaissances']) {
     await editor.getByRole('tab', { name, exact: true }).click();
     await expect(editor).toBeVisible();
   }

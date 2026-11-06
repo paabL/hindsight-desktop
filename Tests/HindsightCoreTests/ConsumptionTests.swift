@@ -368,7 +368,7 @@ final class ConsumptionTests: XCTestCase {
         await c.pause(bank: testBank, reason: nil)
         let cancelled = t.requests.filter { $0.method == "DELETE" }.compactMap { $0.path.split(separator: "/").last.map(String.init) }
         XCTAssertEqual(Set(cancelled), ["r1", "r2", "r3", "r4"], "en cours compris ; l'extraction continue")
-        XCTAssertTrue(c.message?.contains("4 rafraîchissements de modèles mentaux annulés") == true, c.message ?? "")
+        XCTAssertTrue(c.message?.contains("4 régénérations de connaissances annulées") == true, c.message ?? "")
 
         // Pendant la pause, ce qui arrive est annulé à son tour ; après la reprise, plus rien n'est touché.
         let again = await c.sweepRefreshes()
@@ -385,7 +385,7 @@ final class ConsumptionTests: XCTestCase {
         serveRefreshQueue(t)
         await c.requestCancelDuplicateRefreshes(bank: testBank)
         let confirmation = try XCTUnwrap(c.confirmation)
-        XCTAssertTrue(confirmation.message.contains("1 modèle mental est"), confirmation.message)
+        XCTAssertTrue(confirmation.message.contains("1 connaissance est"), confirmation.message)
         XCTAssertFalse(t.requests.contains { $0.method == "DELETE" }, "rien avant la confirmation")
         await confirmation.perform()
         let cancelled = t.requests.filter { $0.method == "DELETE" }.compactMap { $0.path.split(separator: "/").last.map(String.init) }

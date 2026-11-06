@@ -111,6 +111,33 @@ Slow requests show activity and disable relevant controls without locking unrela
 navigation. Errors remain readable,
 empty lists explain how to start, and missing information is shown as unknown.
 
+## Vocabulary
+
+One name per memory function and one verb per action, identical in the sidebar,
+tabs, settings, Activity, server roles and engine messages. Do not introduce a
+synonym in a new view.
+
+| Server function | French | English |
+| --- | --- | --- |
+| `retain` | Extraction des faits (tab: Extraction) | Fact extraction (tab: Extraction) |
+| `consolidation` | Consolidation | Consolidation |
+| `recall` | Recherche | Search |
+| `reflect` | Réponses | Answers |
+| mental models | Connaissances: page de connaissance, modèle mental | Knowledge: knowledge page, mental model |
+
+A fact is any memory unit counted by the server's `fact_count`, observations
+included.
+
+| Action | French | English | Effect |
+| --- | --- | --- | --- |
+| Reread data (↻ icon) | Actualiser | Refresh | Changes nothing anywhere |
+| Run the folder collector | Collecter | Collect | Updates this Mac's catalog only |
+| Send sources | Envoyer | Upload | Starts fact extraction in Hindsight |
+| Start consolidation | Consolider | Consolidate | LLM calls; facts become observations |
+| Rewrite a knowledge item | Régénérer | Regenerate | LLM call |
+| Extract one document again | Retraiter | Reprocess | LLM calls |
+| Requeue failed work | Relancer | Retry | May use LLM calls |
+
 ## Accessibility and shortcuts
 
 - Named buttons and fields, keyboard navigation, and visible focus.

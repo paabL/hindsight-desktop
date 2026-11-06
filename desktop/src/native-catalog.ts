@@ -9,14 +9,15 @@ const catalog: Record<string, string> = {
   'Clé propre à cette opération, masquée': 'Operation-specific key, hidden',
   'Réponses : utiliser la décision': 'Answers: use decision model',
   'Consolidation : utiliser la décision': 'Consolidation: use decision model',
-  'Pages : décision dans la réflexion': 'Pages: decisions during reflection',
-  'Pages : filtrage des nouveautés': 'Pages: filter new memories',
+  'Pages de connaissance : décision pendant la régénération':
+    'Knowledge pages: decision model during regeneration',
+  'Pages de connaissance : filtrage des nouveaux faits': 'Knowledge pages: filter new facts',
   'true (défaut) / false ; une banque peut remplacer ce réglage':
     'true (default) / false; a bank can override this setting',
   'true (défaut) / false': 'true (default) / false',
   'true (défaut) / false ; parcours de repli': 'true (default) / false; fallback workflow',
-  'true (défaut) / false ; actualisation incrémentale':
-    'true (default) / false; incremental refresh',
+  'true (défaut) / false ; régénération incrémentale':
+    'true (default) / false; incremental regeneration',
   'ChatGPT (connexion du serveur, 1.1.0)': 'ChatGPT (server sign-in, 1.1.0)',
   Fournisseur: 'Provider',
   'ex. claude-code, gemini, openai, anthropic, ollama…':
@@ -42,23 +43,24 @@ const catalog: Record<string, string> = {
   'Dossier de connexion ChatGPT': 'ChatGPT sign-in folder',
   'Fournisseur chatgpt (serveur 1.1.0) ; vide = ~/.hindsight/chatgpt':
     'chatgpt provider (server 1.1.0); empty = ~/.hindsight/chatgpt',
-  'Rétention (extraction des faits)': 'Retention (fact extraction)',
+  'Extraction des faits': 'Fact extraction',
   'LLM qui lit les documents et extrait les faits.': 'LLM that reads documents and extracts facts.',
-  'Consolidation (observations)': 'Consolidation (observations)',
+  Consolidation: 'Consolidation',
   'LLM qui fusionne les faits en observations.': 'LLM that combines facts into observations.',
   'Taille de lot': 'Batch size',
   Parallélisme: 'Parallelism',
   "N'agit qu'entre portées d'observation différentes : les lots d'une même portée passent l'un après l'autre":
     'Only applies across different observation scopes: batches within the same scope run one after another',
-  'Reflect (réponses)': 'Reflect (answers)',
-  'LLM qui rédige les réponses de reflect.': 'LLM that writes reflect answers.',
-  'Modèles mentaux': 'Mental models',
-  'LLM qui rafraîchit les modèles mentaux.': 'LLM that refreshes mental models.',
+  Réponses: 'Answers',
+  'LLM qui rédige les réponses à partir de la mémoire.': 'LLM that writes answers from memory.',
+  Connaissances: 'Knowledge',
+  'LLM qui régénère les connaissances (pages de connaissance et modèles mentaux).':
+    'LLM that regenerates knowledge (knowledge pages and mental models).',
   'Vision (VLM)': 'Vision (VLM)',
   'Modèle qui décrit les images des documents.': 'Model that describes document images.',
   'Modèle de décision (1.1.0+ ; Hindsight en 1.2.0)': 'Decision model (1.1.0+; Hindsight in 1.2.0)',
-  "Modèle qui répond à des questions typées (choix, score) à la place d'un appel LLM, partagé par recall, reflect, consolidation et pages de connaissance. N'écrit pas de texte ; hors plafonds de dépense.":
-    'Model that answers typed questions (choices, scores) instead of an LLM call, shared by recall, reflect, consolidation and knowledge pages. Does not generate text; excluded from spending limits.',
+  "Modèle qui répond à des questions typées (choix, score) à la place d'un appel LLM, partagé par la recherche, les réponses, la consolidation et les pages de connaissance. N'écrit pas de texte ; hors plafonds de dépense.":
+    'Model that answers typed questions (choices, scores) instead of an LLM call, shared by search, answers, consolidation and knowledge pages. Does not generate text; excluded from spending limits.',
   'none (défaut), hindsight (Hindsight Inference, 1.2.0), typesafe, cloudflare, openai':
     'none (default), hindsight (Hindsight Inference, 1.2.0), typesafe, cloudflare, openai',
   'Vide = défaut du fournisseur (hindsight : hs-decide-1-flash)':
@@ -71,15 +73,14 @@ const catalog: Record<string, string> = {
   'Défaut 60': 'Default: 60',
   'Jetons max par requête': 'Maximum tokens per request',
   'Défaut 26 000 (hindsight : 54 000)': 'Default: 26,000 (hindsight: 54,000)',
-  'Fournisseur pour recall': 'Recall provider',
-  "Vide = celui du dessus, sauf hindsight : recall garde alors son reranker tant qu'il n'est pas nommé ici ; none = jamais":
-    'Empty = provider above, except hindsight: recall keeps its reranker unless explicitly selected here; none = never',
-  'Recall : écarter les faits inutiles': 'Recall: prune irrelevant facts',
+  "Vide = celui du dessus, sauf hindsight : la recherche garde alors son reranker tant qu'il n'est pas nommé ici ; none = jamais":
+    'Empty = provider above, except hindsight: search keeps its reranker unless explicitly selected here; none = never',
+  'Recherche : écarter les faits inutiles': 'Search: prune irrelevant facts',
   'true / false (défaut) ; sans requête de plus. Serveur 1.2.0':
     'true / false (default); no additional request. Server 1.2.0',
-  'Recall : retirer les doublons': 'Recall: remove duplicates',
-  'true / false (défaut) ; une requête de plus par recall. Serveur 1.2.0':
-    'true / false (default); one additional request per recall. Server 1.2.0',
+  'Recherche : retirer les doublons': 'Search: remove duplicates',
+  'true / false (défaut) ; une requête de plus par recherche. Serveur 1.2.0':
+    'true / false (default); one additional request per search. Server 1.2.0',
   'Ignoré par un serveur 1.0.0. Le fournisseur hindsight et les options prune/dedup demandent un serveur 1.2.0 ; sans URL locale, il envoie le contenu des faits à Hindsight Inference (Vectorize).':
     'Ignored by server 1.0.0. The hindsight provider and prune/dedup options require server 1.2.0; without a local URL, fact content is sent to Hindsight Inference (Vectorize).',
   'Vectorisation des faits.': 'Fact vectorization.',
@@ -102,7 +103,7 @@ const catalog: Record<string, string> = {
     'Empty = key saved by “hindsight-admin cloud login”',
   "Changer de modèle ou de dimension d'embeddings rend les vecteurs existants incompatibles : la recherche se dégrade jusqu'à une ré-indexation complète (export puis import de la banque).":
     'Changing the embedding model or dimensions makes existing vectors incompatible: search quality suffers until the bank is fully reindexed (export, then import).',
-  'Réordonnancement des résultats de recall.': 'Reranking of recall results.',
+  'Réordonnancement des résultats de recherche.': 'Reranking of search results.',
   'Modèle Cohere': 'Cohere model',
   'Clé Cohere': 'Cohere key',
   'Vide = hindsight-ai/hs-rerank-1 en 1.2.0 (cross-encoder/ms-marco-MiniLM-L-6-v2 avant), sur CPU':
@@ -161,15 +162,22 @@ const catalog: Record<string, string> = {
 };
 
 export function nativeCatalogText(fr: string): string {
-  const operationField = /^(recall|reflect|consolidation) : (fournisseur|modèle|URL|clé)$/.exec(fr);
+  const operationField = /^(Recherche|Réponses|Consolidation) : (fournisseur|modèle|URL|clé)$/.exec(
+    fr,
+  );
   if (getLanguage() === 'en' && operationField) {
+    const names: Record<string, string> = {
+      Recherche: 'Search',
+      Réponses: 'Answers',
+      Consolidation: 'Consolidation',
+    };
     const labels: Record<string, string> = {
       fournisseur: 'provider',
       modèle: 'model',
       URL: 'URL',
       clé: 'key',
     };
-    return `${operationField[1]}: ${labels[operationField[2]]}`;
+    return `${names[operationField[1]]}: ${labels[operationField[2]]}`;
   }
   if (getLanguage() !== 'en') return fr;
   if (Object.hasOwn(catalog, fr)) return catalog[fr];
@@ -236,7 +244,7 @@ export function nativeRoleEffective(role: Row, roles: Row[]): string {
   const provider = configuredValue(role, 'PROVIDER');
   if (!provider) return nativeCatalogText(original);
   const inherited = providerField.value == null && !!fallbackRole[role.id];
-  const source = role.id === 'mental_model' ? 'Reflect' : 'LLM par défaut';
+  const source = role.id === 'mental_model' ? 'rôle Réponses' : 'LLM par défaut';
   const suffix = inherited ? ` — hérité du ${source}` : '';
   if (suffix && !original.endsWith(suffix)) return original;
   const base = suffix ? original.slice(0, -suffix.length) : original;
@@ -250,5 +258,5 @@ export function nativeRoleEffective(role: Row, roles: Row[]): string {
     (base.slice(prefix.length) === 'modèle par défaut'
       ? 'default model'
       : base.slice(prefix.length).replace(/ \(défaut\)$/, ' (default)'));
-  return `${prefix}${model}${inherited ? ` — inherited from ${source === 'Reflect' ? source : 'Default LLM'}` : ''}`;
+  return `${prefix}${model}${inherited ? ` — inherited from ${source === 'rôle Réponses' ? 'the Answers role' : 'Default LLM'}` : ''}`;
 }

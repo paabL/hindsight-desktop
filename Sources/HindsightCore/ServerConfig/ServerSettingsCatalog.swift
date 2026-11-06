@@ -68,23 +68,23 @@ public enum ServerSettingsCatalog {
                     name: "HINDSIGHT_API_LLM_CHATGPT_HOME", label: "Dossier de connexion ChatGPT",
                     help: "Fournisseur chatgpt (serveur 1.1.0) ; vide = ~/.hindsight/chatgpt"),
             ], fallback: nil, caution: nil),
-        Role(id: "retain", title: "Rétention (extraction des faits)", help: "LLM qui lit les documents et extrait les faits.",
+        Role(id: "retain", title: "Extraction des faits", help: "LLM qui lit les documents et extrait les faits.",
             fields: llmFields("RETAIN_LLM_"), fallback: "default", caution: nil),
-        Role(id: "consolidation", title: "Consolidation (observations)", help: "LLM qui fusionne les faits en observations.",
+        Role(id: "consolidation", title: "Consolidation", help: "LLM qui fusionne les faits en observations.",
             fields: llmFields("CONSOLIDATION_LLM_") + [
                 Field(name: "HINDSIGHT_API_CONSOLIDATION_LLM_BATCH_SIZE", label: "Taille de lot", help: ""),
                 Field(name: "HINDSIGHT_API_CONSOLIDATION_LLM_PARALLELISM", label: "Parallélisme",
                     help: "N'agit qu'entre portées d'observation différentes : les lots d'une même portée passent l'un après l'autre"),
             ], fallback: "default", caution: nil),
-        Role(id: "reflect", title: "Reflect (réponses)", help: "LLM qui rédige les réponses de reflect.",
+        Role(id: "reflect", title: "Réponses", help: "LLM qui rédige les réponses à partir de la mémoire.",
             fields: llmFields("REFLECT_LLM_"), fallback: "default", caution: nil),
-        Role(id: "mental_model", title: "Modèles mentaux", help: "LLM qui rafraîchit les modèles mentaux.",
+        Role(id: "mental_model", title: "Connaissances", help: "LLM qui régénère les connaissances (pages de connaissance et modèles mentaux).",
             fields: llmFields("MENTAL_MODEL_REFRESH_LLM_"), fallback: "reflect", caution: nil),
         Role(id: "vlm", title: "Vision (VLM)", help: "Modèle qui décrit les images des documents.",
             fields: Array(llmFields("VLM_").prefix(4)), fallback: nil, caution: nil),
         Role(
             id: "decision", title: "Modèle de décision (1.1.0+ ; Hindsight en 1.2.0)",
-            help: "Modèle qui répond à des questions typées (choix, score) à la place d'un appel LLM, partagé par recall, reflect, consolidation et pages de connaissance. N'écrit pas de texte ; hors plafonds de dépense.",
+            help: "Modèle qui répond à des questions typées (choix, score) à la place d'un appel LLM, partagé par la recherche, les réponses, la consolidation et les pages de connaissance. N'écrit pas de texte ; hors plafonds de dépense.",
             fields: [
                 Field(
                     name: "HINDSIGHT_API_DECISION_MODEL_PROVIDER", label: "Fournisseur",
@@ -98,25 +98,27 @@ public enum ServerSettingsCatalog {
                 Field(name: "HINDSIGHT_API_DECISION_MODEL_TIMEOUT", label: "Timeout (s)", help: "Défaut 60"),
                 Field(name: "HINDSIGHT_API_DECISION_MODEL_MAX_REQUEST_TOKENS", label: "Jetons max par requête", help: "Défaut 26 000 (hindsight : 54 000)"),
                 Field(
-                    name: "HINDSIGHT_API_RECALL_DECISION_MODEL_PROVIDER", label: "Fournisseur pour recall",
-                    help: "Vide = celui du dessus, sauf hindsight : recall garde alors son reranker tant qu'il n'est pas nommé ici ; none = jamais"),
+                    name: "HINDSIGHT_API_RECALL_DECISION_MODEL_PROVIDER", label: "Recherche : fournisseur",
+                    help: "Vide = celui du dessus, sauf hindsight : la recherche garde alors son reranker tant qu'il n'est pas nommé ici ; none = jamais"),
                 Field(
-                    name: "HINDSIGHT_API_RECALL_DECISION_MODEL_PRUNE", label: "Recall : écarter les faits inutiles",
+                    name: "HINDSIGHT_API_RECALL_DECISION_MODEL_PRUNE", label: "Recherche : écarter les faits inutiles",
                     help: "true / false (défaut) ; sans requête de plus. Serveur 1.2.0"),
                 Field(
-                    name: "HINDSIGHT_API_RECALL_DECISION_MODEL_DEDUP", label: "Recall : retirer les doublons",
-                    help: "true / false (défaut) ; une requête de plus par recall. Serveur 1.2.0"),
+                    name: "HINDSIGHT_API_RECALL_DECISION_MODEL_DEDUP", label: "Recherche : retirer les doublons",
+                    help: "true / false (défaut) ; une requête de plus par recherche. Serveur 1.2.0"),
             ] + ["RECALL", "REFLECT", "CONSOLIDATION"].flatMap { operation in
-                (operation == "RECALL" ? [] : [Field(name: "HINDSIGHT_API_\(operation)_DECISION_MODEL_PROVIDER", label: "\(operation.lowercased()) : fournisseur", help: "Vide = héritage global ; none = désactivé")]) + [
-                    Field(name: "HINDSIGHT_API_\(operation)_DECISION_MODEL_MODEL", label: "\(operation.lowercased()) : modèle", help: "Modèle propre à cette opération"),
-                    Field(name: "HINDSIGHT_API_\(operation)_DECISION_MODEL_BASE_URL", label: "\(operation.lowercased()) : URL", help: "URL propre à cette opération"),
-                    Field(name: "HINDSIGHT_API_\(operation)_DECISION_MODEL_API_KEY", label: "\(operation.lowercased()) : clé", help: "Clé propre à cette opération, masquée"),
+                // Noms des fonctions tels que l'app les affiche partout (Recherche, Réponses, Consolidation).
+                let name = ["RECALL": "Recherche", "REFLECT": "Réponses"][operation] ?? "Consolidation"
+                return (operation == "RECALL" ? [] : [Field(name: "HINDSIGHT_API_\(operation)_DECISION_MODEL_PROVIDER", label: "\(name) : fournisseur", help: "Vide = héritage global ; none = désactivé")]) + [
+                    Field(name: "HINDSIGHT_API_\(operation)_DECISION_MODEL_MODEL", label: "\(name) : modèle", help: "Modèle propre à cette opération"),
+                    Field(name: "HINDSIGHT_API_\(operation)_DECISION_MODEL_BASE_URL", label: "\(name) : URL", help: "URL propre à cette opération"),
+                    Field(name: "HINDSIGHT_API_\(operation)_DECISION_MODEL_API_KEY", label: "\(name) : clé", help: "Clé propre à cette opération, masquée"),
                 ]
             } + [
                 Field(name: "HINDSIGHT_API_REFLECT_USE_DECISION_MODEL", label: "Réponses : utiliser la décision", help: "true (défaut) / false ; une banque peut remplacer ce réglage"),
                 Field(name: "HINDSIGHT_API_CONSOLIDATION_USE_DECISION_MODEL", label: "Consolidation : utiliser la décision", help: "true (défaut) / false"),
-                Field(name: "HINDSIGHT_API_MENTAL_MODEL_REFRESH_USE_DECISION_MODEL", label: "Pages : décision dans la réflexion", help: "true (défaut) / false ; parcours de repli"),
-                Field(name: "HINDSIGHT_API_MENTAL_MODEL_DELTA_USE_DECISION_MODEL", label: "Pages : filtrage des nouveautés", help: "true (défaut) / false ; actualisation incrémentale"),
+                Field(name: "HINDSIGHT_API_MENTAL_MODEL_REFRESH_USE_DECISION_MODEL", label: "Pages de connaissance : décision pendant la régénération", help: "true (défaut) / false ; parcours de repli"),
+                Field(name: "HINDSIGHT_API_MENTAL_MODEL_DELTA_USE_DECISION_MODEL", label: "Pages de connaissance : filtrage des nouveaux faits", help: "true (défaut) / false ; régénération incrémentale"),
             ], fallback: nil,
             caution: "Ignoré par un serveur 1.0.0. Le fournisseur hindsight et les options prune/dedup demandent un serveur 1.2.0 ; sans URL locale, il envoie le contenu des faits à Hindsight Inference (Vectorize)."),
         Role(id: "embeddings", title: "Embeddings", help: "Vectorisation des faits.",
@@ -146,7 +148,7 @@ public enum ServerSettingsCatalog {
                     help: "Vide = clé enregistrée par « hindsight-admin cloud login »"),
             ], fallback: nil,
             caution: "Changer de modèle ou de dimension d'embeddings rend les vecteurs existants incompatibles : la recherche se dégrade jusqu'à une ré-indexation complète (export puis import de la banque)."),
-        Role(id: "reranker", title: "Reranker", help: "Réordonnancement des résultats de recall.",
+        Role(id: "reranker", title: "Reranker", help: "Réordonnancement des résultats de recherche.",
             fields: [
                 Field(
                     name: "HINDSIGHT_API_RERANKER_PROVIDER", label: "Fournisseur",

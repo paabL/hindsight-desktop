@@ -19,10 +19,15 @@ test('le catalogue serveur traduit tous ses libellés français fixes', () => {
     if (/[àâçéèêëîïôùûüœ]/i.test(text))
       assert.notEqual(nativeCatalogText(text), text, `Traduction absente : ${text}`);
   }
-  for (const operation of ['recall', 'reflect', 'consolidation']) {
-    assert.equal(nativeCatalogText(`${operation} : modèle`), `${operation}: model`);
-    assert.equal(nativeCatalogText(`${operation} : clé`), `${operation}: key`);
-    assert.equal(nativeCatalogText(`${operation} : fournisseur`), `${operation}: provider`);
+  // Libellés d'opération : les noms de fonctions de l'app (Recherche, Réponses, Consolidation).
+  for (const [fr, en] of [
+    ['Recherche', 'Search'],
+    ['Réponses', 'Answers'],
+    ['Consolidation', 'Consolidation'],
+  ]) {
+    assert.equal(nativeCatalogText(`${fr} : modèle`), `${en}: model`);
+    assert.equal(nativeCatalogText(`${fr} : clé`), `${en}: key`);
+    assert.equal(nativeCatalogText(`${fr} : fournisseur`), `${en}: provider`);
   }
 });
 

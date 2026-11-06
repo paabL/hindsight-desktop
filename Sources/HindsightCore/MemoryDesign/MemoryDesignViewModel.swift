@@ -96,7 +96,7 @@ public final class MemoryDesignViewModel {
         }
         var notes = [
             "Ces réglages deviennent propres à la banque « \(bank) ».",
-            "Ils s'appliquent aux PROCHAINES rétentions, consolidations et réponses : les faits déjà extraits ne changent pas (retraitez un document pour lui appliquer la nouvelle extraction).",
+            "Ils s'appliquent aux PROCHAINES extractions, consolidations et réponses : les faits déjà extraits ne changent pas (retraitez un document pour lui appliquer la nouvelle extraction).",
         ]
         if u["entity_labels"] != nil || u["retain_extraction_mode"] != nil || u["retain_mission"] != nil {
             notes.append("Conseil : testez d'abord l'extraction avec l'essai à blanc.")

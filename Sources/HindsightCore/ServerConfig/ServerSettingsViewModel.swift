@@ -298,7 +298,7 @@ public final class ServerSettingsViewModel {
         }
         let defaultModel = role.isModelRole ? ServerSettingsCatalog.defaultModel(for: p) : nil
         let m = model.flatMap { $0.isEmpty ? nil : $0 } ?? defaultModel.map { "\($0) (défaut)" } ?? "modèle par défaut"
-        let source = role.fallback == "reflect" ? "Reflect" : "LLM par défaut"
+        let source = role.fallback == "reflect" ? "rôle Réponses" : "LLM par défaut"
         return "\(p) · \(m)" + (inherited ? " — hérité du \(source)" : "")
     }
 

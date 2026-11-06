@@ -33,12 +33,14 @@ public struct OperationRow: Identifiable, Sendable, Hashable {
 
     public static func typeTitle(_ key: String) -> String {
         switch key {
-        case "retain", "batch_retain": return "Rétention (extraction de faits)"
+        // Mêmes noms que l'écran Activité › Traitements et l'écran Consommation.
+        case "retain": return "Extraction des faits"
+        case "batch_retain": return "Extraction par lot"
         case "consolidation": return "Consolidation"
-        case "refresh_mental_model": return "Rafraîchissement de modèle mental"
-        case "file_convert_retain": return "Conversion de fichier + rétention"
+        case "refresh_mental_model": return "Régénération des connaissances"
+        case "file_convert_retain": return "Conversion et extraction"
         case "webhook_delivery": return "Envoi de webhook"
-        case "reprocess_document": return "Retraitement de document"
+        case "reprocess_document": return "Retraitement"
         case "bank_export", "export": return "Export"
         case "bank_import", "import": return "Import"
         case "bank_clone", "clone": return "Clonage"

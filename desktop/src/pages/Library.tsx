@@ -11,12 +11,13 @@ import {
   FolderPlus,
   Layers3,
   Plus,
-  RefreshCw,
+  RotateCcw,
   Search,
   Send,
   Sparkles,
   Tag,
   Trash2,
+  WandSparkles,
 } from 'lucide-react';
 import type { PageProps, Request, Row } from '../types';
 import {
@@ -227,8 +228,12 @@ export function DocumentReader({
           </label>
           <div className="action-row">
             <Button
-              icon={RefreshCw}
+              icon={RotateCcw}
               disabled={busy}
+              title={t(
+                'Relance l’extraction des faits de ce document (appels LLM).',
+                'Runs fact extraction again for this document (LLM calls).',
+              )}
               onClick={() => void run('document.reprocess', { id: document.id })}
             >
               {' '}
@@ -352,12 +357,12 @@ export function Models({ data, run, busy, notify }: PageProps) {
                 </span>
                 <Badge tone={refreshFailed(m) ? 'red' : m.is_stale ? 'amber' : 'sage'}>
                   {refreshFailed(m)
-                    ? t('Échec de l’actualisation', 'Refresh failed')
+                    ? t('Échec de la génération', 'Generation failed')
                     : m.is_stale
-                      ? t('À actualiser', 'Needs updating')
+                      ? t('À régénérer', 'Needs regenerating')
                       : m.last_refreshed_at
-                        ? t('Actualisée', 'Updated')
-                        : t('À générer', 'Not generated')}
+                        ? t('À jour', 'Up to date')
+                        : t('Jamais générée', 'Never generated')}
                 </Badge>
               </div>
               <h2>{m.name}</h2>
@@ -405,22 +410,26 @@ export function Models({ data, run, busy, notify }: PageProps) {
             </Badge>
             <span>
               {model.last_refreshed_at
-                ? `${t('Actualisée le', 'Updated on')} ${date(model.last_refreshed_at, true)}`
+                ? `${t('Générée le', 'Generated on')} ${date(model.last_refreshed_at, true)}`
                 : t('Jamais générée', 'Never generated')}
             </span>
             {refreshFailed(model) && (
               <Badge tone="red">
-                {t('Échec de la dernière actualisation', 'Last refresh failed')}
+                {t('Échec de la dernière génération', 'Last generation failed')}
               </Badge>
             )}
             <div className="spacer" />
             <Button
-              icon={RefreshCw}
+              icon={WandSparkles}
               disabled={busy}
+              title={t(
+                'Fait réécrire cette connaissance par le LLM à partir des faits actuels (appel LLM).',
+                'Has the LLM rewrite this knowledge item from the current facts (LLM call).',
+              )}
               onClick={() => void run('model.refresh', { id: model.id })}
             >
               {' '}
-              {t('Actualiser', 'Refresh')}
+              {t('Régénérer', 'Regenerate')}
             </Button>
             <IconButton
               icon={Trash2}
@@ -439,8 +448,8 @@ export function Models({ data, run, busy, notify }: PageProps) {
                 'This content has not been generated yet',
               )}
               description={t(
-                'Actualisez-la pour générer son contenu à partir de la mémoire.',
-                'Refresh it to generate content from memory.',
+                'Utilisez « Régénérer » pour produire son contenu à partir de la mémoire.',
+                'Use “Regenerate” to produce its content from memory.',
               )}
             />
           )}
@@ -536,7 +545,7 @@ export function SearchPage({ data, run, busy, notify }: PageProps) {
     t('Les prochaines étapes', 'Next steps'),
   ];
   const hits: Row[] = data.hits || [];
-  // Questionner la mémoire (reflect) n’applique ni l’entité ni la période : ces filtres sont masqués.
+  // Réponses (reflect) n’applique ni l’entité ni la période : ces filtres sont masqués.
   const reflect = mode === 'reflect';
   async function search(text = query) {
     setQuery(text);
@@ -576,9 +585,9 @@ export function SearchPage({ data, run, busy, notify }: PageProps) {
           value={mode}
           onChange={setMode}
           items={[
-            { id: 'recall', label: t('Retrouver des faits', 'Find facts') },
+            { id: 'recall', label: t('Recherche par le sens', 'Search by meaning') },
             { id: 'text', label: t('Texte exact', 'Exact text') },
-            { id: 'reflect', label: t('Questionner la mémoire', 'Ask memory') },
+            { id: 'reflect', label: t('Réponses', 'Answers') },
           ]}
         />
         <form
@@ -607,7 +616,9 @@ export function SearchPage({ data, run, busy, notify }: PageProps) {
               icon={mode === 'reflect' ? Sparkles : ArrowRight}
               disabled={busy || !query.trim()}
             >
-              {mode === 'reflect' ? t('Questionner', 'Ask') : t('Rechercher', 'Search')}
+              {mode === 'reflect'
+                ? t('Obtenir une réponse', 'Get an answer')
+                : t('Rechercher', 'Search')}
             </Button>
           </div>
           <div className="search-bottom">

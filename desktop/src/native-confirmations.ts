@@ -2,6 +2,24 @@ import { getLanguage } from './i18n-core.ts';
 
 type Rule = [RegExp, RegExp, (...groups: string[]) => string];
 
+// Noms des types d'opération du moteur (OperationRow.typeTitle), cités dans ses confirmations.
+const operationTitles: Record<string, string> = {
+  'Extraction des faits': 'Fact extraction',
+  'Extraction par lot': 'Batch extraction',
+  Consolidation: 'Consolidation',
+  'Régénération des connaissances': 'Knowledge regeneration',
+  'Conversion et extraction': 'Conversion and extraction',
+  'Envoi de webhook': 'Webhook delivery',
+  Retraitement: 'Reprocessing',
+  Export: 'Export',
+  Import: 'Import',
+  Clonage: 'Clone',
+};
+
+export function operationTitle(fr: string): string {
+  return Object.hasOwn(operationTitles, fr) ? operationTitles[fr] : fr;
+}
+
 // Les captures sont réinsérées telles quelles. Aucun texte libre n’est recherché ou
 // traduit ; une confirmation dont la structure a changé garde son message original.
 const rules: Rule[] = [
@@ -98,7 +116,7 @@ const rules: Rule[] = [
     /^Lancer cette opération maintenant \?$/,
     /^« ([\s\S]*) » attend sa prochaine tentative([\s\S]*)\. Elle sera lancée tout de suite ; selon son type, cela peut consommer des appels LLM\.$/,
     (name, when) =>
-      `“${name}” is waiting for its next retry${when}. It will run immediately. Depending on its type, this may use LLM calls.`,
+      `“${operationTitle(name)}” is waiting for its next retry${when}. It will run immediately. Depending on its type, this may use LLM calls.`,
   ],
 ];
 

@@ -333,7 +333,7 @@ Path(${JSON.stringify(marker)}).write_text('executed')
   assert.equal(await readFile(marker, 'utf8'), 'executed');
   assert.equal(result.confirmations.length, 0);
   assert.equal(result.data.collecting, false);
-  assert.match(result.data.memoryMessage, /Dossier actualisé/);
+  assert.match(result.data.memoryMessage, /Sources collectées/);
   assert.equal(calls.length, before, 'actualisation entièrement indépendante du serveur');
 });
 

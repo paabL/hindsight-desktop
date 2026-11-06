@@ -27,7 +27,7 @@ final class OperationsViewModelTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(proc.progressFraction), 0.25, accuracy: 0.0001)
         XCTAssertEqual(proc.progressLabel, "llm_batches — 30/120")
         XCTAssertEqual(vm.rows[1].target, "codex-abc-task-011")
-        XCTAssertEqual(vm.rows[1].title, "Rétention (extraction de faits)")
+        XCTAssertEqual(vm.rows[1].title, "Extraction des faits")
     }
 
     func testStatusFilterIsSentToServer() async {

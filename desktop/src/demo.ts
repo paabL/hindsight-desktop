@@ -197,7 +197,8 @@ const operations = ['completed', 'processing', 'pending', 'completed', 'failed',
     error_message:
       status === 'failed' ? 'Le fournisseur a temporairement limité les requêtes.' : null,
     progress: {
-      stage: 'Extraction des faits',
+      // Étape cohérente avec le type : une consolidation ne passe pas par l’extraction.
+      stage: i % 2 ? 'Consolidation des faits' : 'Extraction des faits',
       processed: status === 'completed' ? 24 : 8,
       total: 24,
     },

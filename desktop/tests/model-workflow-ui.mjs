@@ -39,12 +39,12 @@ try {
   await graph.locator('[data-node="decision"] .mw-help').hover();
   await expect(page.getByRole('tooltip')).toContainText('preuves');
   await page.mouse.move(10, 10);
-  await graph.getByRole('switch', { name: 'Décision · Répondre' }).click();
+  await graph.getByRole('switch', { name: 'Décision · Réponses' }).click();
   await expect(graph.getByRole('switch')).not.toBeChecked();
   await expect(graph.locator('[data-edge="rank-query"]')).toHaveCount(1);
   await expect(graph.locator('[data-node="decision"]')).toHaveCount(0);
   await graph
-    .getByRole('combobox', { name: 'Modèle · Réflexion' })
+    .getByRole('combobox', { name: 'Modèle · Rédaction' })
     .selectOption('claude-haiku-5-5');
   await expect(graph.locator('[data-node="answer"]')).toContainText('claude-haiku-5-5');
   await expect(graph.getByRole('button', { name: /Modifier/ })).toHaveCount(0);
@@ -70,10 +70,15 @@ try {
     animations: 'disabled',
   });
   await page.getByRole('button', { name: 'Activer le thème sombre', exact: true }).click();
-  await expect(page.locator('.role-card').filter({ hasText: 'Réflexion' })).toContainText(
-    'claude-haiku-5-5',
-  );
-  await page.locator('.role-card').filter({ hasText: 'Réflexion' }).click();
+  await expect(
+    page
+      .locator('.role-card')
+      .filter({ has: page.getByRole('heading', { name: 'Réponses', exact: true }) }),
+  ).toContainText('claude-haiku-5-5');
+  await page
+    .locator('.role-card')
+    .filter({ has: page.getByRole('heading', { name: 'Réponses', exact: true }) })
+    .click();
   const editor = page.getByRole('dialog');
   const provider = editor.getByRole('combobox', { name: 'Fournisseur', exact: true });
   const model = editor.getByRole('combobox', { name: 'Modèle', exact: true });
@@ -100,7 +105,10 @@ try {
     animations: 'disabled',
   });
   await editor.getByRole('button', { name: 'Annuler', exact: true }).click();
-  await page.locator('.role-card').filter({ hasText: 'Réflexion' }).click();
+  await page
+    .locator('.role-card')
+    .filter({ has: page.getByRole('heading', { name: 'Réponses', exact: true }) })
+    .click();
   await expect(provider).toHaveValue('claude-code');
   await expect(model).toHaveValue('claude-haiku-5-5');
   await editor.getByRole('button', { name: 'Annuler', exact: true }).click();
@@ -172,7 +180,7 @@ try {
   await expect(provider).toHaveValue('__hindsight_local__');
   await expect(editor.getByRole('combobox', { name: 'Modèle', exact: true })).toBeVisible();
   await expect(
-    editor.getByRole('combobox', { name: 'Recall : retirer les doublons', exact: true }),
+    editor.getByRole('combobox', { name: 'Recherche : retirer les doublons', exact: true }),
   ).toHaveCount(0);
   const bounds = await editor.boundingBox();
   assert.ok(bounds.height < 650, `Decision editor too tall: ${bounds.height}`);
@@ -182,13 +190,16 @@ try {
   assert.ok(footer.y + footer.height <= 1100, 'Footer must remain visible');
   await editor.getByRole('tab', { name: 'Recherche', exact: true }).click();
   await expect(
-    editor.getByRole('combobox', { name: 'Recall : retirer les doublons', exact: true }),
+    editor.getByRole('combobox', { name: 'Recherche : retirer les doublons', exact: true }),
   ).toBeVisible();
-  await editor.getByRole('tab', { name: 'Pages', exact: true }).click();
+  await editor.getByRole('tab', { name: 'Connaissances', exact: true }).click();
   await expect(
-    editor.getByRole('combobox', { name: 'Pages : filtrage des nouveautés', exact: true }),
+    editor.getByRole('combobox', {
+      name: 'Pages de connaissance : filtrage des nouveaux faits',
+      exact: true,
+    }),
   ).toBeVisible();
-  await editor.getByRole('tab', { name: 'Réponse', exact: true }).click();
+  await editor.getByRole('tab', { name: 'Réponses', exact: true }).click();
   const decisionFlag = editor.getByRole('combobox', {
     name: 'Réponses : utiliser la décision',
     exact: true,
@@ -200,37 +211,37 @@ try {
   await expect(decisionFlag.locator('option[value="__custom_model__"]')).toHaveCount(0);
   await editor.getByRole('button', { name: 'Annuler', exact: true }).click();
   await page.getByRole('button', { name: 'Choix rapide des modèles', exact: true }).click();
-  await expect(graph.getByRole('combobox', { name: 'Modèle · Réflexion' })).toHaveValue(
+  await expect(graph.getByRole('combobox', { name: 'Modèle · Rédaction' })).toHaveValue(
     'claude-haiku-5-5',
   );
-  await graph.getByRole('tab', { name: 'Rechercher', exact: true }).click();
-  await graph.getByRole('switch', { name: 'Décision · Rechercher' }).click();
+  await graph.getByRole('tab', { name: 'Recherche', exact: true }).click();
+  await graph.getByRole('switch', { name: 'Décision · Recherche' }).click();
   await expect(graph.getByRole('switch')).toBeChecked();
   await graph.getByRole('checkbox', { name: 'Filtrer', exact: true }).click();
   await expect(graph.getByRole('checkbox', { name: 'Filtrer', exact: true })).toBeChecked();
   await graph.getByRole('checkbox', { name: 'Dédupliquer', exact: true }).click();
   await expect(graph.getByRole('checkbox', { name: 'Dédupliquer', exact: true })).toBeChecked();
-  await graph.getByRole('tab', { name: 'Répondre', exact: true }).click();
+  await graph.getByRole('tab', { name: 'Réponses', exact: true }).click();
   await expect(graph.locator('[data-node="rank"]')).toContainText('hs-decide-1-flash');
-  await graph.getByRole('button', { name: 'Réglé dans Rechercher', exact: false }).click();
-  await expect(graph.getByRole('tab', { name: 'Rechercher', exact: true })).toHaveAttribute(
+  await graph.getByRole('button', { name: 'Réglé dans Recherche', exact: false }).click();
+  await expect(graph.getByRole('tab', { name: 'Recherche', exact: true })).toHaveAttribute(
     'aria-selected',
     'true',
   );
   await graph.getByRole('button', { name: 'Annuler', exact: true }).click();
   await expect(graph.getByRole('switch')).not.toBeChecked();
-  await graph.getByRole('tab', { name: 'Répondre', exact: true }).click();
+  await graph.getByRole('tab', { name: 'Réponses', exact: true }).click();
   await expect(graph.getByRole('switch')).toBeChecked();
-  await expect(graph.getByRole('combobox', { name: 'Modèle · Réflexion' })).toHaveValue(
+  await expect(graph.getByRole('combobox', { name: 'Modèle · Rédaction' })).toHaveValue(
     'claude-sonnet-5-5',
   );
-  await graph.getByRole('tab', { name: 'Mémoriser', exact: true }).click();
+  await graph.getByRole('tab', { name: 'Extraction et consolidation', exact: true }).click();
   await graph.getByRole('button', { name: 'Extraction', exact: true }).focus();
   await page.keyboard.press('Tab');
   await graph.getByRole('button', { name: 'Extraction', exact: true }).focus();
   await expect(page.getByRole('tooltip')).toContainText('faits à mémoriser');
   await page.keyboard.press('Escape');
-  await graph.getByRole('tab', { name: 'Répondre', exact: true }).click();
+  await graph.getByRole('tab', { name: 'Réponses', exact: true }).click();
   await graph.getByRole('switch').click();
   await expect(graph.getByRole('switch')).not.toBeChecked();
   await graph.getByRole('button', { name: 'Enregistrer', exact: true }).click();

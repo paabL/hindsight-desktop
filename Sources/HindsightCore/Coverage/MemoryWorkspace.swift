@@ -603,7 +603,7 @@ public final class MemoryWorkspace {
         do { try loadPolicy() } catch { self.error = error.localizedDescription }
         if let collectionError = folder.error { error = collectionError }
         buildRows()
-        if error == nil { message = "Dossier actualisé. Aucun envoi ni traitement Hindsight." }
+        if error == nil { message = "Sources collectées. Aucun envoi ni traitement Hindsight." }
     }
 
     /// Prepares the existing catalogue; collecting and sending are independent actions.

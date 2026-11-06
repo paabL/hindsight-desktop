@@ -14,6 +14,7 @@ import {
   Folder,
   FolderOpen,
   FolderPlus,
+  FolderSync,
   GitCommitHorizontal,
   MessageSquare,
   Search,
@@ -450,13 +451,17 @@ export default function Sources({
               {t('Ajouter des documents', 'Add documents')}
             </Button>
             <Button
-              icon={RefreshCw}
+              icon={FolderSync}
               disabled={busy || data.collecting || !data.canCollect || demo}
+              title={t(
+                'Lance le collecteur du dossier : met à jour le catalogue de ce Mac, sans rien envoyer à Hindsight.',
+                'Runs the folder’s collector: updates this Mac’s catalog without uploading anything to Hindsight.',
+              )}
               onClick={() => void run('folder.refresh')}
             >
               {data.collecting && !data.importing
-                ? t('Actualisation en cours…', 'Refreshing…')
-                : t('Actualiser le dossier', 'Refresh folder')}
+                ? t('Collecte en cours…', 'Collecting…')
+                : t('Collecter les sources', 'Collect sources')}
             </Button>
             <Button
               icon={ArrowDownToLine}
@@ -478,7 +483,7 @@ export default function Sources({
             </Button>
             <IconButton
               icon={RefreshCw}
-              label={t('Vérifier l’état dans Hindsight', 'Check Hindsight status')}
+              label={t('Actualiser l’état dans Hindsight', 'Refresh Hindsight status')}
               disabled={
                 busy ||
                 data.collecting ||
@@ -859,8 +864,8 @@ export default function Sources({
             </div>
             <p>
               {t(
-                'Actualiser le dossier collecte les sources et met à jour le catalogue, sans traitement Hindsight. Vérifier l’état dans Hindsight relit la banque sans collecter ni envoyer. Préparer l’envoi compare les fichiers déjà collectés à la mémoire, sans relancer la collecte. Vous validez les ajouts et changements des sources activées avant tout envoi. Retirer conserve le fichier et exclut les envois futurs.',
-                'Refresh folder collects sources and updates the catalog without Hindsight processing. Check Hindsight status rereads the bank without collecting or uploading. Prepare upload compares collected files with memory without collecting again. You approve additions and changes to enabled sources before any upload. Removing a source keeps the file and excludes future uploads.',
+                'Collecter les sources lance le collecteur du dossier et met à jour le catalogue de ce Mac, sans rien envoyer à Hindsight. Actualiser (↻) relit l’état de la banque, sans collecter ni envoyer. Préparer l’envoi compare les sources collectées à la mémoire : vous validez chaque ajout ou mise à jour, puis Hindsight en extrait les faits. Retirer conserve le fichier et l’exclut des envois futurs.',
+                'Collect sources runs the folder’s collector and updates this Mac’s catalog without uploading anything to Hindsight. Refresh (↻) rereads the memory bank’s status without collecting or uploading. Prepare upload compares collected sources with memory: you approve every addition or update, then Hindsight extracts their facts. Remove keeps the file and excludes it from future uploads.',
               )}
             </p>
           </section>

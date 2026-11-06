@@ -141,9 +141,9 @@ public final class PauseController {
         let cancelled = await sweepRefreshes()
         let scope = bank.map { "« \($0) » est en pause." } ?? "Toutes les banques sont en pause."
         if bank == nil, banksProvider().isEmpty {
-            message = scope + " Rien n'est envoyé ; la consolidation automatique et les rafraîchissements de modèles mentaux seront coupés dès que le serveur répondra."
+            message = scope + " Rien n'est envoyé ; la consolidation automatique et les régénérations de connaissances seront coupées dès que le serveur répondra."
         } else {
-            message = scope + (cancelled > 0 ? " \(Format.count(cancelled, "rafraîchissement de modèle mental annulé", "rafraîchissements de modèles mentaux annulés"))." : "")
+            message = scope + (cancelled > 0 ? " \(Format.count(cancelled, "régénération de connaissance annulée", "régénérations de connaissances annulées"))." : "")
                 + (failures.isEmpty ? "" : " Consolidation automatique pas encore coupée pour " + failures.joined(separator: " ; ") + " (nouvel essai à la reconnexion).")
         }
     }
@@ -212,7 +212,7 @@ public final class PauseController {
     public func requestCancelDuplicateRefreshes(bank: String?) async {
         guard !working else { return }
         working = true
-        progress = "Recherche des rafraîchissements en double…"
+        progress = "Recherche des régénérations en double…"
         var duplicates: [(bank: String, id: String)] = []
         var pages = 0
         do {
@@ -231,16 +231,16 @@ public final class PauseController {
         working = false
         progress = nil
         guard !duplicates.isEmpty else {
-            message = "Aucun rafraîchissement de modèle mental en double" + (bank.map { " dans « \($0) »." } ?? ".")
+            message = "Aucune régénération de connaissance en double" + (bank.map { " dans « \($0) »." } ?? ".")
             return
         }
         let ops = duplicates
         let one = ops.count == 1
         confirmation = ConfirmationRequest(
-            title: "Annuler \(Format.count(ops.count, "rafraîchissement", "rafraîchissements")) en double ?",
+            title: "Annuler \(Format.count(ops.count, "régénération", "régénérations")) en double ?",
             message: [
-                "\(Format.count(pages, "modèle mental est", "modèles mentaux sont")) dans la file plusieurs fois : \(Format.count(ops.count, "rafraîchissement")) en trop \(one ? "sera annulé" : "seront annulés").",
-                "Chaque modèle mental garde un seul rafraîchissement (celui en cours, sinon le plus récent) : son contenu final est le même, sans payer plusieurs fois.",
+                "\(Format.count(pages, "connaissance est", "connaissances sont")) dans la file plusieurs fois : \(Format.count(ops.count, "régénération")) en trop \(one ? "sera annulée" : "seront annulées").",
+                "Chaque connaissance garde une seule régénération (celle en cours, sinon la plus récente) : son contenu final est le même, sans payer plusieurs fois.",
             ].joined(separator: "\n"),
             confirmTitle: "Annuler les doublons", severity: .normal
         ) { [weak self] in

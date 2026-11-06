@@ -142,8 +142,8 @@ try {
   await expect(page.getByRole('dialog')).toBeVisible();
   await expect(page.getByRole('dialog')).toContainText('Excluded from uploads');
   await page.getByRole('button', { name: 'Close', exact: true }).click();
-  await page.getByRole('button', { name: 'Refresh folder', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Refreshing…', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Collect sources', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Collecting…', exact: true })).toBeDisabled();
   await expect(filter).toBeEnabled();
   const nav = page.getByRole('navigation', { name: 'Main navigation' });
   await nav.getByRole('button', { name: /^Overview/ }).click();
@@ -153,7 +153,7 @@ try {
   await nav.getByRole('button', { name: /^Sources/ }).click();
   await expect(page.locator('.source-row').first()).toBeVisible({ timeout: 500 });
   const reopenMs = Date.now() - back;
-  await expect(page.getByRole('button', { name: 'Refresh folder', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Collect sources', exact: true })).toBeEnabled();
   if (errors.length) throw new Error(errors.join('\n'));
   console.log(
     JSON.stringify({

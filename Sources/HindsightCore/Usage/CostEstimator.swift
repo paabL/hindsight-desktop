@@ -57,15 +57,15 @@ public enum EstimateKind: Sendable, Hashable {
     case consolidation(facts: Int)
     /// Reflect avec un budget low / mid / high.
     case reflect(budget: String)
-    /// Rafraîchissement d'un modèle mental.
+    /// Régénération d'une connaissance.
     case mentalModelRefresh
 
     var title: String {
         switch self {
-        case .retain: return "Rétention"
+        case .retain: return "Extraction des faits"
         case .consolidation: return "Consolidation"
-        case .reflect: return "Reflect"
-        case .mentalModelRefresh: return "Modèle mental"
+        case .reflect: return "Réponses"
+        case .mentalModelRefresh: return "Régénération des connaissances"
         }
     }
 }

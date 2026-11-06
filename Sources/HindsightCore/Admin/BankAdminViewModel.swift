@@ -104,7 +104,7 @@ public final class BankAdminViewModel {
         let n = config.value?.overrides.count ?? 0
         confirmation = ConfirmationRequest(
             title: "Supprimer les \(n) override(s) de la banque ?",
-            message: "La banque revient aux valeurs globales du serveur (missions, disposition, réglages de rétention/recall…).",
+            message: "La banque revient aux valeurs globales du serveur (missions, disposition, réglages d'extraction et de recherche…).",
             confirmTitle: "Réinitialiser"
         ) { [weak self] in
             guard let self else { return }
@@ -229,12 +229,12 @@ public final class BankAdminViewModel {
             return
         }
         confirmation = ConfirmationRequest(
-            title: "Rafraîchir « \(m.name) » ?",
+            title: "Régénérer « \(m.name) » ?",
             message: (m.isKnowledgePage == true
                 ? "La page de connaissance est régénérée par le LLM (opération asynchrone)."
                 : "Le modèle mental est régénéré par le LLM (opération asynchrone).")
                 + (estimate?(.mentalModelRefresh).map { "\n\n" + $0.summary } ?? ""),
-            confirmTitle: "Rafraîchir", severity: .normal
+            confirmTitle: "Régénérer", severity: .normal
         ) { [weak self] in
             guard let self else { return }
             if let reason = self.pauseGate?(self.bank) {
@@ -243,7 +243,7 @@ public final class BankAdminViewModel {
             }
             do {
                 let r = try await self.client.refreshMentalModel(self.bank, id: m.id)
-                self.actionMessage = "Rafraîchissement lancé (\(r.operationId))."
+                self.actionMessage = "Régénération lancée (\(r.operationId))."
             } catch { self.actionMessage = "Échec : \(error.userMessage)" }
         }
     }
