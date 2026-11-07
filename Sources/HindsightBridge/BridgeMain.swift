@@ -174,7 +174,7 @@ final class DesktopBridge {
                 && !app.memoryFolder.collecting && !app.memoryFolder.importing && collectionTask == nil
                 && !app.localDecision.isBusy && decisionTask == nil
                 && !app.service.isBusy && serviceTask == nil
-                && app.coverage.sending == nil && app.projectSync.running == nil
+                && app.coverage.sending == nil
             return ["releaseUpdateReady": ready]
         case "updates.install":
             guard updateTask == nil, !updater.isWorking else { throw BridgeFailure("Une mise à jour est en cours.") }; updater.requestUpdate()
@@ -481,8 +481,6 @@ final class DesktopBridge {
             else { await app.coverage.setAllFiles(p["enabled"] as? Bool ?? false, for: root) }
         case "coverage.send": app.coverage.selection = Set(strings("ids")); await app.coverage.requestSend()
         case "coverage.remove": app.coverage.selection = Set(strings("ids")); app.coverage.requestRemoveSelection()
-        case "sync.script": app.projectSync.setScript(str("path"))
-        case "sync.run": await app.projectSync.requestSync(ids: strings("ids"))
         case "diagnostic.llm":
             // Le serveur teste les modèles au nom d'une banque (`POST …/banks/{id}/health/llm`).
             guard app.session != nil else { throw BridgeFailure("Choisissez une banque : le test des modèles passe par une banque du serveur.") }
@@ -490,7 +488,7 @@ final class DesktopBridge {
             await dashboard.loadIfNeeded()
             ownConfirmation = ConfirmationRequest(title: "Tester les modèles du serveur ?", message: "Un court appel sera effectué pour chaque rôle LLM configuré. Cette vérification consomme des jetons.", confirmTitle: "Tester les modèles", severity: .normal) { [weak self] in
                 await dashboard.testLLM()
-                self?.note = dashboard.llmTestMessage ?? "Test des modèles terminé. Consultez le résultat dans Serveur & modèles."
+                self?.note = dashboard.llmTestMessage ?? "Test des modèles terminé. Consultez le résultat dans Modèles."
             }
         case "confirm":
             guard let request = pending().first(where: { $0.id.uuidString == str("id") }), request.isSatisfied(by: str("typed")) else {
@@ -602,9 +600,8 @@ final class DesktopBridge {
             return
         }
         if name == "server" {
-            await app.serverSettings.loadIfNeeded(); await app.service.refresh(); await app.localDecision.refresh()
+            await app.serverSettings.loadIfNeeded(); await app.service.refresh()
             app.serverSettings.reconcilePendingRestart()
-            await app.serverSettings.connections.refresh(app.serverSettings.connectionContext)
             return
         }
         if name == "model-settings" {
@@ -612,6 +609,7 @@ final class DesktopBridge {
             await app.service.refresh()
             app.serverSettings.reconcilePendingRestart()
             await app.localDecision.refresh()
+            await app.serverSettings.connections.refresh(app.serverSettings.connectionContext)
             return
         }
         if name == "settings" { return }
@@ -654,7 +652,7 @@ final class DesktopBridge {
     func pending() -> [ConfirmationRequest] {
         let s = app.session
         return [workspace.confirmation, updater.confirmation, ownConfirmation, app.confirmation, app.memoryFolder.confirmation, app.service.confirmation,
-                app.pause.confirmation, app.coverage.confirmation, app.projectSync.confirmation,
+                app.pause.confirmation, app.coverage.confirmation,
                 app.serverSettings.confirmation, app.localDecision.confirmation, app.bankManagement.confirmation,
                 s?.operations.confirmation, s?.admin.confirmation, s?.memoryDesign.confirmation,
                 s?.documents.reader?.confirmation, s?.audit.confirmation].compactMap { $0 }
@@ -666,7 +664,7 @@ final class DesktopBridge {
         ownConfirmation = nil; app.confirmation = nil; app.memoryFolder.confirmation = nil
         autoSyncConfirmation = nil
         app.service.confirmation = nil; app.pause.confirmation = nil; app.coverage.confirmation = nil
-        app.projectSync.confirmation = nil; app.serverSettings.confirmation = nil; app.localDecision.confirmation = nil
+        app.serverSettings.confirmation = nil; app.localDecision.confirmation = nil
         app.bankManagement.confirmation = nil
         app.session?.operations.confirmation = nil; app.session?.admin.confirmation = nil
         app.session?.memoryDesign.confirmation = nil; app.session?.documents.reader?.confirmation = nil
@@ -705,7 +703,7 @@ final class DesktopBridge {
          app.service.message, app.serverSettings.actionMessage, app.coverage.actionMessage,
          app.session?.admin.actionMessage, app.session?.operations.actionMessage,
          app.session?.memoryDesign.actionMessage, app.session?.documents.reader?.actionMessage,
-         app.session?.audit.actionMessage, app.projectSync.actionMessage, app.memoryFolder.importSummary].compactMap { $0 }
+         app.session?.audit.actionMessage, app.memoryFolder.importSummary].compactMap { $0 }
     }
 
     /// Avant une nouvelle action, efface les résultats d'action déjà émis : si l'action produit la même phrase,
@@ -719,7 +717,6 @@ final class DesktopBridge {
         if emitted(app.bankManagement.message) { app.bankManagement.message = nil }
         if emitted(app.serverSettings.actionMessage) { app.serverSettings.actionMessage = nil }
         if emitted(app.coverage.actionMessage) { app.coverage.actionMessage = nil }
-        if emitted(app.projectSync.actionMessage) { app.projectSync.actionMessage = nil }
         if let s = app.session {
             if emitted(s.admin.actionMessage) { s.admin.actionMessage = nil }
             if emitted(s.operations.actionMessage) { s.operations.actionMessage = nil }
@@ -783,7 +780,7 @@ final class DesktopBridge {
             return ["snapshot": wire(s?.dashboard.snapshot), "insights": wire(s?.dashboard.insights ?? []), "error": wire(s?.dashboard.state.errorMessage), "partialErrors": wire(s?.dashboard.partialErrors ?? [])]
         case "models", "admin":
             return ["models": wire(s?.admin.mentalModels.value ?? []), "directives": wire(s?.admin.directives.value ?? []),
-                    "config": wire(s?.admin.config.value), "error": wire(s?.admin.config.errorMessage), "syncScript": wire(app.projectSync.scriptPath),
+                    "config": wire(s?.admin.config.value), "error": wire(s?.admin.config.errorMessage),
                     "modelError": wire(s?.admin.mentalModels.errorMessage), "templateDryRun": wire(s?.admin.templateDryRun)]
         case "search":
             return ["hits": wire(s?.search.hits ?? []), "answer": wire(s?.search.answer), "total": s?.search.total ?? 0,
@@ -836,7 +833,9 @@ final class DesktopBridge {
             }
             return ["audit": wire(s?.audit.audit.value ?? []), "traces": wire(s?.audit.llm.value ?? []), "reads": wire(s?.reads.events ?? []), "error": wire(s?.audit.audit.errorMessage), "traceError": wire(s?.audit.llm.errorMessage),
                     "auditStatus": auditStatus, "auditTotal": s?.audit.auditTotal ?? 0, "traceTotal": s?.audit.llmTotal ?? 0]
-        case "memory": return ["draft": wire(s?.memoryDesign.draft), "config": wire(s?.admin.config.value), "error": wire(s?.memoryDesign.state.errorMessage), "trial": wire(s?.memoryDesign.trial.value), "trialError": wire(s?.memoryDesign.trial.errorMessage), "problems": s?.memoryDesign.problems ?? [], "serverIs120": s?.memoryDesign.serverIs120 ?? false]
+        case "memory": return ["draft": wire(s?.memoryDesign.draft), "config": wire(s?.admin.config.value), "error": wire(s?.memoryDesign.state.errorMessage), "trial": wire(s?.memoryDesign.trial.value), "trialError": wire(s?.memoryDesign.trial.errorMessage), "problems": s?.memoryDesign.problems ?? [], "serverIs120": s?.memoryDesign.serverIs120 ?? false,
+                           // Clés propres à la banque : la page les signale, « Revenir aux réglages du serveur » les supprime toutes.
+                           "overridden": (s?.memoryDesign.overriddenKeys).map { Array($0).sorted() } ?? []]
         case "server", "model-settings": return serverSnapshot()
         default: return [:]
         }

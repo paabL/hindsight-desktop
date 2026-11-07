@@ -5200,3 +5200,208 @@ button.folder-row > svg:last-child {
     padding-left: 45px;
   }
 }
+
+/* Faits en lignes : une phrase par ligne, son type, sa date et son document. */
+.fact-rows {
+  padding: 4px 0;
+  margin-bottom: 18px;
+}
+.fact-row {
+  display: grid;
+  grid-template-columns: 118px minmax(0, 1fr) 76px 32px;
+  gap: 14px;
+  align-items: start;
+  padding: 12px 18px 12px 22px;
+  border-top: 1px solid var(--line-soft);
+}
+.fact-row.no-date {
+  grid-template-columns: 118px minmax(0, 1fr) 32px;
+}
+.fact-row:first-child {
+  border-top: 0;
+}
+.fact-row-type {
+  padding-top: 2px;
+}
+.fact-row-main p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink);
+}
+.fact-row-main small {
+  display: block;
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--faint);
+}
+.fact-row-date {
+  padding-top: 4px;
+  font-size: 10px;
+  color: var(--faint);
+  text-align: right;
+  white-space: nowrap;
+}
+.fact-row .icon-button {
+  margin-top: -3px;
+}
+.timeline-facts {
+  margin-bottom: 15px;
+}
+.list-summary {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  min-height: 20px;
+  margin: -6px 0 16px;
+  font-size: 11px;
+  color: var(--secondary);
+}
+.list-summary .text-button {
+  font-size: 11px;
+}
+.facts-toolbar {
+  padding: 0;
+  margin-bottom: 18px;
+}
+.metrics-grid.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.metric-link {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.metric-link:hover,
+.metric-link:focus-visible {
+  border-color: var(--accent-line);
+  box-shadow: var(--shadow-small, var(--shadow-tiny));
+}
+@media (max-width: 760px) {
+  .fact-row,
+  .fact-row.no-date {
+    grid-template-columns: minmax(0, 1fr) 32px;
+  }
+  .fact-row-type,
+  .fact-row-date {
+    grid-column: 1;
+    text-align: left;
+  }
+  .metrics-grid.three {
+    grid-template-columns: 1fr;
+  }
+}
+.toolbar-count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--faint);
+  white-space: nowrap;
+}
+.knowledge-toolbar {
+  align-items: center;
+  padding: 0;
+  margin-bottom: 20px;
+}
+.knowledge-toolbar .standalone-search {
+  flex: 0 1 340px;
+  margin: 0;
+}
+.model-kind {
+  display: block;
+  margin: -10px 0 0;
+  font-size: 9.5px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.model-kind + h2 {
+  margin-top: 4px;
+}
+
+/* Réglages : repères de valeurs modifiées, options avancées repliées, champs à la largeur de leur contenu. */
+.setting-label {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+.setting-mark {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.1px;
+  color: var(--secondary);
+  background: var(--surface);
+  white-space: nowrap;
+}
+.setting-mark.pending {
+  border-color: var(--accent-line);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.setting-toggle strong .setting-mark,
+.settings-advanced summary .setting-mark {
+  margin-left: 8px;
+}
+.setting-toggle span.setting-mark {
+  font-size: 9px;
+}
+.setting-compact input,
+.setting-compact select {
+  max-width: 320px;
+}
+.setting-compact input[type='number'] {
+  max-width: 160px;
+}
+.settings-advanced {
+  border-top: 1px solid var(--line-soft);
+  padding-top: 16px;
+}
+.settings-advanced > summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--secondary);
+  list-style-position: outside;
+}
+.settings-advanced[open] > summary {
+  margin-bottom: 18px;
+}
+.settings-advanced > .form-stack {
+  padding-left: 2px;
+}
+.settings-reset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin: 4px 0 24px;
+  font-size: 11px;
+  color: var(--secondary);
+}
+.file-table th:first-child,
+.file-table td:first-child {
+  width: 44px;
+}
+.file-table th:last-child,
+.file-table td:last-child {
+  width: 80px;
+  text-align: right;
+}
+.settings-card > p + .action-row,
+.settings-card > [role='status'] + .action-row {
+  margin-top: 14px;
+}
+.settings-card > .action-row + details {
+  margin-top: 18px;
+}

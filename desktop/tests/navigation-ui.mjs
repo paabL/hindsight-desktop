@@ -30,7 +30,7 @@ const routes = [
   { id: 'settings', group: 'Settings', list: 'Settings views', tab: 'Application' },
   { id: 'admin', group: 'Settings', list: 'Settings views', tab: 'Memory bank' },
   { id: 'memory', group: 'Settings', list: 'Settings views', tab: 'Memory behavior' },
-  { id: 'server', group: 'Settings', list: 'Settings views', tab: 'Server & models' },
+  { id: 'server', group: 'Settings', list: 'Settings views', tab: 'Server' },
 ];
 
 async function hasRoute(page, id) {
@@ -139,20 +139,21 @@ try {
   await page.keyboard.press('Meta+9');
   await hasRoute(page, 'model-settings');
 
-  // Memory shows stored facts, with type filters and a route back to source text.
+  // Memory shows stored facts: one search over the whole bank, the type applies at once,
+  // and each fact leads back to its source text.
   await page.keyboard.press('Meta+2');
   await page
     .getByRole('tablist', { name: 'Memory views' })
     .getByRole('tab', { name: 'Facts', exact: true })
     .click();
   await hasRoute(page, 'facts');
-  await expect(page.locator('.fact-card')).toHaveCount(12);
+  await expect(page.locator('.fact-row')).toHaveCount(12);
   await page.getByRole('combobox', { name: 'Fact type', exact: true }).selectOption('observation');
-  await expect(page.locator('.fact-card')).toHaveCount(4);
-  await page
-    .getByRole('textbox', { name: 'Filter loaded facts', exact: true })
-    .fill('Une décision');
-  await expect(page.locator('.fact-card')).toHaveCount(1);
+  await expect(page.locator('.fact-row')).toHaveCount(4);
+  const factSearch = page.getByRole('searchbox', { name: 'Search facts', exact: true });
+  await factSearch.fill('Une décision');
+  await factSearch.press('Enter');
+  await expect(page.locator('.fact-row')).toHaveCount(1);
   await page.getByRole('button', { name: 'View source document', exact: true }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await expect(page.locator('.modal .markdown')).toContainText('Ceci est un document fictif');
@@ -223,7 +224,7 @@ try {
     );
   }
   // A separate native fixture distinguishes loaded data from the bank's total,
-  // and verifies that typing locally does not silently query the server.
+  // and verifies that typing alone never queries the server: only submitting does.
   const factsPage = await browser.newPage({ viewport: { width: 1200, height: 900 } });
   factsPage.on('pageerror', (error) => errors.push(error.message));
   await factsPage.addInitScript(() => {
@@ -275,36 +276,41 @@ try {
     };
   });
   await factsPage.goto(`${base}/#facts`);
-  await expect(factsPage.locator('.fact-card')).toHaveCount(2);
-  await expect(factsPage.getByRole('status')).toContainText('2 loaded out of 45');
+  await expect(factsPage.locator('.fact-row')).toHaveCount(2);
+  await expect(factsPage.getByRole('status')).toContainText('45 facts in the bank');
   await expect(
-    factsPage.getByText('Only the first 2 items out of 45 were loaded.', { exact: false }),
+    factsPage.getByText('Only the first 2 facts are shown.', { exact: false }),
   ).toBeVisible();
-  const localFilter = factsPage.getByRole('textbox', { name: 'Filter loaded facts', exact: true });
-  await localFilter.fill('architecture');
-  await expect(factsPage.locator('.fact-card')).toHaveCount(1);
+  const factSearch2 = factsPage.getByRole('searchbox', { name: 'Search facts', exact: true });
+  await factSearch2.fill('prefers');
+  await expect(factsPage.locator('.fact-row')).toHaveCount(2);
   expect(await factsPage.evaluate(() => window.__navigationFixture.queries)).toEqual([]);
+  await factSearch2.press('Enter');
+  await expect
+    .poll(() => factsPage.evaluate(() => window.__navigationFixture.queries))
+    .toEqual([{ query: 'prefers', type: 'all' }]);
+  await expect(factsPage.locator('.fact-row')).toHaveCount(1);
+  await expect(factsPage.locator('.fact-row')).toContainText('concise notes');
+  await expect(factsPage.getByRole('status')).toContainText('for “prefers”');
+  // The type queries the bank immediately, keeping the words already typed.
   await factsPage
     .getByRole('combobox', { name: 'Fact type', exact: true })
     .selectOption('observation');
-  await expect(factsPage.locator('.fact-card')).toHaveCount(0);
-  expect(await factsPage.evaluate(() => window.__navigationFixture.queries)).toEqual([]);
-  await localFilter.fill('prefers');
-  await expect(factsPage.locator('.fact-card')).toHaveCount(1);
-  await factsPage.getByRole('button', { name: 'Search the bank', exact: true }).click();
   await expect
     .poll(() => factsPage.evaluate(() => window.__navigationFixture.queries))
-    .toEqual([{ query: 'prefers', type: 'observation' }]);
-  await expect(factsPage.locator('.fact-card')).toHaveCount(1);
-  await expect(factsPage.locator('.fact-card')).toContainText('concise notes');
-  await expect(factsPage.getByRole('status')).toContainText('Bank type: Observation');
+    .toEqual([
+      { query: 'prefers', type: 'all' },
+      { query: 'prefers', type: 'observation' },
+    ]);
+  await expect(factsPage.getByRole('status')).toContainText('· Observations');
   await factsPage.getByRole('button', { name: 'Clear search', exact: true }).click();
-  await expect(localFilter).toHaveValue('');
+  await expect(factSearch2).toHaveValue('');
   await expect(factsPage.getByRole('combobox', { name: 'Fact type', exact: true })).toHaveValue(
     'all',
   );
-  await expect(factsPage.locator('.fact-card')).toHaveCount(2);
+  await expect(factsPage.locator('.fact-row')).toHaveCount(2);
   expect(await factsPage.evaluate(() => window.__navigationFixture.queries)).toEqual([
+    { query: 'prefers', type: 'all' },
     { query: 'prefers', type: 'observation' },
     { query: '', type: 'all' },
   ]);

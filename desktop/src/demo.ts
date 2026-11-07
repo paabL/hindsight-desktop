@@ -43,6 +43,14 @@ export const demoRecords = titles.map((title, i) => ({
   change: i % 4 === 0 ? 'added' : 'unchanged',
   context: { provider: i % 2 ? 'claude-code' : 'codex', directory: 'horizon-app' },
   files: { 'document.md': `examples/${i}/document.md` },
+  memory: {
+    state: i === 11 ? 'excluded' : i % 4 === 0 ? 'new' : 'current',
+    enabled: i !== 11,
+    locked: false,
+    stored: i % 4 !== 0,
+    can_remove: i % 4 !== 0,
+    document_id: `example-${i}`,
+  },
 }));
 const sourceText =
   '# Décisions de conception\n\nNous construisons un espace où le contexte reste accessible et les décisions faciles à retrouver.\n\n## Ce que nous avons retenu\n\n- Une navigation centrée sur les tâches du quotidien.\n- Les sources restent consultables avant leur traitement.\n- Chaque connaissance garde un lien vers son origine.\n\n## Prochaine étape\n\nTester le parcours complet : collecter une source, retrouver un fait, puis consulter sa provenance.\n\n> Ceci est un document fictif du mode exemple.';
@@ -64,6 +72,8 @@ const models = [
   content: sourceText,
   last_refreshed_at: timestamp,
   is_stale: i === 3,
+  // L'exemple montre les deux sortes : pages tenues par le serveur et modèles mentaux suivis.
+  is_knowledge_page: i < 2,
   created_at: timestamp,
 }));
 const documents = demoRecords.map((r, i) => ({

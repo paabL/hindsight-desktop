@@ -87,8 +87,9 @@ The navigation regression checks the seven primary groups and all seventeen hash
 routes, including existing links. It covers contextual tab selection, remembered
 tabs, browser back/forward, the command palette, `⌘1…7`, invalid numbered shortcuts,
 English/French labels, accent-insensitive group search and the minimum window
-width. Facts checks cover type/text filters, source reading, loaded-versus-total
-counts and explicit server search. The language check also
+width. Facts checks cover the single bank search (words on submit, type at once,
+nothing sent while typing), source reading, loaded-versus-total counts and
+**Clear search**. The language check also
 checks the fixed native titlebar reserve while attempting sidebar scrolling in
 both themes at three widths. Public screenshots use an isolated fictional bank,
 not a user's server or local folder.

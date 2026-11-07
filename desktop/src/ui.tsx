@@ -214,15 +214,17 @@ export function Metric({
   note,
   icon: Icon,
   tone = 'accent',
+  onClick,
 }: {
   label: string;
   value: ReactNode;
   note?: string;
   icon: LucideIcon;
   tone?: string;
+  onClick?: () => void;
 }) {
-  return (
-    <article className="metric">
+  const content = (
+    <>
       <div className="metric-top">
         <span>{label}</span>
         <span className={`metric-icon ${tone}`}>
@@ -231,7 +233,14 @@ export function Metric({
       </div>
       <strong>{value}</strong>
       {note && <p>{note}</p>}
-    </article>
+    </>
+  );
+  return onClick ? (
+    <button type="button" className="metric metric-link" onClick={onClick}>
+      {content}
+    </button>
+  ) : (
+    <article className="metric">{content}</article>
   );
 }
 export function Tabs({

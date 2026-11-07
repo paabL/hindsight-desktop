@@ -603,7 +603,7 @@ public final class HindsightServiceViewModel {
             return false
         }
         if scriptChangedSinceApproval {
-            message = "Le script de lancement a changé depuis votre dernière approbation : redémarrez d'abord le serveur depuis « Serveur & modèles »."
+            message = "Le script de lancement a changé depuis votre dernière approbation : redémarrez d'abord le serveur depuis Réglages › Serveur."
             return false
         }
         status = .stopping

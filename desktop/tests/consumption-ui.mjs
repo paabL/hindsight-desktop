@@ -223,13 +223,10 @@ try {
       args: { prices: { models: [], fixture: true } },
     });
     assert.ok(requests.every((request) => request.command !== 'subscription.refresh'));
-    await page
-      .getByRole('button', {
-        name: fr ? 'Gérer les traitements' : 'Manage processing',
-        exact: true,
-      })
-      .click();
-    await expect(dialog).toBeVisible();
+    // La pause se règle dans Traitements, à un seul endroit.
+    await expect(
+      page.getByRole('button', { name: fr ? 'Mettre en pause' : 'Pause', exact: true }),
+    ).toHaveCount(0);
     await noQuotas();
     assert.deepEqual(errors, []);
     assert.deepEqual(external, []);

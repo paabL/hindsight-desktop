@@ -6,6 +6,7 @@ import {
   CircleDollarSign,
   Clock3,
   Gauge,
+  MoreHorizontal,
   Pause,
   Play,
   Settings2,
@@ -21,6 +22,7 @@ import {
   CardHeader,
   Empty,
   ErrorNotice,
+  IconButton,
   Metric,
   Modal,
   PageHeader,
@@ -30,19 +32,46 @@ import {
   number,
 } from '../ui';
 
-export function PauseTools({ run, busy }: Pick<PageProps, 'run' | 'busy'>) {
+export function PauseTools({
+  run,
+  busy,
+  paused = false,
+}: Pick<PageProps, 'run' | 'busy'> & { paused?: boolean }) {
   useI18n();
   const [open, setOpen] = useState(false);
   const [all, setAll] = useState(false);
   return (
     <>
-      <Button icon={Pause} onClick={() => setOpen(true)}>
-        {t('Gérer les traitements', 'Manage processing')}
-      </Button>
+      {paused ? (
+        <Button
+          icon={Play}
+          disabled={busy}
+          onClick={() => void run('pause.resume', { all: false })}
+        >
+          {t('Reprendre les traitements', 'Resume processing')}
+        </Button>
+      ) : (
+        <Button
+          icon={Pause}
+          disabled={busy}
+          onClick={() => void run('pause.pause', { all: false })}
+        >
+          {t('Mettre en pause', 'Pause')}
+        </Button>
+      )}
+      <IconButton
+        icon={MoreHorizontal}
+        label={t('Autres options de traitement', 'More processing options')}
+        disabled={busy}
+        onClick={() => setOpen(true)}
+      />
       {open && (
         <Modal
-          title={t('Garder la main sur les traitements', 'Control processing')}
-          subtitle={t('Choisissez l’action adaptée à votre besoin.', 'Choose the action you need.')}
+          title={t('Options de traitement', 'Processing options')}
+          subtitle={t(
+            'Pour toutes les banques ou pour le serveur entier.',
+            'For every memory bank or the whole server.',
+          )}
           onClose={() => setOpen(false)}
         >
           <label className="checkbox-label scope-choice">
@@ -199,12 +228,9 @@ export default function Consumption({ data, run, busy, notify }: PageProps) {
           'Understand memory usage and set your limits.',
         )}
         actions={
-          <>
-            <PauseTools run={run} busy={busy} />
-            <Button icon={Settings2} onClick={editBudgets}>
-              {t('Mes plafonds', 'My limits')}
-            </Button>
-          </>
+          <Button icon={Settings2} onClick={editBudgets}>
+            {t('Mes plafonds', 'My limits')}
+          </Button>
         }
       />
       <ErrorNotice message={data.error} />

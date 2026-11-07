@@ -46,7 +46,7 @@ vocabulary, then at consolidation through observation missions and scope-specifi
 strategies. Tags both filter retrieval and separate consolidation scopes.
 
 Models used by each role remain server settings, configured through environment
-variables. See Server & models in the app.
+variables. See **Models** in the app.
 
 ## Reads and audit history
 

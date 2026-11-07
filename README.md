@@ -31,14 +31,14 @@ For the everyday workflow, see the short [user guide](docs/USER_GUIDE.md).
 
 1. Open the app. The interface uses English by default; French is available in
    **Settings → Interface language**.
-2. In **Settings**, enter the address of an existing Hindsight server
+2. In **Settings → Server**, enter the address of an existing Hindsight server
    (`http://127.0.0.1:8888` for a local server). Recent features target API 1.2.0;
    availability depends on your server.
 3. Choose a memory bank. **Overview** summarizes it; **Memory** shows its stored
    facts, documents, timeline and graph. **Knowledge** contains knowledge pages.
-4. Open **Models** for quick choices and explanations. **Manage models** opens
-   provider, account and installation settings. Save prepared changes, then
-   restart the server separately when ready.
+4. Open **Models** to choose the model behind each memory function. Accounts,
+   every role and installation are on the same page, under the diagram. Save
+   prepared changes, then restart the server separately when ready.
 5. Open **Sources** and add the folders on this Mac that should feed the bank.
    Each bank has its own folders, still listed without a server. Open a folder to
    compare its files with the bank, then confirm what to upload. A folder with a

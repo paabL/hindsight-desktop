@@ -498,23 +498,18 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
         <span>
           <Network size={16} />
           <strong>{number(graph.nodes.length)}</strong>{' '}
-          {mode === 'entities'
-            ? t('entités chargées', 'entities loaded')
-            : t('faits chargés', 'facts loaded')}
+          {mode === 'entities' ? t('entités', 'entities') : t('faits', 'facts')}
           {total > graph.nodes.length ? t(` sur ${number(total)}`, ` of ${number(total)}`) : ''}
         </span>
         <span>
           <GitBranch size={16} />
           <strong>{number(graph.edges.length)}</strong>
-          {t(' liens retenus', ' retained links')}
+          {t(' liens', ' links')}
         </span>
         <span>
           <Layers3 size={16} />
           <strong>{number(graph.communities.length)}</strong>
-          {t(' groupes de liens', ' link groups')}
-        </span>
-        <span className="atlas-sample">
-          {t('Échantillon de la banque · lecture seule', 'Bank sample · read only')}
+          {t(' groupes', ' groups')}
         </span>
       </div>
       <div className="atlas-toolbar">
@@ -1562,17 +1557,9 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
         <span>
           <span className="atlas-swatch" />
           {t(
-            'Regroupement calculé localement à partir des relations réelles.',
-            'Groups calculated locally from real relationships.',
+            'Groupes calculés sur ce Mac à partir des liens de la banque.',
+            'Groups calculated on this Mac from the bank’s links.',
           )}
-        </span>
-        <span>
-          {number(graph.components)}
-          {t(' composante', ' component')}
-          {graph.components > 1 ? 's' : ''} · {number(isolated)}
-          {t(' nœud', ' node')}
-          {isolated > 1 ? 's' : ''}
-          {t(' sans lien retenu', ' without retained links')}
         </span>
       </div>
       {reader && (

@@ -94,7 +94,7 @@ public final class BankAdminViewModel {
         guard !k.isEmpty, let value = Self.parseJSONValue(rawJSON) else { return false }
         confirmation = ConfirmationRequest(
             title: "Modifier « \(k) » pour cette banque ?",
-            message: "Nouvelle valeur : \(value.prettyString())\nLe serveur refuse les réglages non surchargeables (ex. modèles LLM : voir « Serveur & modèles »).",
+            message: "Nouvelle valeur : \(value.prettyString())\nLe serveur refuse les réglages non surchargeables (ex. modèles LLM : voir « Modèles »).",
             confirmTitle: "Appliquer", severity: .normal
         ) { [weak self] in await self?.patch([k: value], success: "« \(k) » mis à jour.") }
         return true

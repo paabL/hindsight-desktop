@@ -288,8 +288,8 @@ export function Models({ data, run, busy, notify }: PageProps) {
         eyebrow={t('Le savoir qui se construit', 'Knowledge that grows')}
         title={t('Connaissances', 'Knowledge')}
         description={t(
-          'Pages de connaissance et modèles mentaux construits à partir des faits de la banque sélectionnée.',
-          'Knowledge pages and mental models built from the selected bank’s facts.',
+          'Ce que la banque sait d’un sujet, rédigé à partir de ses faits : les pages de connaissance, tenues par le serveur, et les modèles mentaux, des questions que vous suivez.',
+          'What the bank knows about a topic, written from its facts: knowledge pages, kept by the server, and mental models, questions you follow.',
         )}
         actions={
           <Button kind="primary" icon={Plus} onClick={() => setCreate(true)}>
@@ -298,37 +298,29 @@ export function Models({ data, run, busy, notify }: PageProps) {
           </Button>
         }
       />
-      <div className="section-callout">
-        <span className="callout-icon">
-          <BookOpen size={21} />
-        </span>
-        <div>
-          <strong>
-            {t('Pages de connaissance et modèles mentaux', 'Knowledge pages and mental models')}
-          </strong>
-          <p>
-            {' '}
-            {t(
-              'Chacune rassemble ce que votre banque sait d’un sujet, à partir des faits mémorisés.',
-              'Each one brings together what your bank knows about a topic, using its stored facts.',
-            )}
-          </p>
+      <div className="list-toolbar knowledge-toolbar">
+        <div className="standalone-search input-with-icon">
+          <Search size={17} />
+          <input
+            aria-label={t('Filtrer les connaissances', 'Filter knowledge')}
+            placeholder={t('Retrouver une connaissance…', 'Find knowledge…')}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
         </div>
-        <Badge>
-          {query.trim() && allModels && models.length !== allModels.length
-            ? `${number(models.length)} ${t('sur', 'of')} `
-            : ''}
-          {number(allModels?.length || 0)} {t('éléments', 'items')}
-        </Badge>
-      </div>
-      <div className="standalone-search input-with-icon">
-        <Search size={17} />
-        <input
-          aria-label={t('Filtrer les connaissances', 'Filter knowledge')}
-          placeholder={t('Retrouver une connaissance…', 'Find knowledge…')}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
+        {allModels && (
+          <span className="toolbar-count" role="status">
+            {query.trim() && models.length !== allModels.length
+              ? t(
+                  `${number(models.length)} sur ${number(allModels.length)}`,
+                  `${number(models.length)} of ${number(allModels.length)}`,
+                )
+              : t(
+                  `${number(allModels.length)} élément${allModels.length > 1 ? 's' : ''}`,
+                  `${number(allModels.length)} item${allModels.length === 1 ? '' : 's'}`,
+                )}
+          </span>
+        )}
       </div>
       <ErrorNotice message={modelError} />
       {!allModels && !modelError ? (
@@ -363,6 +355,11 @@ export function Models({ data, run, busy, notify }: PageProps) {
                         : t('Jamais générée', 'Never generated')}
                 </Badge>
               </div>
+              <span className="model-kind">
+                {m.is_knowledge_page
+                  ? t('Page de connaissance', 'Knowledge page')
+                  : t('Modèle mental', 'Mental model')}
+              </span>
               <h2>{m.name}</h2>
               <p>
                 {m.source_query ||
@@ -884,28 +881,19 @@ export function Documents({ data, run, busy, refresh, navigate }: PageProps) {
   );
   // Requête réellement appliquée par le moteur (le champ peut avoir été modifié depuis).
   const activeQuery = (typeof data.query === 'string' ? data.query : query).trim();
+  // « projet:horizon » se lit « horizon » : la clé de l'étiquette n'aide pas à reconnaître un document.
+  const tagLabel = (tag: string) => tag.replace(/^[^:\s]+:/, '');
   return (
     <>
       <PageHeader
         eyebrow={t('La mémoire et ses origines', 'Memory and its sources')}
         title="Documents"
         description={t(
-          'Consultez ce qui est en mémoire et remontez jusqu’aux sources.',
-          'Browse stored documents and trace them back to their sources.',
+          'Les documents conservés par la banque, et les faits qui en ont été extraits.',
+          'The documents kept by the bank, and the facts extracted from them.',
         )}
-        actions={
-          <Button icon={FolderPlus} onClick={() => navigate('sources')}>
-            {' '}
-            {t('Sources', 'Sources')}
-          </Button>
-        }
       />
       <section className="card">
-        <CardHeader
-          title={t('Bibliothèque', 'Library')}
-          subtitle={t('Les documents conservés par Hindsight', 'Documents stored by Hindsight')}
-          action={<Badge>{number(data.total)} documents</Badge>}
-        />
         <form
           className="list-toolbar"
           onSubmit={(e) => {
@@ -935,6 +923,14 @@ export function Documents({ data, run, busy, refresh, navigate }: PageProps) {
             <option value="name">{t('Par nom', 'By name')}</option>
             <option value="facts">{t('Nombre de faits', 'Fact count')}</option>
           </select>
+          {typeof data.total === 'number' && (
+            <span className="toolbar-count" role="status">
+              {t(
+                `${number(data.total)} document${data.total > 1 ? 's' : ''}`,
+                `${number(data.total)} document${data.total === 1 ? '' : 's'}`,
+              )}
+            </span>
+          )}
         </form>
         <ErrorNotice message={data.error} />
         {!data.items && !data.error ? (
@@ -946,7 +942,7 @@ export function Documents({ data, run, busy, refresh, navigate }: PageProps) {
                 <tr>
                   <th>Document</th>
                   <th>{t('Faits extraits', 'Extracted facts')}</th>
-                  <th>{t('Taille', 'Size')}</th>
+                  <th>{t('Longueur', 'Length')}</th>
                   <th>{t('Mis à jour', 'Updated')}</th>
                   <th />
                 </tr>
@@ -968,7 +964,9 @@ export function Documents({ data, run, busy, refresh, navigate }: PageProps) {
                         </span>
                         <span>
                           <strong>{documentName(item)}</strong>
-                          <small>{(item.tags || []).slice(0, 2).join(' · ') || item.id}</small>
+                          <small>
+                            {(item.tags || []).slice(0, 2).map(tagLabel).join(' · ') || item.id}
+                          </small>
                         </span>
                       </button>
                     </td>
@@ -978,7 +976,10 @@ export function Documents({ data, run, busy, refresh, navigate }: PageProps) {
                       </Badge>
                     </td>
                     <td className="muted">
-                      {number((item.text_length || 0) / 1000)} {t('kcar.', 'k chars')}
+                      {t(
+                        `${number(item.text_length || 0)} signes`,
+                        `${number(item.text_length || 0)} characters`,
+                      )}
                     </td>
                     <td className="muted">{date(item.updated_at || item.created_at)}</td>
                     <td>

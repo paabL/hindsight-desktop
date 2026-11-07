@@ -163,8 +163,8 @@ export default function Updates({
       />
       <p>
         {t(
-          'Recherchez une nouvelle version, puis mettez à jour et redémarrez. Vos réglages et dossiers mémoire sont conservés.',
-          'Check for a new version, then update and restart. Your settings and memory folders are kept.',
+          'Recherchez une nouvelle version, puis mettez à jour et redémarrez. Vos réglages et vos sources sont conservés.',
+          'Check for a new version, then update and restart. Your settings and sources are kept.',
         )}
       </p>
       <ErrorNotice message={releaseErrorMessage(releaseError)} />
@@ -199,7 +199,7 @@ export default function Updates({
         open={working || data.state === 'failed' || data.state === 'ready' ? true : undefined}
       >
         <summary>
-          {t('Construire depuis les sources (avancé)', 'Build from source (advanced)')}
+          {t('Compiler depuis le code source (avancé)', 'Build from source code (advanced)')}
         </summary>
         <p className="form-hint">
           {t(

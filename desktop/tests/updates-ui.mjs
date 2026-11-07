@@ -150,8 +150,12 @@ try {
   await expect(updates).not.toContainText('token=secret');
   await expect(install).toHaveCount(0);
 
-  // An active request disables both update and restart until it has completed.
+  // An active request, even one started from another settings tab, disables both update and
+  // restart until it has completed.
+  const settingsTabs = page.getByRole('tablist', { name: 'Settings views' });
+  await settingsTabs.getByRole('tab', { name: 'Server', exact: true }).click();
   await page.getByRole('button', { name: 'Apply and reconnect', exact: true }).click();
+  await settingsTabs.getByRole('tab', { name: 'Application', exact: true }).click();
   await expect(check).toBeDisabled();
   await expect
     .poll(() => page.evaluate(() => typeof window.__updaterFixture.finishBridge))

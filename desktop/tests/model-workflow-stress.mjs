@@ -22,7 +22,7 @@ function check(name, fn) {
   cases.push({ name, fn });
 }
 
-async function open(page, mode = 'server') {
+async function open(page, mode = 'models') {
   await page.goto(`${base}/tests/support/model-workflow-fixture.html?mode=${mode}`);
   await expect.poll(() => page.evaluate(() => !!window.modelFixture?.update)).toBe(true);
 }
@@ -33,6 +33,9 @@ const prepare = (dialog) =>
   dialog.getByRole('button', { name: 'Prepare these changes', exact: true });
 const dialog = (page) => page.getByRole('dialog');
 async function openRole(page, title) {
+  // Les rôles sont repliés sous le schéma : on déplie la section avant de choisir une carte.
+  const summary = page.locator('summary', { hasText: 'All roles and advanced settings' });
+  if (!(await summary.evaluate((node) => node.parentElement.open))) await summary.click();
   await page
     .locator('.role-card')
     .filter({ has: page.getByRole('heading', { name: title, exact: true }) })
@@ -197,7 +200,7 @@ check(
         items: [{ id: 'new-id', title: 'New source', state: 'current' }],
       });
     });
-    await expect(page.getByRole('button', { name: 'Upload (0)', exact: true })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Upload all (0)', exact: true })).toBeDisabled();
     await page.evaluate(
       (folder) =>
         window.modelFixture.mount(
@@ -216,7 +219,7 @@ check(
       folder,
     );
     await expect(page.locator('.folder-path-line')).toHaveText('/fictional/bank-b');
-    await expect(page.getByRole('button', { name: 'Upload (0)', exact: true })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Upload all (0)', exact: true })).toBeDisabled();
     assert.deepEqual(await calls(page), []);
   },
 );
@@ -427,19 +430,19 @@ check(
       window.modelFixture.update({ draft: { retainMission: 'Server mission' } }),
     );
     await expect(mission).toHaveValue('Local mission');
-    await page.getByRole('tab', { name: 'Advanced', exact: true }).click();
+    await page.getByRole('tab', { name: 'Expert', exact: true }).click();
     const advanced = page.getByRole('textbox', {
       name: 'Advanced JSON configuration',
       exact: true,
     });
     for (const value of ['null', '[]', '42', '"text"']) {
       await advanced.fill(value);
-      await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+      await page.getByRole('button', { name: /^Save/ }).click();
     }
     assert.deepEqual(await calls(page), []);
     assert.equal(await page.evaluate(() => window.modelFixture.notifications.length), 4);
     await advanced.fill('{"retain_chunk_size": 1200}');
-    await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+    await page.getByRole('button', { name: /^Save/ }).click();
     const request = (await calls(page))[0];
     assert.equal(request.args.config.retain_mission, 'Local mission');
     assert.equal(request.args.config.retain_chunk_size, 1200);

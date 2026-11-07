@@ -1,6 +1,6 @@
 # Model settings diagram
 
-**Models** is a primary sidebar destination, next to Search. It contains quick selectors and the explanatory diagram, and is available without a selected memory bank. **Manage models** opens Settings → Server & models for providers, installation, accounts, custom models and advanced configuration. Both views share one draft, so navigating between them preserves prepared choices.
+**Models** sits at the bottom of the sidebar, next to Settings, and is available without a selected memory bank. It is the only place for model settings. The diagram at the top offers quick selectors and explanations. Under it, on the same page: account connections, **All roles and advanced settings** (collapsed) for providers, keys, endpoints, custom models and per-operation overrides, and **Model installation and services** (collapsed). Everything shares one draft, and the diagram's settings buttons open the matching role.
 
 ![Model choices and the Answer decision loop — fictional data](images/hindsight-desktop.png)
 
@@ -10,11 +10,11 @@ In **Answer**, one reflection model writes search queries and the final answer. 
 
 **Search** ranking and **Answer** evidence evaluation are independent. Hindsight's global decision provider does not automatically replace recall's reranker. Search must explicitly select it. When enabled, the Answer diagram links its ranking stage to Search. A per-operation model, URL or key override is displayed as a separate configuration rather than falsely labelled as shared. Pages use the reflection decision client; their two behavior flags remain available in advanced settings.
 
-Each role has a short explanation on hover, keyboard focus or tap. Provider changes, custom model identifiers, vision, default models, keys and per-operation overrides stay in Settings. Installation/start/stop and Cloud connection controls remain available under model services. Quick selection offers existing model choices and keeps unconnected Cloud destinations unavailable. Embeddings are read-only in the diagram.
+Each role has a short explanation on hover, keyboard focus or tap. Provider changes, custom model identifiers, vision, default models, keys and per-operation overrides are in the role cards under the diagram. Installation/start/stop and Cloud connection controls remain available under model services. Quick selection offers existing model choices and keeps unconnected Cloud destinations unavailable. Embeddings are read-only in the diagram.
 
 The diagram prepares only allowed model names and decision flags, with an optimistic revision check against the current script draft. It cannot change embeddings, credentials or endpoints through the batch command. Dynamic shell values must be edited explicitly through advanced settings. No selection triggers ingestion, inference or a server restart.
 
-In Settings, Provider and Model are dropdowns. Switching provider updates the model menu inside the modal, without changing the native draft until Prepare is selected. The menus include configured custom providers/models and the existing native catalog; Codex also uses its local public model catalog. Cancel discards these modal choices. Provider-specific embedding and reranker fields remain independent.
+In a role card, Provider and Model are dropdowns. Switching provider updates the model menu inside the modal, without changing the native draft until Prepare is selected. The menus include configured custom providers/models and the existing native catalog; Codex also uses its local public model catalog. Cancel discards these modal choices. Provider-specific embedding and reranker fields remain independent.
 
 Only the selected provider's applicable advanced fields are shown. **Other model…**
 opens an explicit custom-name field when a configured identifier is not in the

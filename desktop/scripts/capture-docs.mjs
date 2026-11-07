@@ -154,7 +154,7 @@ try {
     .getByRole('navigation', { name: 'Server and app settings' })
     .getByRole('button', { name: /^Models/ })
     .click();
-  await page.getByRole('button', { name: 'Manage models', exact: true }).click();
+  // Accounts sit on the Models page, under the diagram.
   await expect(page.locator('.account-status-dot')).toHaveCount(3);
   await page
     .locator('.account-card')

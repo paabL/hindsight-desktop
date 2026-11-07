@@ -105,7 +105,7 @@ const baseSections = [
   { id: 'audit', label: 'Journaux', icon: Activity },
   { id: 'timeline', label: 'Chronologie', icon: GitBranch },
   { id: 'graph', label: 'Graphe', icon: Network },
-  { id: 'server', label: 'Serveur & modèles', icon: Server },
+  { id: 'server', label: 'Serveur', icon: Server },
   { id: 'model-settings', label: 'Modèles', icon: Cpu },
   { id: 'admin', label: 'Banque', icon: Database },
   { id: 'memory', label: 'Comportement de la mémoire', icon: Layers3 },
@@ -125,7 +125,7 @@ const englishLabels: Record<Section, string> = {
   audit: 'Logs',
   timeline: 'Timeline',
   graph: 'Graph',
-  server: 'Server & models',
+  server: 'Server',
   admin: 'Memory bank',
   settings: 'Application',
 };
@@ -502,12 +502,12 @@ export default function App() {
       >
         <Icon size={18} strokeWidth={1.6} />
         <span>{label}</span>
-        {id === 'models' && demo ? <span className="nav-count">4</span> : <kbd>⌘{shortcut}</kbd>}
+        <kbd>⌘{shortcut}</kbd>
       </button>
     );
   }
   const bank = snapshot.app.banks.find((b) => b.bank_id === snapshot.app.bank);
-  const bankName = bankLabel(bank) || t('Votre espace', 'Your workspace');
+  const bankName = bankLabel(bank) || t('Aucune banque', 'No memory bank');
   const title = sections.find((s) => s.id === route)?.label || 'Hindsight';
   const currentGroup = groupFor(route);
   const groupTitle =
@@ -540,10 +540,17 @@ export default function App() {
         <>
           <PageHeader
             title={title}
-            description={t(
-              'Connectez votre banque pour retrouver vos connaissances.',
-              'Connect a memory bank to access your knowledge.',
-            )}
+            description={
+              snapshot.app.connected
+                ? t(
+                    'Créez une banque pour commencer à mémoriser.',
+                    'Create a memory bank to start remembering.',
+                  )
+                : t(
+                    'Connectez votre serveur Hindsight pour retrouver vos banques.',
+                    'Connect your Hindsight server to reach your memory banks.',
+                  )
+            }
           />
           <Empty
             icon={Database}
@@ -559,8 +566,8 @@ export default function App() {
                     'Create a memory bank to start remembering your sources.',
                   )
                 : t(
-                    'Le dossier mémoire reste consultable hors connexion. Les connaissances et les traitements nécessitent le serveur Hindsight.',
-                    'You can browse a memory folder offline. Knowledge and processing require a Hindsight server.',
+                    'Hindsight Desktop affiche les banques d’un serveur Hindsight, sur ce Mac ou à distance. L’exemple permet de découvrir l’application avec des données fictives.',
+                    'Hindsight Desktop shows the memory banks of a Hindsight server, on this Mac or remote. The example lets you discover the app with fictional data.',
                   )
             }
             action={
@@ -570,15 +577,12 @@ export default function App() {
                   disabled={busy}
                   onClick={() => {
                     if (snapshot.app.connected) navigate('admin');
-                    else navigate('settings');
+                    else navigate('server');
                   }}
                 >
                   {snapshot.app.connected
                     ? t('Créer une banque', 'Create a memory bank')
                     : t('Connecter mon serveur', 'Connect my server')}
-                </Button>
-                <Button onClick={() => navigate('sources')}>
-                  {t('Parcourir les sources', 'Browse sources')}
                 </Button>
                 <Button onClick={() => changeDemo(true)}>
                   {t('Explorer un exemple', 'Explore an example')}
@@ -613,7 +617,12 @@ export default function App() {
       case 'dashboard':
         return <Dashboard {...props} />;
       case 'operations':
-        return <Operations {...props} />;
+        return (
+          <Operations
+            {...props}
+            paused={Boolean(snapshot.app.bank && snapshot.app.paused?.includes(snapshot.app.bank))}
+          />
+        );
       case 'timeline':
         return <Timeline {...props} />;
       case 'graph':
@@ -625,7 +634,12 @@ export default function App() {
       case 'admin':
         return <Admin {...props} bank={bank} banks={snapshot.app.banks} />;
       case 'server':
-        return <ServerSettings {...props} />;
+        return (
+          <ServerSettings
+            {...props}
+            connection={<ServerConnection snapshot={snapshot} run={run} demo={demo} busy={busy} />}
+          />
+        );
       case 'model-settings':
         return <ModelChoices {...props} />;
       case 'settings':
@@ -662,13 +676,17 @@ export default function App() {
               onClick={() => setBankMenu(!bankMenu)}
             >
               <span className="workspace-avatar">
-                {bankName
-                  .split(/[\s-]+/)
-                  .filter(Boolean)
-                  .slice(0, 2)
-                  .map((s: string) => s[0])
-                  .join('')
-                  .toUpperCase()}
+                {bank ? (
+                  bankName
+                    .split(/[\s-]+/)
+                    .filter(Boolean)
+                    .slice(0, 2)
+                    .map((s: string) => s[0])
+                    .join('')
+                    .toUpperCase()
+                ) : (
+                  <Database size={15} />
+                )}
               </span>
               <span>
                 <strong>{bankName}</strong>
@@ -678,7 +696,9 @@ export default function App() {
                         `${number(bank.fact_count)} faits en mémoire`,
                         `${number(bank.fact_count)} facts in memory`,
                       )
-                    : t('Espace personnel', 'Personal workspace')}
+                    : snapshot.app.connected
+                      ? t('Choisissez une banque', 'Choose a memory bank')
+                      : t('Serveur non connecté', 'Server not connected')}
                 </small>
               </span>
               <ChevronDown size={14} />
@@ -752,14 +772,17 @@ export default function App() {
                     ? t('Espace de démonstration', 'Example workspace')
                     : snapshot.app.connected
                       ? t('Hindsight est connecté', 'Hindsight is connected')
-                      : t('Dossier disponible hors ligne', 'Folder available offline')}
+                      : t('Hindsight n’est pas connecté', 'Hindsight is not connected')}
                 </strong>
                 <span>
                   {demo
                     ? t('Toutes les données sont fictives', 'All data is fictional')
                     : snapshot.app.connected
                       ? t('Votre mémoire est à portée de main', 'Your memory is within reach')
-                      : t('Le serveur est déconnecté', 'The server is disconnected')}
+                      : t(
+                          'Réessayez ou vérifiez l’adresse du serveur',
+                          'Retry or check the server address',
+                        )}
                 </span>
               </div>
               <IconButton
@@ -802,9 +825,7 @@ export default function App() {
                 {t('Explorer un exemple', 'Explore an example')}
                 <ArrowRight size={12} />
               </button>
-            ) : (
-              <span className="host-badge">{host}</span>
-            )}
+            ) : null}
             <button
               className="command-trigger"
               onClick={() => {
@@ -847,8 +868,8 @@ export default function App() {
             {snapshot.app.paused
               .map((id) => bankLabel(snapshot.app.banks.find((b) => b.bank_id === id)) || id)
               .join(', ')}
-            <button onClick={() => navigate('consumption')}>
-              {t('Gérer la pause', 'Manage pause')}
+            <button onClick={() => navigate('operations')}>
+              {t('Voir les traitements', 'View processing')}
               <ArrowRight size={13} />
             </button>
           </div>
@@ -908,7 +929,9 @@ export default function App() {
               <Logo small />
               <span>Hindsight Desktop</span>
               <span className="spacer" />
-              <span>Hindsight Desktop · {appVersion}</span>
+              <span>
+                {t('Version', 'Version')} {appVersion}
+              </span>
             </footer>
           </div>
         </div>
@@ -1005,6 +1028,80 @@ export default function App() {
   );
 }
 
+/** Adresse du serveur Hindsight : en tête de Réglages › Serveur. */
+function ServerConnection({
+  snapshot,
+  run,
+  demo,
+  busy,
+}: {
+  snapshot: Snapshot;
+  run: PageProps['run'];
+  demo: boolean;
+  busy: boolean;
+}) {
+  const { t } = useI18n();
+  const [url, setURL] = useState(snapshot.app.serverURL);
+  useEffect(() => setURL(snapshot.app.serverURL), [snapshot.app.serverURL]);
+  return (
+    <section className="card settings-card">
+      <div className="settings-section-heading">
+        <span className="category-icon sage">
+          <Server size={21} />
+        </span>
+        <div>
+          <h2>{t('Connexion à Hindsight', 'Connect to Hindsight')}</h2>
+          <p>
+            {t(
+              'Le serveur qui conserve les faits et génère les connaissances.',
+              'The server that stores facts and builds knowledge.',
+            )}
+          </p>
+        </div>
+      </div>
+      <form
+        className="inline-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void run('server.url', { url });
+        }}
+      >
+        <label>
+          {t('Adresse du serveur', 'Server address')}
+          <input
+            type="url"
+            required
+            value={url}
+            onChange={(e) => setURL(e.target.value)}
+            placeholder="http://127.0.0.1:8888"
+          />
+        </label>
+        <Button kind="primary" disabled={busy || demo}>
+          {t('Appliquer et reconnecter', 'Apply and reconnect')}
+        </Button>
+      </form>
+      <ErrorNotice message={snapshot.app.connectionError} />
+      {snapshot.app.serverURLNotice && (
+        <div className="notice" role="status">
+          {nativeSystemMessage(snapshot.app.serverURLNotice)}
+        </div>
+      )}
+      <p className="form-hint">
+        {t(
+          'L’application se connecte à un serveur Hindsight installé séparément. Vous pouvez utiliser un serveur sur ce Mac ou un serveur distant. Aucun serveur n’est installé au premier lancement.',
+          'The app connects to a separately installed Hindsight server, on this Mac or remotely. No server is installed when you first open the app.',
+        )}
+      </p>
+      <p className="form-hint">
+        {t(
+          'Les connexions distantes utilisent HTTPS. Les adresses avec des identifiants intégrés sont refusées.',
+          'Remote connections use HTTPS. Addresses with embedded credentials are not allowed.',
+        )}
+      </p>
+    </section>
+  );
+}
+
 function Settings({
   snapshot,
   run,
@@ -1023,73 +1120,16 @@ function Settings({
   busy: boolean;
 }) {
   const { t, language, setLanguage } = useI18n();
-  const [url, setURL] = useState(snapshot.app.serverURL);
-  useEffect(() => setURL(snapshot.app.serverURL), [snapshot.app.serverURL]);
   return (
     <>
       <PageHeader
         eyebrow={t('À votre façon', 'Make it yours')}
         title={t('Application', 'Application')}
         description={t(
-          'Connexion, apparence et préférences de l’application.',
-          'Connection, appearance and application preferences.',
+          'Langue, apparence, mises à jour et préférences de l’application.',
+          'Language, appearance, updates and application preferences.',
         )}
       />
-      <section className="card settings-card">
-        <div className="settings-section-heading">
-          <span className="category-icon sage">
-            <Server size={21} />
-          </span>
-          <div>
-            <h2>{t('Connexion à Hindsight', 'Connect to Hindsight')}</h2>
-            <p>
-              {t(
-                'Le serveur qui conserve les faits et génère les connaissances.',
-                'The server that stores facts and builds knowledge.',
-              )}
-            </p>
-          </div>
-        </div>
-        <form
-          className="inline-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void run('server.url', { url });
-          }}
-        >
-          <label>
-            {t('Adresse du serveur', 'Server address')}
-            <input
-              type="url"
-              required
-              value={url}
-              onChange={(e) => setURL(e.target.value)}
-              placeholder="http://127.0.0.1:8888"
-            />
-          </label>
-          <Button kind="primary" disabled={busy || demo}>
-            {t('Appliquer et reconnecter', 'Apply and reconnect')}
-          </Button>
-        </form>
-        <ErrorNotice message={snapshot.app.connectionError} />
-        {snapshot.app.serverURLNotice && (
-          <div className="notice" role="status">
-            {nativeSystemMessage(snapshot.app.serverURLNotice)}
-          </div>
-        )}
-        <p className="form-hint">
-          {t(
-            'L’application se connecte à un serveur Hindsight installé séparément. Vous pouvez utiliser un serveur sur ce Mac ou un serveur distant. Aucun serveur n’est installé au premier lancement.',
-            'The app connects to a separately installed Hindsight server, on this Mac or remotely. No server is installed when you first open the app.',
-          )}
-        </p>
-        <p className="form-hint">
-          {t(
-            'Les connexions distantes utilisent HTTPS. Les adresses avec des identifiants intégrés sont refusées.',
-            'Remote connections use HTTPS. Addresses with embedded credentials are not allowed.',
-          )}
-        </p>
-      </section>
       <section className="card settings-card">
         <CardHeader
           title={t('Langue', 'Language')}

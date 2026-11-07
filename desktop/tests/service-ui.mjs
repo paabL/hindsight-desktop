@@ -94,6 +94,9 @@ try {
   await expect(card).toContainText('Accessible', { timeout: 7000 });
   await expect(card).not.toContainText('missing reranker credential');
   assert.equal(await page.evaluate(() => window.__serviceFixture.starts), 2);
+  // Les rôles se règlent dans Modèles, repliés sous le schéma.
+  await page.goto(base + '/#model-settings');
+  await page.locator('summary', { hasText: 'Tous les rôles et réglages avancés' }).click();
   await page.locator('.role-card').filter({ hasText: 'Décision' }).click();
   const editor = page.getByRole('dialog');
   for (const name of ['Modèle', 'Recherche', 'Réponses', 'Consolidation', 'Connaissances']) {

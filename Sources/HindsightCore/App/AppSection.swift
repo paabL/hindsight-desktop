@@ -20,7 +20,7 @@ public enum AppSection: String, CaseIterable, Identifiable, Sendable {
         case .graph: return "Graphe"
         case .audit: return "Activité"
         case .admin: return "Administration"
-        case .server: return "Serveur & modèles"
+        case .server: return "Serveur"
         }
     }
 

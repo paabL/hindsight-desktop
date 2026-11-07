@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { X } from 'lucide-react';
-import { ServerSettings, MemoryDesign, Admin } from '../../src/pages/Manage';
+import { ModelManagement, MemoryDesign, Admin } from '../../src/pages/Manage';
 import Sources from '../../src/pages/Sources';
 import { ModelWorkflowSettings } from '../../src/components/ModelWorkflow';
 import { Button, IconButton, Modal } from '../../src/ui';
@@ -102,7 +102,7 @@ function Harness({ mode, initial }: { mode: string; initial: any }) {
     fixture.completed++;
     if (fixture.failure === command || fixture.failure === args.name)
       return { error: 'Fixture rejects this change' };
-    if (mode === 'server') {
+    if (mode === 'models') {
       if (command === 'server.field') {
         for (const role of captured.roles)
           for (const field of role.fields)
@@ -141,7 +141,7 @@ function Harness({ mode, initial }: { mode: string; initial: any }) {
     refresh: async () => {},
     notify: (text: string) => fixture.notifications.push(text),
   };
-  if (mode === 'server') return <ServerSettings {...props} />;
+  if (mode === 'models') return <ModelManagement {...props} />;
   if (mode === 'memory') return <MemoryDesign {...props} />;
   if (mode === 'admin') return <Admin {...props} />;
   if (mode === 'sources')
@@ -173,4 +173,4 @@ fixture.mount = (mode: string, overrides: any = {}, key = 'initial') => {
   fixture.actions = 0;
   root.render(<Harness key={key} mode={mode} initial={{ ...serverData(), ...overrides }} />);
 };
-fixture.mount(new URLSearchParams(location.search).get('mode') || 'server');
+fixture.mount(new URLSearchParams(location.search).get('mode') || 'models');

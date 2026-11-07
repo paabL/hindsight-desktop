@@ -46,17 +46,17 @@ opens explicitly labeled fictional data. Native file and server access uses Taur
 | Knowledge | Read, create, refresh and delete knowledge pages and mental models with confirmation |
 | Sources | The folders that feed the selected bank; a catalog folder shows its sources, collection and upload previews |
 | Search | Recall, exact text and confirmed reflect; filters and links to original documents |
-| Models | Direct model selectors, per-function decision switches, explanatory arrows and tooltips |
+| Models | Every model setting: diagram with selectors, decision switches and tooltips; accounts; all roles; installation and services |
 | Memory → Documents | Stored text, facts, history, attachments, tags, scopes, reprocessing and deletion |
-| Sources → a folder | File comparison with the bank, selection and confirmed uploads; automatic folder sync is suspended |
-| Activity → Processing | Queued and completed work, errors and confirmed processing controls |
-| Activity → Usage | Traces, costs, token rates, price lists, limits and processing controls |
+| Sources → a folder | File comparison with the bank, **Upload all** or a selection, confirmed uploads; automatic folder sync is suspended |
+| Activity → Processing | Queued and completed work, errors, pause and resume, and confirmed processing controls |
+| Activity → Usage | Traces, costs, token rates, price lists and limits |
 | Memory → Timeline | Event or mention dates, search and source documents, up to 20,000 facts |
 | Memory → Graph | Memory atlas, groups, bridges, two-hop neighborhoods, paths, filters and source facts |
 | Activity → Logs | Read history, model traces and access logs |
-| Settings → Memory behavior | Missions, extraction, consolidation, recall, disposition, advanced settings and previews |
-| Settings → Server & models | launchd service, model roles, official sign-in clients, changes, backups and logs |
-| Settings → Memory bank | Banks, directives, exports, cloning, merging, imports, sync previews and deletions |
+| Settings → Memory behavior | Missions, extraction, consolidation, recall, disposition and previews; advanced options collapsed and flagged; Expert JSON |
+| Settings → Server | Server address, launchd service, launch script, backups and logs |
+| Settings → Memory bank | Banks, directives, exports, cloning, merging, imports and deletions |
 
 Bank configuration changes use the server API. Model settings are edited in the
 local launch script. Features depend on server capabilities and separately
@@ -198,10 +198,7 @@ require renewed approval. Legacy tracking recovery uses saved batches without
 uploading again and first backs up the state to
 `collection/.memory-workspace.pre-tracking-v2.json`.
 
-Advanced project sync previews list document IDs. `sync.py` binds approval to
-the plan's exact content and metadata; changing the plan or script requires a
-new preview. Its queue must be readable and empty at preparation and confirmation.
-Folder uploads also display their selection before approval.
+Folder uploads display their selection before approval.
 Automatic folder sync is suspended, including previously enabled settings.
 These protections do not govern other clients or direct Hindsight API calls.
 
@@ -213,9 +210,9 @@ ordering and removals. See [Sources performance and validation](../docs/SOURCES-
 
 ## Model choices and account status
 
-The sidebar **Models** view and **Settings → Server & models** share the native
-launch-script draft. Quick selection supports Answer, Remember, Pages and Search;
-provider management, installation, sign-in and advanced fields stay in Settings.
+The sidebar **Models** view holds every model setting around one native
+launch-script draft. The diagram supports Answer, Remember, Pages and Search; the
+role cards, account sign-in and installation sit under it on the same page.
 Saving uses the existing diff, confirmation and backup flow. Restarting is separate.
 
 Provider and Model dropdowns use the native catalog and configured identifiers;

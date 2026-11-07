@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   CircleDot,
   FileText,
+  FolderPlus,
   GitBranch,
   Layers3,
   Network,
@@ -40,6 +41,8 @@ export function Dashboard({ data, navigate, run, busy }: PageProps) {
   const stats = data.snapshot?.stats || {};
   const [reader, setReader] = useState<Row | null>(null);
   const types = Object.entries(stats.nodes_by_fact_type || {}) as [string, number][];
+  const recent: Row[] = data.snapshot?.recentDocuments || [];
+  const empty = Boolean(data.snapshot) && !Number(stats.total_documents);
   const header = (
     <PageHeader
       eyebrow={t('Un regard d’ensemble', 'At a glance')}
@@ -49,17 +52,11 @@ export function Dashboard({ data, navigate, run, busy }: PageProps) {
         'Your memory bank at a glance.',
       )}
       actions={
-        <div className="action-row">
-          <Button kind="primary" icon={Search} onClick={() => navigate('search')}>
-            {t('Rechercher et obtenir des réponses', 'Search and get answers')}
-          </Button>
-          <Button icon={Layers3} onClick={() => navigate('facts')}>
-            {t('Explorer la mémoire', 'Explore memory')}
-          </Button>
-          <Button icon={FileText} onClick={() => navigate('sources')}>
+        empty ? (
+          <Button kind="primary" icon={FolderPlus} onClick={() => navigate('sources')}>
             {t('Ajouter des sources', 'Add sources')}
           </Button>
-        </div>
+        ) : undefined
       }
     />
   );
@@ -74,7 +71,7 @@ export function Dashboard({ data, navigate, run, busy }: PageProps) {
     <>
       {header}
       <ErrorNotice message={data.error} />
-      <div className="metrics-grid">
+      <div className="metrics-grid three">
         <Metric
           label={t('Faits en mémoire', 'Facts in memory')}
           // Même total que la barre latérale (`fact_count` du serveur) et que la page Faits : observations comprises.
@@ -84,27 +81,30 @@ export function Dashboard({ data, navigate, run, busy }: PageProps) {
             `Including ${number(stats.total_observations ?? 0)} observations`,
           )}
           icon={Sparkles}
+          onClick={() => navigate('facts')}
         />
         <Metric
           label={t('Documents', 'Documents')}
           value={number(stats.total_documents)}
-          note={t('Documents conservés', 'Stored documents')}
+          note={
+            recent[0]?.updated_at
+              ? t(
+                  `Dernier ajout le ${date(recent[0].updated_at)}`,
+                  `Last added on ${date(recent[0].updated_at)}`,
+                )
+              : undefined
+          }
           icon={FileText}
           tone="sage"
-        />
-        <Metric
-          label={t('Observations', 'Observations')}
-          value={number(stats.total_observations)}
-          note={t('Consolidées à partir des faits', 'Consolidated from facts')}
-          icon={Layers3}
-          tone="lavender"
+          onClick={() => navigate('documents')}
         />
         <Metric
           label={t('Relations', 'Relationships')}
           value={number(stats.total_links)}
-          note={t('Relations entre les faits', 'Relationships between facts')}
+          note={t('Liens entre les faits', 'Links between facts')}
           icon={GitBranch}
           tone="blue"
+          onClick={() => navigate('graph')}
         />
       </div>
       <div className="two-columns">
@@ -143,10 +143,10 @@ export function Dashboard({ data, navigate, run, busy }: PageProps) {
         </section>
         <section className="card">
           <CardHeader
-            title={t('Les traitements', 'Processing')}
+            title={t('Traitements', 'Processing')}
             action={
               <Button kind="ghost" icon={ArrowRight} onClick={() => navigate('operations')}>
-                {t('Ouvrir la file', 'Open queue')}
+                {t('Voir l’activité', 'View activity')}
               </Button>
             }
           />
@@ -180,7 +180,7 @@ export function Dashboard({ data, navigate, run, busy }: PageProps) {
             </Button>
           }
         />
-        {(data.snapshot?.recentDocuments || []).map((doc: Row) => (
+        {recent.map((doc: Row) => (
           <button
             key={doc.id}
             className="source-row"
@@ -199,9 +199,7 @@ export function Dashboard({ data, navigate, run, busy }: PageProps) {
             <ArrowRight size={15} />
           </button>
         ))}
-        {!data.snapshot?.recentDocuments?.length && (
-          <Empty title={t('Aucun document récent', 'No recent documents')} />
-        )}
+        {!recent.length && <Empty title={t('Aucun document récent', 'No recent documents')} />}
       </section>
       {data.partialErrors?.map((e: string) => (
         <ErrorNotice message={e} key={e} />
@@ -213,34 +211,85 @@ export function Dashboard({ data, navigate, run, busy }: PageProps) {
   );
 }
 
+/** Un fait sur une ligne : son type, son texte, sa date et le chemin vers son document. */
+export function FactRow({
+  fact,
+  busy,
+  onSource,
+  showDate = true,
+}: {
+  fact: Row;
+  busy: boolean;
+  onSource: (id: string) => void;
+  showDate?: boolean;
+}) {
+  const when = showDate ? fact.occurredStart || fact.mentionedAt : null;
+  return (
+    <article className={`fact-row ${showDate ? '' : 'no-date'}`}>
+      <span className="fact-row-type">
+        <Badge tone={fact.type === 'observation' ? 'lavender' : 'sage'}>
+          {factTypeLabel(fact.type)}
+        </Badge>
+      </span>
+      <div className="fact-row-main">
+        <p>{fact.text}</p>
+        {(fact.state === 'invalidated' || !!fact.sourceFactIDs?.length) && (
+          <small>
+            {fact.state === 'invalidated' && t('Invalidé', 'Invalidated')}
+            {fact.state === 'invalidated' && !!fact.sourceFactIDs?.length && ' · '}
+            {!!fact.sourceFactIDs?.length &&
+              t(
+                `Issue de ${number(fact.sourceFactIDs.length)} faits`,
+                `Derived from ${number(fact.sourceFactIDs.length)} facts`,
+              )}
+          </small>
+        )}
+      </div>
+      {showDate && (
+        <span
+          className="fact-row-date"
+          title={
+            when
+              ? fact.occurredStart
+                ? t('Date de l’événement', 'Event date')
+                : t('Date de mention', 'Mention date')
+              : undefined
+          }
+        >
+          {when ? date(when) : ''}
+        </span>
+      )}
+      {fact.documentID ? (
+        <IconButton
+          icon={FileText}
+          label={t('Voir le document source', 'View source document')}
+          disabled={busy}
+          onClick={() => onSource(fact.documentID)}
+        />
+      ) : (
+        <span />
+      )}
+    </article>
+  );
+}
+
 export function Facts({ data, run, busy, refresh, notify }: PageProps) {
   useI18n();
-  const [query, setQuery] = useState('');
-  const [type, setType] = useState('all');
+  // Une seule recherche, toujours sur toute la banque : le texte s'applique à la validation, le type aussitôt.
+  const [query, setQuery] = useState(typeof data.query === 'string' ? data.query : '');
+  const [type, setType] = useState(typeof data.type === 'string' ? data.type : 'all');
   const [limit, setLimit] = useState(80);
   const [reader, setReader] = useState<Row | null>(null);
   const loaded = Array.isArray(data.facts);
   const facts = (data.facts || []) as Row[];
-  // Avant le premier chargement ou après un échec sans données, aucun compte n’est affiché.
-  const counted = loaded && !(data.error && !facts.length);
   const total = typeof data.total === 'number' ? data.total : facts.length;
-  const lowerText = useMemo(
-    () => facts.map((fact) => String(fact.text || '').toLocaleLowerCase()),
-    [facts],
-  );
-  const needle = query.toLocaleLowerCase();
-  const filtered = useMemo(
-    () =>
-      facts.filter(
-        (fact, index) =>
-          (type === 'all' || fact.type === type) && lowerText[index].includes(needle),
-      ),
-    [facts, type, lowerText, needle],
-  );
+  const activeQuery = typeof data.query === 'string' ? data.query : '';
+  const activeType = typeof data.type === 'string' ? data.type : 'all';
+  const searching = Boolean(activeQuery) || activeType !== 'all';
 
   async function searchBank(value = query, selectedType = type) {
     setLimit(80);
-    await refresh({ query: value, type: selectedType });
+    await refresh({ query: value.trim(), type: selectedType });
   }
   async function openSource(id: string) {
     const result = await run('document.open', { id });
@@ -251,6 +300,16 @@ export function Facts({ data, run, busy, refresh, notify }: PageProps) {
           t('Impossible d’ouvrir le document source.', 'The source document could not be opened.'),
       );
   }
+  const summary = !loaded
+    ? '—'
+    : searching
+      ? t(
+          `${number(total)} résultat${total > 1 ? 's' : ''}`,
+          `${number(total)} result${total === 1 ? '' : 's'}`,
+        ) +
+        (activeQuery ? t(` pour « ${activeQuery} »`, ` for “${activeQuery}”`) : '') +
+        (activeType !== 'all' ? ` · ${factTypePluralLabel(activeType)}` : '')
+      : t(`${number(total)} faits dans la banque`, `${number(total)} facts in the bank`);
 
   return (
     <>
@@ -258,159 +317,98 @@ export function Facts({ data, run, busy, refresh, notify }: PageProps) {
         eyebrow={t('Ce que la banque retient', 'What the bank remembers')}
         title={t('Faits', 'Facts')}
         description={t(
-          'Explorez les faits extraits et les observations consolidées, puis ouvrez les documents sources disponibles.',
-          'Explore extracted facts and consolidated observations, then open available source documents.',
+          'Les faits extraits de vos documents et les observations qui les relient.',
+          'The facts extracted from your documents and the observations that connect them.',
         )}
       />
       <ErrorNotice message={data.error} />
-      <section className="card facts-filters">
-        <form
-          className="list-toolbar"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void searchBank();
+      <form
+        className="list-toolbar facts-toolbar"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void searchBank();
+        }}
+      >
+        <div className="input-with-icon">
+          <Search size={16} />
+          <input
+            type="search"
+            aria-label={t('Rechercher des faits', 'Search facts')}
+            placeholder={t('Rechercher dans les faits…', 'Search facts…')}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </div>
+        <select
+          aria-label={t('Type de fait', 'Fact type')}
+          value={type}
+          disabled={busy}
+          onChange={(event) => {
+            setType(event.target.value);
+            void searchBank(query, event.target.value);
           }}
         >
-          <div className="input-with-icon">
-            <Search size={16} />
-            <input
-              aria-label={t('Filtrer les faits chargés', 'Filter loaded facts')}
-              placeholder={t('Rechercher dans la mémoire…', 'Search memory…')}
-              value={query}
-              onChange={(event) => {
-                setQuery(event.target.value);
-                setLimit(80);
-              }}
-            />
-          </div>
-          <select
-            aria-label={t('Type de fait', 'Fact type')}
-            value={type}
-            onChange={(event) => {
-              setType(event.target.value);
-              setLimit(80);
+          <option value="all">{t('Tous les types', 'All types')}</option>
+          <option value="world">{factTypePluralLabel('world')}</option>
+          <option value="experience">{factTypePluralLabel('experience')}</option>
+          <option value="observation">{factTypePluralLabel('observation')}</option>
+        </select>
+        <Button icon={Search} disabled={busy}>
+          {t('Rechercher', 'Search')}
+        </Button>
+      </form>
+      <div className="list-summary">
+        <span role="status">{summary}</span>
+        {searching && (
+          <button
+            type="button"
+            className="text-button"
+            disabled={busy}
+            onClick={() => {
+              setQuery('');
+              setType('all');
+              void searchBank('', 'all');
             }}
           >
-            <option value="all">{t('Tous les types', 'All types')}</option>
-            <option value="world">{factTypePluralLabel('world')}</option>
-            <option value="experience">{factTypePluralLabel('experience')}</option>
-            <option value="observation">{factTypePluralLabel('observation')}</option>
-          </select>
-          <Button icon={Search} disabled={busy}>
-            {t('Rechercher dans la banque', 'Search the bank')}
-          </Button>
-          {(data.query || (data.type && data.type !== 'all')) && (
-            <Button
-              kind="ghost"
-              disabled={busy}
-              type="button"
-              onClick={() => {
-                setQuery('');
-                setType('all');
-                void searchBank('', 'all');
-              }}
-            >
-              {t('Effacer la recherche', 'Clear search')}
-            </Button>
-          )}
-        </form>
-        <p className="form-hint">
-          {t(
-            'Le texte et le type filtrent les éléments chargés. Lancez la recherche pour appliquer ces deux filtres à toute la banque.',
-            'Text and type filter the loaded items. Run a search to apply both filters across the bank.',
-          )}
-        </p>
-        <p role="status" className="page-footnote">
-          {counted ? (
-            <>
-              {t(
-                `${number(facts.length)} chargés sur ${number(total)} dans la banque`,
-                `${number(facts.length)} loaded out of ${number(total)} in the bank`,
-              )}
-              {' · '}
-              {number(filtered.length)} {t('correspondent aux filtres', 'match the filters')}
-            </>
-          ) : (
-            '—'
-          )}
-          {data.query && (
-            <>
-              {' '}
-              · {t('Recherche serveur :', 'Bank search:')} {data.query}
-            </>
-          )}
-          {data.type && data.type !== 'all' && (
-            <>
-              {' '}
-              · {t('Type recherché :', 'Bank type:')} {factTypeLabel(data.type)}
-            </>
-          )}
-        </p>
-      </section>
+            {t('Effacer la recherche', 'Clear search')}
+          </button>
+        )}
+      </div>
       {data.truncated && (
         <div className="notice">
           {t(
-            `Seuls les ${number(facts.length)} premiers éléments ont été chargés sur ${number(total)}. Affinez la recherche pour explorer une autre partie de la banque.`,
-            `Only the first ${number(facts.length)} items out of ${number(total)} were loaded. Refine the search to explore another part of the bank.`,
+            `Seuls les ${number(facts.length)} premiers faits sont affichés. Précisez la recherche pour atteindre les autres.`,
+            `Only the first ${number(facts.length)} facts are shown. Refine the search to reach the others.`,
           )}
         </div>
       )}
-      <div className="fact-list">
-        {filtered.slice(0, limit).map((fact) => (
-          <article className="card fact-card" key={fact.id}>
-            <div className="action-row">
-              <Badge tone={fact.type === 'observation' ? 'lavender' : 'sage'}>
-                {factTypeLabel(fact.type)}
-              </Badge>
-              {fact.state === 'invalidated' && <Badge>{t('Invalidé', 'Invalidated')}</Badge>}
-            </div>
-            <p>{fact.text}</p>
-            {(fact.occurredStart || fact.mentionedAt) && (
-              <p className="page-footnote">
-                {fact.occurredStart ? t('Événement :', 'Event:') : t('Mentionné :', 'Mentioned:')}{' '}
-                {date(fact.occurredStart || fact.mentionedAt)}
-              </p>
-            )}
-            {!!fact.sourceFactIDs?.length && (
-              <p className="page-footnote">
-                {t(
-                  `Issue de ${number(fact.sourceFactIDs.length)} faits sources.`,
-                  `Derived from ${number(fact.sourceFactIDs.length)} source facts.`,
-                )}
-              </p>
-            )}
-            {fact.documentID && (
-              <Button
-                kind="ghost"
-                icon={FileText}
-                disabled={busy}
-                onClick={() => void openSource(fact.documentID)}
-              >
-                {t('Voir le document source', 'View source document')}
-              </Button>
-            )}
-          </article>
-        ))}
-      </div>
+      {!!facts.length && (
+        <section className="card fact-rows">
+          {facts.slice(0, limit).map((fact) => (
+            <FactRow key={fact.id} fact={fact} busy={busy} onSource={(id) => void openSource(id)} />
+          ))}
+        </section>
+      )}
       {!loaded && !data.error && <Loading />}
-      {loaded && !data.error && !filtered.length && (
+      {loaded && !data.error && !facts.length && (
         <Empty
           icon={Layers3}
-          title={t('Aucun fait à afficher', 'No facts to display')}
+          title={
+            searching
+              ? t('Aucun fait ne correspond', 'No matching fact')
+              : t('Aucun fait pour le moment', 'No facts yet')
+          }
           description={
-            facts.length || query || type !== 'all'
-              ? t(
-                  'Modifiez les filtres ou lancez une recherche dans la banque.',
-                  'Change the filters or run a search in the bank.',
-                )
+            searching
+              ? t('Essayez d’autres mots ou un autre type.', 'Try other words or another type.')
               : t(
-                  'Les faits extraits et les observations de cette banque apparaîtront ici.',
-                  'Extracted facts and observations from this bank will appear here.',
+                  'Les faits extraits des documents de cette banque apparaîtront ici.',
+                  'Facts extracted from this bank’s documents will appear here.',
                 )
           }
         />
       )}
-      {filtered.length > limit && (
+      {facts.length > limit && (
         <Button onClick={() => setLimit(limit + 80)}>{t('Afficher la suite', 'Load more')}</Button>
       )}
       {reader && (
@@ -426,16 +424,9 @@ export function Timeline({ data, run, busy, refresh }: PageProps) {
   const [axis, setAxis] = useState('event');
   const [limit, setLimit] = useState(80);
   const [reader, setReader] = useState<Row | null>(null);
-  // Textes en minuscules calculés une fois par réponse : jusqu'à 20 000 faits à chaque frappe sinon.
-  const lowered = useMemo(
-    () => ((data.facts || []) as Row[]).map((fact) => fact.text.toLowerCase() as string),
-    [data.facts],
-  );
   const groups = useMemo(() => {
     const map = new Map<string, Row[]>();
-    const needle = query.toLowerCase();
-    for (const [i, fact] of ((data.facts || []) as Row[]).entries()) {
-      if (!lowered[i].includes(needle)) continue;
+    for (const fact of (data.facts || []) as Row[]) {
       const day =
         String(
           axis === 'event' ? fact.occurredStart || fact.mentionedAt || '' : fact.mentionedAt || '',
@@ -448,8 +439,9 @@ export function Timeline({ data, run, busy, refresh }: PageProps) {
     return [...map.entries()].sort(([a], [b]) =>
       a === 'undated' ? 1 : b === 'undated' ? -1 : b.localeCompare(a),
     );
-  }, [data.facts, lowered, query, axis]);
+  }, [data.facts, axis]);
   const loaded = Array.isArray(data.facts);
+  const activeQuery = typeof data.query === 'string' ? data.query : '';
   let shown = 0;
   return (
     <>
@@ -466,16 +458,17 @@ export function Timeline({ data, run, busy, refresh }: PageProps) {
         className="timeline-toolbar"
         onSubmit={(e) => {
           e.preventDefault();
-          void refresh({ query });
+          void refresh({ query: query.trim() });
         }}
       >
         <div className="input-with-icon">
           <Search size={16} />
           <input
+            type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder={t('Filtrer les faits…', 'Filter facts…')}
-            aria-label={t('Filtrer la chronologie', 'Filter timeline')}
+            placeholder={t('Rechercher dans la chronologie…', 'Search the timeline…')}
+            aria-label={t('Rechercher dans la chronologie', 'Search the timeline')}
           />
         </div>
         <select
@@ -489,10 +482,32 @@ export function Timeline({ data, run, busy, refresh }: PageProps) {
         <Button icon={Search} disabled={busy}>
           {t('Rechercher', 'Search')}
         </Button>
-        <Badge>
-          {loaded ? number(data.facts.length) : '—'} {t('faits chargés', 'facts loaded')}
-        </Badge>
       </form>
+      <div className="list-summary">
+        <span role="status">
+          {loaded
+            ? activeQuery
+              ? t(
+                  `${number(data.facts.length)} fait${data.facts.length > 1 ? 's' : ''} pour « ${activeQuery} »`,
+                  `${number(data.facts.length)} fact${data.facts.length === 1 ? '' : 's'} for “${activeQuery}”`,
+                )
+              : t(`${number(data.facts.length)} faits`, `${number(data.facts.length)} facts`)
+            : '—'}
+        </span>
+        {activeQuery && (
+          <button
+            type="button"
+            className="text-button"
+            disabled={busy}
+            onClick={() => {
+              setQuery('');
+              void refresh({ query: '' });
+            }}
+          >
+            {t('Effacer la recherche', 'Clear search')}
+          </button>
+        )}
+      </div>
       {data.truncated && (
         <div className="notice">
           {t('La chronologie est limitée à', 'The timeline is limited to')}{' '}
@@ -519,25 +534,15 @@ export function Timeline({ data, run, busy, refresh }: PageProps) {
                   {facts.length} {t('faits', 'facts')}
                 </span>
               </div>
-              <div className="timeline-facts">
+              <div className="card fact-rows timeline-facts">
                 {visible.map((fact) => (
-                  <article className="card timeline-fact" key={fact.id}>
-                    <Badge tone={fact.type === 'observation' ? 'lavender' : 'sage'}>
-                      {factTypeLabel(fact.type)}
-                    </Badge>
-                    <p>{fact.text}</p>
-                    {fact.documentID && (
-                      <button
-                        className="text-button"
-                        onClick={() =>
-                          void run('document.open', { id: fact.documentID }).then(setReader)
-                        }
-                      >
-                        {t('Voir le document source', 'View source document')}
-                        <ArrowRight size={14} />
-                      </button>
-                    )}
-                  </article>
+                  <FactRow
+                    key={fact.id}
+                    fact={fact}
+                    busy={busy}
+                    showDate={false}
+                    onSource={(id) => void run('document.open', { id }).then(setReader)}
+                  />
                 ))}
               </div>
             </section>

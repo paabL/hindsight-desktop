@@ -36,11 +36,11 @@ try {
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
   expect(await page.evaluate(() => navigator.language)).toBe('fr-CA');
   await page.keyboard.press('Meta+,');
-  await expect(page.getByRole('heading', { name: 'Connect to Hindsight' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Language', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'View releases', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Rebuild this copy', exact: true })).toBeHidden();
   await page.getByRole('combobox', { name: 'Interface language' }).selectOption('fr');
-  await expect(page.getByRole('heading', { name: 'Connexion à Hindsight' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Langue', exact: true })).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('lang', 'fr');
   await page.reload();
   await expect(page.getByRole('combobox', { name: 'Langue de l’interface' })).toHaveValue('fr');

@@ -993,7 +993,7 @@ function CatalogFolder({
             <p className="muted">
               {t('Destination : documents/', 'Destination: documents/')}
               {importProject}
-              {t('/ dans le dossier commun.', '/ in the shared folder.')}
+              {t('/ dans le dossier du catalogue.', '/ in the catalog folder.')}
             </p>
             <ul>
               {importFiles.map((path) => (
@@ -1154,12 +1154,12 @@ function CatalogFolder({
               <p className="muted">
                 {selected.context?.format === 'pdf'
                   ? t(
-                      'Original conservé dans le dossier commun. Aucun texte n’a été extrait de ce PDF.',
-                      'Original kept in the shared folder. No text has been extracted from this PDF.',
+                      'Original conservé dans le dossier du catalogue. Aucun texte n’a été extrait de ce PDF.',
+                      'Original kept in the catalog folder. No text has been extracted from this PDF.',
                     )
                   : t(
-                      'Original conservé dans le dossier commun. Ouvrez le fichier pour le consulter.',
-                      'Original kept in the shared folder. Open the file to read it.',
+                      'Original conservé dans le dossier du catalogue. Ouvrez le fichier pour le consulter.',
+                      'Original kept in the catalog folder. Open the file to read it.',
                     )}
               </p>
             )
@@ -1189,7 +1189,7 @@ function CatalogFolder({
                 <>
                   <dt>{t('Emplacement d’origine', 'Original location')}</dt>
                   <dd>{selected.context.original_path}</dd>
-                  <dt>{t('Copie dans le dossier commun', 'Copy in shared folder')}</dt>
+                  <dt>{t('Copie dans le catalogue', 'Copy in the catalog')}</dt>
                   <dd>{selected.context.managed_path}</dd>
                 </>
               )}
@@ -1392,7 +1392,7 @@ function FolderList({
               <div className="action-row">
                 <Button
                   kind="primary"
-                  onClick={() => navigate(serverConnected ? 'admin' : 'settings')}
+                  onClick={() => navigate(serverConnected ? 'admin' : 'server')}
                 >
                   {serverConnected
                     ? t('Gérer mes banques', 'Manage my banks')
@@ -1567,6 +1567,13 @@ function PlainFolder({ data, run, busy, demo, banks = [] }: SourcesProps) {
   const sendable = selectedItems.filter((item) => item.canSend);
   const removable = selectedItems.filter((item) => (item.documents || []).length > 0);
   const toSend = items.filter((item) => item.canSend).length;
+  // Sans sélection, « Tout envoyer » prend les fichiers à envoyer ; cocher des lignes restreint l'envoi.
+  const allSendableIDs = items.flatMap((item, index) =>
+    item.canSend ? [itemID(item, index)] : [],
+  );
+  const sendIDs = currentSelection.size
+    ? itemIDs.filter((id, index) => currentSelection.has(id) && items[index].canSend)
+    : allSendableIDs;
   async function perform(action: () => Promise<any>) {
     if (busy || pending.current) return;
     pending.current = true;
@@ -1674,26 +1681,36 @@ function PlainFolder({ data, run, busy, demo, banks = [] }: SourcesProps) {
               <Button
                 icon={Send}
                 kind="primary"
-                disabled={disabled || !sendable.length}
-                onClick={() =>
-                  void perform(() => run('coverage.send', { ids: [...currentSelection] }))
+                disabled={disabled || !sendIDs.length}
+                title={
+                  currentSelection.size
+                    ? undefined
+                    : t(
+                        'Envoie les fichiers non envoyés, modifiés ou sans faits ; l’envoi reste à confirmer.',
+                        'Uploads files that are not sent, modified or without facts; the upload still needs confirmation.',
+                      )
                 }
+                onClick={() => void perform(() => run('coverage.send', { ids: sendIDs }))}
               >
-                {t(`Envoyer (${sendable.length})`, `Upload (${sendable.length})`)}
+                {currentSelection.size
+                  ? t(`Envoyer (${sendable.length})`, `Upload (${sendable.length})`)
+                  : t(`Tout envoyer (${toSend})`, `Upload all (${toSend})`)}
               </Button>
-              <Button
-                icon={Trash2}
-                kind="danger"
-                disabled={disabled || !removable.length}
-                onClick={() =>
-                  void perform(() => run('coverage.remove', { ids: [...currentSelection] }))
-                }
-              >
-                {t(
-                  `Retirer de la mémoire (${removable.length})`,
-                  `Remove from memory (${removable.length})`,
-                )}
-              </Button>
+              {currentSelection.size > 0 && (
+                <Button
+                  icon={Trash2}
+                  kind="danger"
+                  disabled={disabled || !removable.length}
+                  onClick={() =>
+                    void perform(() => run('coverage.remove', { ids: [...currentSelection] }))
+                  }
+                >
+                  {t(
+                    `Retirer de la mémoire (${removable.length})`,
+                    `Remove from memory (${removable.length})`,
+                  )}
+                </Button>
+              )}
             </div>
           }
         />
@@ -1726,7 +1743,7 @@ function PlainFolder({ data, run, busy, demo, banks = [] }: SourcesProps) {
           />
         ) : (
           <div className="table-scroll">
-            <table>
+            <table className="file-table">
               <thead>
                 <tr>
                   <th>

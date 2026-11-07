@@ -231,8 +231,8 @@ const exact: Record<string, string> = {
   'Page de connaissance supprimée.': 'Knowledge page deleted.',
   'Le service est déjà en cours de modification.': 'The service is already being changed.',
   'Ce document n’est plus ouvert.': 'This document is no longer open.',
-  'Test des modèles terminé. Consultez le résultat dans Serveur & modèles.':
-    'Model test complete. See the result in Server & models.',
+  'Test des modèles terminé. Consultez le résultat dans Modèles.':
+    'Model test complete. See the result in Models.',
   "Filtre d'opérations inconnu.": 'Unknown operations filter.',
   'Le test des LLM est désactivé sur ce serveur. La relance des opérations reste disponible. Pour activer ce diagnostic, ajoutez HINDSIGHT_API_ENABLE_BANK_LLM_HEALTH=true au script de lancement, puis redémarrez le serveur.':
     'LLM testing is disabled on this server. Retrying operations is still available. To enable this check, add HINDSIGHT_API_ENABLE_BANK_LLM_HEALTH=true to the launch script, then restart the server.',
@@ -284,8 +284,8 @@ const exact: Record<string, string> = {
     'Review and approve the service script before restarting.',
   "Le serveur n'est pas lancé par le service de l'app : sa file ne peut pas être gelée d'ici.":
     'The server is not started by the app’s service: its queue cannot be frozen from here.',
-  "Le script de lancement a changé depuis votre dernière approbation : redémarrez d'abord le serveur depuis « Serveur & modèles ».":
-    'The launch script changed since your last approval. Restart the server from Server & models first.',
+  "Le script de lancement a changé depuis votre dernière approbation : redémarrez d'abord le serveur depuis Réglages › Serveur.":
+    'The launch script changed since your last approval. Restart the server from Settings › Server first.',
   'Démarrage annulé.': 'Start cancelled.',
   'Tags mis à jour.': 'Tags updated.',
   'Portée mise à jour.': 'Scope updated.',
@@ -320,7 +320,7 @@ const exact: Record<string, string> = {
   'Sources collectées. Aucun envoi ni traitement Hindsight.':
     'Sources collected. Nothing was uploaded or processed by Hindsight.',
   'Recherche des régénérations en double…': 'Looking for duplicate regenerations…',
-  'Choisissez un dossier mémoire et une banque.': 'Choose a memory folder and a memory bank.',
+  'Choisissez une banque et ouvrez un catalogue.': 'Choose a memory bank and open a catalog.',
   'Choisissez un catalogue existant.': 'Choose an existing catalog.',
   'Un envoi est encore en cours. Actualisez après son traitement.':
     'An upload is still in progress. Refresh after it has been processed.',
@@ -337,7 +337,7 @@ const exact: Record<string, string> = {
     'Wait for processing to finish before removing this source.',
   'Source retirée et exclue. Fichier conservé.': 'Source removed and excluded. File kept.',
   'Source locale indisponible.': 'Local source unavailable.',
-  'Source hors du dossier commun.': 'Source outside the shared folder.',
+  'Source hors du dossier du catalogue.': 'Source outside the catalog folder.',
   'Une source TeX ou Markdown est requise pour ce document.':
     'This document needs a TeX or Markdown source.',
   'Le traitement précédent a échoué ou n’a pas enregistré cette version. Une nouvelle validation est nécessaire pour réessayer.':

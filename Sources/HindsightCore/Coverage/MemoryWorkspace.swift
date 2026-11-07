@@ -314,7 +314,7 @@ public final class MemoryWorkspace {
         }
         let url = root.appendingPathComponent(relative).standardizedFileURL.resolvingSymlinksInPath()
         guard !relative.hasPrefix("/"), !relative.split(separator: "/").contains(".."), url.path.hasPrefix(root.path + "/"),
-              try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else { throw failure("Source hors du dossier commun.") }
+              try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else { throw failure("Source hors du dossier du catalogue.") }
         return url
     }
     private func sourceDigest(_ record: [String: Any], root: URL?) throws -> SourceDigest {
@@ -610,7 +610,7 @@ public final class MemoryWorkspace {
     public func prepareSend() async {
         let preparation = UUID(); preparationID = preparation
         confirmation = nil; message = nil
-        guard let bank = bank(), let root = folder.repository else { error = "Choisissez un dossier mémoire et une banque."; return }
+        guard let bank = bank(), let root = folder.repository else { error = "Choisissez une banque et ouvrez un catalogue."; return }
         if let reason = pauseGate?(bank) { error = reason; return }
         folder.reload()
         guard folder.catalogURL != nil, folder.error == nil else { error = folder.error ?? "Choisissez un catalogue existant."; return }
@@ -700,7 +700,7 @@ public final class MemoryWorkspace {
     }
     /// Le premier envoi rattache le dossier à sa banque, dans la politique que lisent tous les outils.
     private func bindFolder(to bank: String) throws {
-        guard let url = policyURL else { throw failure("Choisissez un dossier mémoire et une banque.") }
+        guard let url = policyURL else { throw failure("Choisissez une banque et ouvrez un catalogue.") }
         var latest: [String: Any] = FileManager.default.fileExists(atPath: url.path)
             ? try decode(url) : ["version": 1, "excluded_document_ids": [String: Any](), "deferred_document_ids": [String: Any]()]
         if let existing = (latest["bank_id"] as? String).flatMap({ $0.isEmpty ? nil : $0 }) {

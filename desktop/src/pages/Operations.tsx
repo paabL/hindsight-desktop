@@ -26,7 +26,13 @@ import {
 } from '../ui';
 import { PauseTools } from './Consumption';
 
-export default function Operations({ data, run, busy, refresh }: PageProps) {
+export default function Operations({
+  data,
+  run,
+  busy,
+  refresh,
+  paused = false,
+}: PageProps & { paused?: boolean }) {
   useI18n();
   const labels: Record<string, string> = {
     pending: t('En attente', 'Pending'),
@@ -52,6 +58,16 @@ export default function Operations({ data, run, busy, refresh }: PageProps) {
     clone: t('Clonage', 'Clone'),
   };
 
+  const typeName = (item: Row): string =>
+    typeNames[item.operation_type || item.task_type] || item.operation_type || item.task_type || '';
+  // « Extraction des faits · Extraction des faits · 24 / 24 » : l'étape n'est montrée que si elle apporte quelque chose.
+  const stageLabel = (item: Row): string => {
+    const stage = String(item.progress?.stage || '').trim();
+    const name = typeName(item).toLocaleLowerCase();
+    return !stage || (name && stage.toLocaleLowerCase().startsWith(name.split(' ')[0]))
+      ? ''
+      : stage;
+  };
   const [filter, setFilter] = useState(data.statusFilter || 'all');
   useEffect(() => {
     if (data.statusFilter) setFilter(data.statusFilter);
@@ -112,7 +128,7 @@ export default function Operations({ data, run, busy, refresh }: PageProps) {
         )}
         actions={
           <>
-            <PauseTools run={run} busy={busy} />
+            <PauseTools run={run} busy={busy} paused={paused} />
             <Button
               icon={Layers3}
               kind="primary"
@@ -156,34 +172,38 @@ export default function Operations({ data, run, busy, refresh }: PageProps) {
           <small>{t('Parmi les opérations chargées', 'Among loaded operations')}</small>
         )}
         <span className="spacer" />
-        <Button
-          kind="ghost"
-          icon={RotateCcw}
-          disabled={busy || readOnly}
-          onClick={() => void run('operations.retryFailed')}
-        >
-          {t('Relancer les échecs', 'Retry failed operations')}
-        </Button>
-        <Button
-          kind="ghost"
-          disabled={busy || readOnly || data.failedConsolidation === 0}
-          title={
-            data.failedConsolidation === 0
-              ? t('Aucun fait en échec de consolidation.', 'No facts failed consolidation.')
-              : undefined
-          }
-          onClick={() => void run('operations.recover')}
-        >
-          {t('Récupérer la consolidation', 'Recover consolidation')}
-        </Button>
-      </div>
-      {/* Ce que fait chaque action, sans survol : consolider, relancer et récupérer sont trois choses distinctes. */}
-      <p className="form-hint operations-help">
-        {t(
-          'Consolider fusionne les faits récents en observations (appels LLM). Relancer les échecs remet en file les opérations échouées. Récupérer la consolidation remet en file les faits dont la consolidation a échoué.',
-          'Consolidate merges recent facts into observations (LLM calls). Retry failed operations requeues failed operations. Recover consolidation requeues facts whose consolidation failed.',
+        {count('failed') > 0 && (
+          <Button
+            kind="ghost"
+            icon={RotateCcw}
+            disabled={busy || readOnly}
+            title={t(
+              'Remet en file les opérations en échec.',
+              'Puts failed operations back in the queue.',
+            )}
+            onClick={() => void run('operations.retryFailed')}
+          >
+            {t('Relancer les échecs', 'Retry failed operations')}
+          </Button>
         )}
-      </p>
+        {Number(data.failedConsolidation) > 0 && (
+          <Button
+            kind="ghost"
+            icon={RotateCcw}
+            disabled={busy || readOnly}
+            title={t(
+              'Remet en file les faits dont la consolidation a échoué.',
+              'Puts facts whose consolidation failed back in the queue.',
+            )}
+            onClick={() => void run('operations.recover')}
+          >
+            {t(
+              `Reconsolider ${number(data.failedConsolidation)} fait${Number(data.failedConsolidation) > 1 ? 's' : ''}`,
+              `Reconsolidate ${number(data.failedConsolidation)} fact${Number(data.failedConsolidation) === 1 ? '' : 's'}`,
+            )}
+          </Button>
+        )}
+      </div>
       <Tabs
         value={filter}
         onChange={(value) => {
@@ -243,9 +263,14 @@ export default function Operations({ data, run, busy, refresh }: PageProps) {
                   <p>{item.document_id || item.mental_model_id || item.filename || item.id}</p>
                   {item.progress && (
                     <small>
-                      {item.progress.stage}
-                      {item.progress.total != null &&
-                        ` · ${number(item.progress.processed)} / ${number(item.progress.total)}`}
+                      {[
+                        stageLabel(item),
+                        item.progress.total != null
+                          ? `${number(item.progress.processed)} / ${number(item.progress.total)}`
+                          : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
                     </small>
                   )}
                   {item.error_message && (

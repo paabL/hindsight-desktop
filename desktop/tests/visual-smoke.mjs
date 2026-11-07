@@ -135,6 +135,11 @@ try {
     .getByRole('button', { name: /Réglages/ })
     .first()
     .click();
+  await expect(page.getByRole('heading', { name: 'Langue', exact: true })).toBeVisible();
+  await page
+    .getByRole('tablist', { name: 'Vues des réglages' })
+    .getByRole('tab', { name: 'Serveur', exact: true })
+    .click();
   await expect(page.getByRole('heading', { name: 'Connexion à Hindsight' })).toBeVisible();
   const security = await page.evaluate(() => ({
     node: typeof window.require,

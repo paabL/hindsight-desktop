@@ -1,5 +1,5 @@
 import { useI18n } from '../i18n';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowDownToLine,
   BookOpen,
@@ -127,9 +127,47 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
       );
     }
   }
+  // Ce qui n'est pas encore enregistré, et ce que la banque règle autrement que le serveur.
+  const pending = new Set(
+    Object.keys(memoryFields).filter((key) => key in draft && draft[key] !== data.draft?.[key]),
+  );
+  const overridden = new Set<string>(
+    Array.isArray(data.overridden) ? data.overridden : Object.keys(data.config?.overrides || {}),
+  );
+  const customized = (key: string) =>
+    overridden.has(memoryFields[key as keyof typeof memoryFields]);
+  const changeCount = pending.size + (advanced.trim() ? 1 : 0);
+  // Toutes les clés propres à la banque, y compris celles que cette page ne montre pas : le retour au serveur les efface toutes.
+  const customCount = overridden.size;
+  const [openAdvanced, setOpenAdvanced] = useState<Record<string, boolean>>({});
+  function discard() {
+    setDraft({ ...baseline.current });
+    setAdvanced('');
+  }
+  // Repère visuel seulement : le nom du champ reste celui que lisent les lecteurs d'écran.
+  const mark = (key: string) =>
+    pending.has(key) ? (
+      <span className="setting-mark pending" aria-hidden="true">
+        {t('modifié', 'changed')}
+      </span>
+    ) : customized(key) ? (
+      <span
+        className="setting-mark"
+        aria-hidden="true"
+        title={t(
+          'Réglage propre à cette banque ; les autres suivent le serveur.',
+          'Set for this bank only; other settings follow the server.',
+        )}
+      >
+        {t('propre à la banque', 'bank-specific')}
+      </span>
+    ) : null;
   const textField = (key: string, title: string, placeholder: string) => (
     <label>
-      {title}
+      <span className="setting-label">
+        {title}
+        {mark(key)}
+      </span>
       <textarea
         rows={4}
         value={draft[key] || ''}
@@ -141,7 +179,10 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
   const toggle = (key: string, title: string, help: string) => (
     <label className="setting-toggle">
       <div>
-        <strong>{title}</strong>
+        <strong>
+          {title}
+          {mark(key)}
+        </strong>
         <span>{help}</span>
       </div>
       <input
@@ -152,20 +193,62 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
       />
     </label>
   );
+  // Le réglage fin reste sur la page, replié : le titre dit s'il contient une valeur modifiée ou propre à la banque.
+  const advancedSection = (keys: string[], children: ReactNode) => {
+    const changed = keys.filter((key) => pending.has(key)).length;
+    const own = keys.filter(customized).length;
+    return (
+      <details
+        className="settings-advanced"
+        open={openAdvanced[tab] ?? changed > 0}
+        onToggle={(e) => {
+          const open = e.currentTarget.open;
+          setOpenAdvanced((old) => (old[tab] === open ? old : { ...old, [tab]: open }));
+        }}
+      >
+        <summary>
+          {t('Options avancées', 'Advanced options')}
+          {changed > 0 ? (
+            <span className="setting-mark pending">
+              {t(`${changed} modifiée${changed > 1 ? 's' : ''}`, `${changed} changed`)}
+            </span>
+          ) : own > 0 ? (
+            <span className="setting-mark">
+              {t(`${own} propre${own > 1 ? 's' : ''} à la banque`, `${own} bank-specific`)}
+            </span>
+          ) : null}
+        </summary>
+        <div className="form-stack">{children}</div>
+      </details>
+    );
+  };
   return (
     <>
       <PageHeader
         eyebrow={t('Une mémoire à votre image', 'Memory that works for you')}
         title={t('Comportement de la mémoire', 'Memory behavior')}
         description={t(
-          'Choisissez ce que la banque sélectionnée retient, comment elle consolide ses faits et répond aux questions.',
-          'Choose what the selected bank remembers, how it consolidates facts and answers questions.',
+          'Ce que la banque sélectionnée retient, comment elle relie ses faits et comment elle répond. L’essentiel est visible ; le détail est dans « Options avancées ».',
+          'What the selected bank remembers, how it connects its facts and how it answers. The essentials are visible; details are under “Advanced options”.',
         )}
         actions={
-          <Button kind="primary" icon={Save} disabled={busy} onClick={() => action('memory.save')}>
-            {' '}
-            {t('Enregistrer les changements', 'Save changes')}
-          </Button>
+          <div className="action-row">
+            {changeCount > 0 && (
+              <Button kind="ghost" disabled={busy} onClick={discard}>
+                {t('Annuler les changements', 'Discard changes')}
+              </Button>
+            )}
+            <Button
+              kind="primary"
+              icon={Save}
+              disabled={busy || !changeCount}
+              onClick={() => action('memory.save')}
+            >
+              {changeCount
+                ? t(`Enregistrer (${changeCount})`, `Save (${changeCount})`)
+                : t('Enregistrer', 'Save')}
+            </Button>
+          </div>
         }
       />
       <ErrorNotice message={data.error} />
@@ -177,16 +260,15 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
           { id: 'observations', label: 'Consolidation' },
           { id: 'reflect', label: t('Réponses', 'Answers') },
           { id: 'recall', label: t('Recherche', 'Search') },
-          { id: 'advanced', label: t('Avancé', 'Advanced') },
+          { id: 'advanced', label: t('Expert', 'Expert') },
         ]}
       />
-      <section className="card settings-card">
+      <section className="card settings-card memory-settings">
         <div className="form-stack">
           {tab === 'retain' && (
             <>
               <h2>{t('Ce qui mérite d’être retenu', 'What is worth remembering')}</h2>
               <p className="muted">
-                {' '}
                 {t(
                   'La mission aide le modèle à choisir les faits utiles dans vos documents.',
                   'The mission helps the model choose useful facts from your documents.',
@@ -200,9 +282,11 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
                   'Keep decisions, the reasons behind them, and lasting knowledge.',
                 ),
               )}
-              <label>
-                {' '}
-                {t('Style d’extraction', 'Extraction style')}
+              <label className="setting-compact">
+                <span className="setting-label">
+                  {t('Style d’extraction', 'Extraction style')}
+                  {mark('extractionMode')}
+                </span>
                 <select
                   value={draft.extractionMode || 'concise'}
                   onChange={(e) => set('extractionMode', e.target.value)}
@@ -226,31 +310,38 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
                   t('Instructions d’extraction', 'Extraction instructions'),
                   t('Ce que le modèle doit extraire…', 'What the model should extract…'),
                 )}
-              <label>
-                {' '}
-                {t('Taille des segments en caractères', 'Chunk size in characters')}
-                <input
-                  type="number"
-                  min="100"
-                  value={draft.chunkSize || 3000}
-                  onChange={(e) => set('chunkSize', Number(e.target.value))}
-                />
-              </label>
-              {toggle(
-                'storeDocumentText',
-                t('Conserver le texte des documents', 'Store document text'),
-                t(
-                  'Permet de remonter des faits vers le document d’origine.',
-                  'Lets you trace facts back to the original document.',
-                ),
-              )}
-              {toggle(
-                'entitiesAllowFreeForm',
-                t('Autoriser les entités libres', 'Allow free-form entities'),
-                t(
-                  'Le modèle peut identifier des entités hors du vocabulaire défini.',
-                  'The model can identify entities outside the defined vocabulary.',
-                ),
+              {advancedSection(
+                ['chunkSize', 'storeDocumentText', 'entitiesAllowFreeForm'],
+                <>
+                  <label className="setting-compact">
+                    <span className="setting-label">
+                      {t('Taille des segments en caractères', 'Chunk size in characters')}
+                      {mark('chunkSize')}
+                    </span>
+                    <input
+                      type="number"
+                      min="100"
+                      value={draft.chunkSize || 3000}
+                      onChange={(e) => set('chunkSize', Number(e.target.value))}
+                    />
+                  </label>
+                  {toggle(
+                    'storeDocumentText',
+                    t('Conserver le texte des documents', 'Store document text'),
+                    t(
+                      'Permet de remonter des faits vers le document d’origine.',
+                      'Lets you trace facts back to the original document.',
+                    ),
+                  )}
+                  {toggle(
+                    'entitiesAllowFreeForm',
+                    t('Autoriser les entités libres', 'Allow free-form entities'),
+                    t(
+                      'Le modèle peut identifier des entités hors du vocabulaire défini.',
+                      'The model can identify entities outside the defined vocabulary.',
+                    ),
+                  )}
+                </>,
               )}
             </>
           )}
@@ -281,42 +372,54 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
                   'The connections, patterns, or rules to uncover.',
                 ),
               )}
-              <label>
-                {' '}
-                {t('Maximum d’observations par portée', 'Maximum observations per scope')}
-                <input
-                  type="number"
-                  min="-1"
-                  value={draft.maxObservationsPerScope ?? -1}
-                  onChange={(e) => set('maxObservationsPerScope', Number(e.target.value))}
-                />
-                <small>
-                  {' '}
-                  {t(
-                    '−1 laisse le serveur choisir sa limite.',
-                    '−1 lets the server choose its limit.',
+              {advancedSection(
+                [
+                  'maxObservationsPerScope',
+                  'defaultObservationScopes',
+                  'consolidationUseDecisionModel',
+                ],
+                <>
+                  <label className="setting-compact">
+                    <span className="setting-label">
+                      {t('Maximum d’observations par portée', 'Maximum observations per scope')}
+                      {mark('maxObservationsPerScope')}
+                    </span>
+                    <input
+                      type="number"
+                      min="-1"
+                      value={draft.maxObservationsPerScope ?? -1}
+                      onChange={(e) => set('maxObservationsPerScope', Number(e.target.value))}
+                    />
+                    <small>
+                      {t(
+                        '−1 laisse le serveur choisir sa limite.',
+                        '−1 lets the server choose its limit.',
+                      )}
+                    </small>
+                  </label>
+                  <label className="setting-compact">
+                    <span className="setting-label">
+                      {t('Portée par défaut', 'Default scope')}
+                      {mark('defaultObservationScopes')}
+                    </span>
+                    <select
+                      value={draft.defaultObservationScopes || ''}
+                      onChange={(e) => set('defaultObservationScopes', e.target.value)}
+                    >
+                      <option value="">{t('Défaut du serveur', 'Server default')}</option>
+                      <option value="shared">{t('Partagée', 'Shared')}</option>
+                      <option value="combined">{t('Combinée', 'Combined')}</option>
+                    </select>
+                  </label>
+                  {toggle(
+                    'consolidationUseDecisionModel',
+                    t('Trier avec le modèle de décision', 'Filter with the decision model'),
+                    t(
+                      'Les redites et le bavardage sont réglés sans appel LLM, si le serveur a un modèle de décision.',
+                      'Repetition and chatter are handled without an LLM call if the server has a decision model.',
+                    ),
                   )}
-                </small>
-              </label>
-              <label>
-                {' '}
-                {t('Portée par défaut', 'Default scope')}
-                <select
-                  value={draft.defaultObservationScopes || ''}
-                  onChange={(e) => set('defaultObservationScopes', e.target.value)}
-                >
-                  <option value="">{t('Défaut du serveur', 'Server default')}</option>
-                  <option value="shared">{t('Partagée', 'Shared')}</option>
-                  <option value="combined">{t('Combinée', 'Combined')}</option>
-                </select>
-              </label>
-              {toggle(
-                'consolidationUseDecisionModel',
-                t('Trier avec le modèle de décision', 'Filter with the decision model'),
-                t(
-                  'Les redites et le bavardage sont réglés sans appel LLM, si le serveur a un modèle de décision.',
-                  'Repetition and chatter are handled without an LLM call if the server has a decision model.',
-                ),
+                </>,
               )}
             </>
           )}
@@ -337,7 +440,10 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
                 ['empathy', t('Empathie', 'Empathy')],
               ].map(([key, label]) => (
                 <label className="range-label" key={key}>
-                  {label}
+                  <span className="setting-label">
+                    {label}
+                    {mark(key)}
+                  </span>
                   <span>{draft[key] ?? 3} / 5</span>
                   <input
                     type="range"
@@ -348,38 +454,47 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
                   />
                 </label>
               ))}
-              {toggle(
-                'reflectUseDecisionModel',
-                t(
-                  'Reflect : trier avec le modèle de décision',
-                  'Reflect: filter with the decision model',
-                ),
-                t(
-                  'Il élague les preuves et juge quand elles suffisent ; moins cher, un peu moins précis.',
-                  'It trims evidence and decides when there is enough; lower cost, slightly lower accuracy.',
-                ),
-              )}
-              {toggle(
-                'mentalModelRefreshUseDecisionModel',
-                t(
-                  'Pages de connaissance : régénérer avec le modèle de décision',
-                  'Knowledge pages: regenerate with the decision model',
-                ),
-                t(
-                  'Même tri que reflect pendant une régénération complète.',
-                  'The same filtering as reflect during a full regeneration.',
-                ),
-              )}
-              {toggle(
-                'mentalModelDeltaUseDecisionModel',
-                t(
-                  'Pages de connaissance : ignorer les faits sans effet',
-                  'Knowledge pages: skip facts that make no difference',
-                ),
-                t(
-                  'Une mise à jour dont aucun nouveau fait ne change la page ne fait aucun appel LLM.',
-                  'An update makes no LLM call when no new facts change the page.',
-                ),
+              {advancedSection(
+                [
+                  'reflectUseDecisionModel',
+                  'mentalModelRefreshUseDecisionModel',
+                  'mentalModelDeltaUseDecisionModel',
+                ],
+                <>
+                  {toggle(
+                    'reflectUseDecisionModel',
+                    t(
+                      'Réponses : trier avec le modèle de décision',
+                      'Answers: filter with the decision model',
+                    ),
+                    t(
+                      'Il élague les preuves et juge quand elles suffisent ; moins cher, un peu moins précis.',
+                      'It trims evidence and decides when there is enough; lower cost, slightly lower accuracy.',
+                    ),
+                  )}
+                  {toggle(
+                    'mentalModelRefreshUseDecisionModel',
+                    t(
+                      'Pages de connaissance : régénérer avec le modèle de décision',
+                      'Knowledge pages: regenerate with the decision model',
+                    ),
+                    t(
+                      'Même tri que pour les réponses pendant une régénération complète.',
+                      'The same filtering as for answers during a full regeneration.',
+                    ),
+                  )}
+                  {toggle(
+                    'mentalModelDeltaUseDecisionModel',
+                    t(
+                      'Pages de connaissance : ignorer les faits sans effet',
+                      'Knowledge pages: skip facts that make no difference',
+                    ),
+                    t(
+                      'Une mise à jour dont aucun nouveau fait ne change la page ne fait aucun appel LLM.',
+                      'An update makes no LLM call when no new facts change the page.',
+                    ),
+                  )}
+                </>,
               )}
             </>
           )}
@@ -412,46 +527,43 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
                 t('Réordonner les résultats', 'Rerank results'),
                 t('Affiner la pertinence après la recherche.', 'Refine relevance after searching.'),
               )}
-              {data.serverIs120 && (
-                <>
-                  {toggle(
-                    'recallDecisionModelPrune',
-                    t('Écarter les faits inutiles', 'Remove irrelevant facts'),
-                    t(
-                      'Le modèle de décision retire ce qui n’aide pas la requête, sans requête de plus.',
-                      'The decision model removes irrelevant facts without an extra request.',
-                    ),
-                  )}
-                  {toggle(
-                    'recallDecisionModelDedup',
-                    t('Retirer les doublons', 'Remove duplicates'),
-                    t(
-                      'Un fait répété n’est rendu qu’une fois ; une requête de plus par recherche.',
-                      'Repeated facts appear only once; adds one request per search.',
-                    ),
-                  )}
-                  <p className="form-hint">
-                    {' '}
-                    {t(
-                      'Sans effet tant que le serveur n’a pas de modèle de décision pour recall.',
-                      'Has no effect until the server has a decision model configured for recall.',
+              {data.serverIs120 &&
+                advancedSection(
+                  ['recallDecisionModelPrune', 'recallDecisionModelDedup'],
+                  <>
+                    {toggle(
+                      'recallDecisionModelPrune',
+                      t('Écarter les faits inutiles', 'Remove irrelevant facts'),
+                      t(
+                        'Le modèle de décision retire ce qui n’aide pas la requête, sans requête de plus.',
+                        'The decision model removes irrelevant facts without an extra request.',
+                      ),
                     )}
-                  </p>
-                </>
-              )}
+                    {toggle(
+                      'recallDecisionModelDedup',
+                      t('Retirer les doublons', 'Remove duplicates'),
+                      t(
+                        'Un fait répété n’est rendu qu’une fois ; une requête de plus par recherche.',
+                        'Repeated facts appear only once; adds one request per search.',
+                      ),
+                    )}
+                    <p className="form-hint">
+                      {t(
+                        'Sans effet tant que le serveur n’a pas de modèle de décision pour la recherche.',
+                        'Has no effect until the server has a decision model configured for search.',
+                      )}
+                    </p>
+                  </>,
+                )}
             </>
           )}
           {tab === 'advanced' && (
             <>
-              <h2>
-                {' '}
-                {t('Vocabulaire et stratégies avancées', 'Advanced vocabulary and strategies')}
-              </h2>
+              <h2>{t('Clés de configuration', 'Configuration keys')}</h2>
               <p className="muted">
-                {' '}
                 {t(
-                  'Saisissez les clés de configuration de la banque à modifier. Les valeurs non indiquées sont conservées.',
-                  'Enter the bank configuration keys to change. Unspecified values are kept.',
+                  'Pour les réglages que cette page ne présente pas (vocabulaire d’entités, stratégies d’extraction…) : saisissez les clés à modifier. Les valeurs non indiquées sont conservées.',
+                  'For settings this page does not show (entity vocabulary, extraction strategies…): enter the keys to change. Unspecified values are kept.',
                 )}
               </p>
               <textarea
@@ -462,10 +574,6 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
                 onChange={(e) => setAdvanced(e.target.value)}
                 placeholder={'{\n  "entity_labels": [],\n  "retain_strategies": []\n}'}
               />
-              <Button kind="danger" icon={RotateCcw} onClick={() => void run('memory.reset')}>
-                {' '}
-                {t('Revenir aux réglages du serveur', 'Reset to server settings')}
-              </Button>
             </>
           )}
         </div>
@@ -494,7 +602,6 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
             disabled={busy || !sample.trim()}
             onClick={() => action('memory.trial')}
           >
-            {' '}
             {t('Préparer un essai à blanc', 'Prepare a dry run')}
           </Button>
           <ErrorNotice message={data.trialError} />
@@ -504,6 +611,28 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
       {data.problems?.map((problem: string) => (
         <ErrorNotice key={problem} message={problem} />
       ))}
+      {/* Le retour au défaut : visible, avec ce qu'il défait. */}
+      <div className="settings-reset">
+        <p>
+          {customCount
+            ? t(
+                `Cette banque règle ${number(customCount)} option${customCount > 1 ? 's' : ''} autrement que le serveur.`,
+                `This bank sets ${number(customCount)} option${customCount === 1 ? '' : 's'} differently from the server.`,
+              )
+            : t(
+                'Cette banque suit les réglages du serveur.',
+                'This bank follows the server settings.',
+              )}
+        </p>
+        <Button
+          kind="ghost"
+          icon={RotateCcw}
+          disabled={busy || !customCount}
+          onClick={() => void run('memory.reset')}
+        >
+          {t('Revenir aux réglages du serveur', 'Reset to server settings')}
+        </Button>
+      </div>
     </>
   );
 }
@@ -537,8 +666,6 @@ export function Admin({
   const [key, setKey] = useState('');
   const [value, setValue] = useState('');
   const [source, setSource] = useState('');
-  const [syncScript, setSyncScript] = useState('');
-  const [syncIds, setSyncIds] = useState('');
   async function exportFile(command: string) {
     const file = await run(command);
     if (file?.base64) {
@@ -576,9 +703,10 @@ export function Admin({
           'Manage the selected bank’s identity, directives and backups.',
         )}
         actions={
+          // Créer une banque n'est l'action principale que s'il n'y en a pas encore de choisie.
           <Button
             icon={Plus}
-            kind="primary"
+            kind={bank ? undefined : 'primary'}
             onClick={() => {
               showModal('create');
               setName('');
@@ -754,58 +882,6 @@ export function Admin({
               </div>
             )}
           </section>
-          <details className="card advanced-details">
-            <summary>{t('Synchronisation du dossier commun', 'Shared folder sync')}</summary>
-            <div className="form-stack">
-              <p className="muted">
-                {' '}
-                {t(
-                  'Prépare un aperçu avec le script de synchronisation du projet, puis présente le volume et le coût avant l’envoi.',
-                  "Prepares a preview using the project's sync script, then shows the volume and cost before sending.",
-                )}
-              </p>
-              <label>
-                {' '}
-                {t('Script de synchronisation', 'Sync script')}
-                <input
-                  value={syncScript || data.syncScript || ''}
-                  onChange={(e) => setSyncScript(e.target.value)}
-                  placeholder={t('/chemin/du/projet/sync.py', '/path/to/project/sync.py')}
-                />
-              </label>
-              <label>
-                {' '}
-                {t(
-                  'Identifiants à inclure (facultatif, un par ligne)',
-                  'IDs to include (optional, one per line)',
-                )}
-                <textarea
-                  value={syncIds}
-                  onChange={(e) => setSyncIds(e.target.value)}
-                  placeholder={t(
-                    'Laisser vide pour examiner tous les candidats',
-                    'Leave empty to review all candidates',
-                  )}
-                />
-              </label>
-              <Button
-                disabled={busy || !(syncScript || data.syncScript)}
-                onClick={() =>
-                  void run('sync.script', { path: syncScript || data.syncScript }).then(() =>
-                    run('sync.run', {
-                      ids: syncIds
-                        .split('\n')
-                        .map((id) => id.trim())
-                        .filter(Boolean),
-                    }),
-                  )
-                }
-              >
-                {' '}
-                {t('Préparer la synchronisation', 'Prepare sync')}
-              </Button>
-            </div>
-          </details>
           <details className="card advanced-details">
             <summary>
               {' '}
@@ -1248,89 +1324,28 @@ function HindsightModels({ models, run, busy }: Pick<PageProps, 'run' | 'busy'> 
   );
 }
 
-export function ServerSettings({ data, run, busy, notify, navigate }: PageProps) {
+/** Réglages › Serveur : l'adresse du serveur et, s'il tourne sur ce Mac, son service, son script et ses sauvegardes. */
+export function ServerSettings({
+  data,
+  run,
+  busy,
+  connection,
+}: PageProps & { connection?: ReactNode }) {
   const { t } = useI18n();
   const [scriptPath, setScriptPath] = useState('');
-  const [role, setRole] = useState<Row | null>(null);
-  const [fields, setFields] = useState<Row>({});
-  const [customModels, setCustomModels] = useState<Set<string>>(new Set());
-  const [modelToolsOpen, setModelToolsOpen] = useState(false);
   const service = data.service || {};
   const serviceBusy = busy || service.busy;
-  const [decisionTab, setDecisionTab] = useState('general');
-  const [decisionLocation, setDecisionLocation] = useState<string | null>(null);
-  const [roleSaving, setRoleSaving] = useState(false);
-  const savingRole = useRef(false);
-  const [roleError, setRoleError] = useState('');
-  const [roleRevision, setRoleRevision] = useState<string>();
-  const [roleScriptPath, setRoleScriptPath] = useState<string>();
-  const latestData = useRef(data);
-  latestData.current = data;
-  const roleStale =
-    role && (roleScriptPath !== data.scriptPath || roleRevision !== data.modelWorkflow?.revision);
-  const staleMessage = t(
-    'Les réglages ont changé. Fermez cette fenêtre et rouvrez le rôle avant de réessayer.',
-    'Settings changed. Close this window and reopen the role before trying again.',
-  );
-  useEffect(() => {
-    setDecisionTab('general');
-    setDecisionLocation(null);
-  }, [role?.id]);
-  async function saveRole() {
-    if (!role || busy || savingRole.current || !Object.keys(fields).length) return;
-    if (roleStale) {
-      setRoleError(staleMessage);
-      return;
-    }
-    savingRole.current = true;
-    setRoleSaving(true);
-    setRoleError('');
-    async function apply(command: string, args: Row) {
-      if (latestData.current.scriptPath !== roleScriptPath) throw new Error(staleMessage);
-      const result = await run(command, args);
-      if (result?.error) throw new Error(String(result.error));
-      if (latestData.current.scriptPath !== roleScriptPath) throw new Error(staleMessage);
-      if (result?.data) setRoleRevision(result.data.modelWorkflow?.revision);
-    }
-    try {
-      if (role.id === 'decision' && decisionLocation)
-        await apply('server.decision', { source: decisionLocation });
-      const provider = role.fields.find((field: Row) => field.name.endsWith('_PROVIDER'))?.name;
-      // Provider presets may reset the model. Apply explicit fields afterwards, including
-      // advanced overrides entered after choosing the local or Cloud preset.
-      if (role.isModelRole && Object.hasOwn(fields, provider))
-        await apply('server.provider', { role: role.id, provider: fields[provider] });
-      for (const [name, value] of Object.entries(fields)) {
-        if (name === provider && (role.isModelRole || (role.id === 'decision' && decisionLocation)))
-          continue;
-        if (!(
-          value === '' && role.fields.some((field: Row) => field.name === name && field.secret)
-        ))
-          await apply('server.field', { name, value });
-      }
-      setRole(null);
-    } catch (error) {
-      setRoleError(error instanceof Error ? error.message : String(error));
-    } finally {
-      savingRole.current = false;
-      setRoleSaving(false);
-    }
-  }
   return (
     <>
       <PageHeader
         eyebrow={t('Le moteur de votre mémoire', 'The engine behind your memory')}
-        title={t('Serveur & modèles', 'Server & models')}
+        title={t('Serveur', 'Server')}
         description={t(
-          'Gérez les fournisseurs, les modèles installés et la connexion au serveur.',
-          'Manage providers, installed models and the server connection.',
+          'L’adresse du serveur Hindsight et, s’il tourne sur ce Mac, son service, son script de lancement et ses sauvegardes. Les modèles se règlent dans Modèles.',
+          'The Hindsight server address and, when it runs on this Mac, its service, launch script and backups. Models are set in Models.',
         )}
-        actions={
-          <Button icon={Sparkles} onClick={() => navigate('model-settings')}>
-            {t('Choix rapide des modèles', 'Quick model selection')}
-          </Button>
-        }
       />
+      {connection}
       <section className="card service-card">
         <div className="service-identity">
           <span className="service-symbol">
@@ -1428,9 +1443,6 @@ export function ServerSettings({ data, run, busy, notify, navigate }: PageProps)
         <ErrorNotice message={service.scriptWarning} />
       </section>
       <ErrorNotice message={data.error} />
-      {(data.configurationProblems || []).map((problem: string) => (
-        <ErrorNotice key={problem} message={problem} />
-      ))}
       {data.needsRestart && (
         <div className="notice">
           {' '}
@@ -1440,7 +1452,160 @@ export function ServerSettings({ data, run, busy, notify, navigate }: PageProps)
           )}
         </div>
       )}
-      <section className="card account-card">
+      <details className="card advanced-details">
+        <summary>{t('Script, sauvegardes et journal', 'Script, backups, and log')}</summary>
+        <div className="form-stack">
+          <label>
+            {' '}
+            {t('Script de lancement', 'Launch script')}
+            <input
+              value={scriptPath || data.scriptPath || ''}
+              onChange={(e) => setScriptPath(e.target.value)}
+              placeholder="~/.hindsight/start-api.sh"
+            />
+          </label>
+          <Button
+            icon={FolderOpen}
+            onClick={() => void run('server.script', { path: scriptPath || data.scriptPath })}
+          >
+            {' '}
+            {t('Charger ce script', 'Load this script')}
+          </Button>
+          {data.backups?.map((backup: Row) => (
+            <div className="backup-row" key={backup.url}>
+              <span>{date(backup.date, true)}</span>
+              <Button
+                disabled={busy}
+                onClick={() => void run('server.restore', { path: backup.url })}
+              >
+                {' '}
+                {t('Restaurer cette sauvegarde', 'Restore this backup')}
+              </Button>
+            </div>
+          ))}
+          <h3>{t('Journal du service', 'Service log')}</h3>
+          <pre className="json-view">
+            {service.log || t('Aucun journal disponible.', 'No log available.')}
+          </pre>
+          {service.installed && (
+            <Button kind="danger" onClick={() => void run('service.uninstall')}>
+              {' '}
+              {t('Désinstaller le service', 'Uninstall service')}
+            </Button>
+          )}
+        </div>
+      </details>
+    </>
+  );
+}
+
+export type ModelRequest = { kind: 'role' | 'tools'; id?: string; nonce: number };
+
+/** Tout ce qui touche aux modèles, sous le schéma de la page Modèles : comptes, rôles et installation. */
+export function ModelManagement({
+  data,
+  run,
+  busy,
+  request,
+}: PageProps & { request?: ModelRequest }) {
+  const { t } = useI18n();
+  const [role, setRole] = useState<Row | null>(null);
+  const [fields, setFields] = useState<Row>({});
+  const [customModels, setCustomModels] = useState<Set<string>>(new Set());
+  const [modelToolsOpen, setModelToolsOpen] = useState(false);
+  const [rolesOpen, setRolesOpen] = useState(false);
+  const accountsRef = useRef<HTMLElement>(null);
+  const rolesRef = useRef<HTMLDetailsElement>(null);
+  const [decisionTab, setDecisionTab] = useState('general');
+  const [decisionLocation, setDecisionLocation] = useState<string | null>(null);
+  const [roleSaving, setRoleSaving] = useState(false);
+  const savingRole = useRef(false);
+  const [roleError, setRoleError] = useState('');
+  const [roleRevision, setRoleRevision] = useState<string>();
+  const [roleScriptPath, setRoleScriptPath] = useState<string>();
+  const latestData = useRef(data);
+  latestData.current = data;
+  const roleStale =
+    role && (roleScriptPath !== data.scriptPath || roleRevision !== data.modelWorkflow?.revision);
+  const staleMessage = t(
+    'Les réglages ont changé. Fermez cette fenêtre et rouvrez le rôle avant de réessayer.',
+    'Settings changed. Close this window and reopen the role before trying again.',
+  );
+  useEffect(() => {
+    setDecisionTab('general');
+    setDecisionLocation(null);
+  }, [role?.id]);
+  async function saveRole() {
+    if (!role || busy || savingRole.current || !Object.keys(fields).length) return;
+    if (roleStale) {
+      setRoleError(staleMessage);
+      return;
+    }
+    savingRole.current = true;
+    setRoleSaving(true);
+    setRoleError('');
+    async function apply(command: string, args: Row) {
+      if (latestData.current.scriptPath !== roleScriptPath) throw new Error(staleMessage);
+      const result = await run(command, args);
+      if (result?.error) throw new Error(String(result.error));
+      if (latestData.current.scriptPath !== roleScriptPath) throw new Error(staleMessage);
+      if (result?.data) setRoleRevision(result.data.modelWorkflow?.revision);
+    }
+    try {
+      if (role.id === 'decision' && decisionLocation)
+        await apply('server.decision', { source: decisionLocation });
+      const provider = role.fields.find((field: Row) => field.name.endsWith('_PROVIDER'))?.name;
+      // Provider presets may reset the model. Apply explicit fields afterwards, including
+      // advanced overrides entered after choosing the local or Cloud preset.
+      if (role.isModelRole && Object.hasOwn(fields, provider))
+        await apply('server.provider', { role: role.id, provider: fields[provider] });
+      for (const [name, value] of Object.entries(fields)) {
+        if (name === provider && (role.isModelRole || (role.id === 'decision' && decisionLocation)))
+          continue;
+        if (!(
+          value === '' && role.fields.some((field: Row) => field.name === name && field.secret)
+        ))
+          await apply('server.field', { name, value });
+      }
+      setRole(null);
+    } catch (error) {
+      setRoleError(error instanceof Error ? error.message : String(error));
+    } finally {
+      savingRole.current = false;
+      setRoleSaving(false);
+    }
+  }
+  function openRole(item: Row) {
+    setRole(item);
+    setFields({});
+    setCustomModels(new Set());
+    setRoleError('');
+    setRoleRevision(data.modelWorkflow?.revision);
+    setRoleScriptPath(data.scriptPath);
+  }
+  // Le schéma ouvre le rôle sur place, ou montre les comptes et l'installation, sans quitter la page.
+  useEffect(() => {
+    if (!request) return;
+    if (request.kind === 'role') {
+      const item = (data.roles || []).find((r: Row) => r.id === request.id);
+      if (item) {
+        openRole(item);
+        return;
+      }
+      setRolesOpen(true);
+      rolesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+      setModelToolsOpen(true);
+      accountsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [request?.nonce]);
+  return (
+    <>
+      {(data.configurationProblems || []).map((problem: string) => (
+        <ErrorNotice key={problem} message={problem} />
+      ))}
+      <section className="card account-card" ref={accountsRef}>
         <CardHeader
           title={t('Connexions aux comptes', 'Account connections')}
           subtitle={t(
@@ -1489,20 +1654,12 @@ export function ServerSettings({ data, run, busy, notify, navigate }: PageProps)
           ))}
         </div>
       </section>
-      {data.hindsightModels && (
-        <details
-          className="advanced-details"
-          data-model-tools
-          open={modelToolsOpen}
-          onToggle={(e) => setModelToolsOpen(e.currentTarget.open)}
-        >
-          <summary>
-            {t('Installation et services des modèles', 'Model installation and services')}
-          </summary>
-          <HindsightModels models={data.hindsightModels} run={run} busy={busy} />
-        </details>
-      )}
-      <details className="card advanced-details" open>
+      <details
+        className="card advanced-details"
+        ref={rolesRef}
+        open={rolesOpen}
+        onToggle={(e) => setRolesOpen(e.currentTarget.open)}
+      >
         <summary>
           {t('Tous les rôles et réglages avancés', 'All roles and advanced settings')}
         </summary>
@@ -1540,14 +1697,7 @@ export function ServerSettings({ data, run, busy, notify, navigate }: PageProps)
               key={item.id}
               className="card role-card"
               disabled={busy || roleSaving}
-              onClick={() => {
-                setRole(item);
-                setFields({});
-                setCustomModels(new Set());
-                setRoleError('');
-                setRoleRevision(data.modelWorkflow?.revision);
-                setRoleScriptPath(data.scriptPath);
-              }}
+              onClick={() => openRole(item)}
             >
               <span className="role-icon">
                 <Sparkles size={21} />
@@ -1574,15 +1724,22 @@ export function ServerSettings({ data, run, busy, notify, navigate }: PageProps)
           />
         )}
       </details>
+      {data.hindsightModels && (
+        <details
+          className="card advanced-details"
+          data-model-tools
+          open={modelToolsOpen}
+          onToggle={(e) => setModelToolsOpen(e.currentTarget.open)}
+        >
+          <summary>
+            {t('Installation et services des modèles', 'Model installation and services')}
+          </summary>
+          <HindsightModels models={data.hindsightModels} run={run} busy={busy} />
+        </details>
+      )}
       {data.hasChanges && (
-        <section className="card settings-card">
-          <CardHeader
-            title={t('Modifications préparées', 'Prepared changes')}
-            subtitle={t(
-              'Vérifiez les changements avant d’enregistrer le script.',
-              'Review changes before saving the script.',
-            )}
-          />
+        <details className="card advanced-details">
+          <summary>{t('Détail des modifications préparées', 'Prepared changes in detail')}</summary>
           <pre className="json-view">
             {(data.diff || [])
               .map(
@@ -1591,22 +1748,7 @@ export function ServerSettings({ data, run, busy, notify, navigate }: PageProps)
               )
               .join('\n')}
           </pre>
-          <div className="action-row">
-            <Button
-              kind="primary"
-              icon={Save}
-              disabled={busy}
-              onClick={() => void run('server.save')}
-            >
-              {' '}
-              {t('Vérifier et enregistrer', 'Review and save')}
-            </Button>
-            <Button disabled={busy || roleSaving} onClick={() => void run('server.revert')}>
-              {' '}
-              {t('Abandonner le brouillon', 'Discard draft')}
-            </Button>
-          </div>
-        </section>
+        </details>
       )}
       {data.diagnostic && (
         <details className="card advanced-details">
@@ -1620,49 +1762,6 @@ export function ServerSettings({ data, run, busy, notify, navigate }: PageProps)
           {warning}
         </div>
       ))}
-      <details className="card advanced-details">
-        <summary>{t('Script, sauvegardes et journal', 'Script, backups, and log')}</summary>
-        <div className="form-stack">
-          <label>
-            {' '}
-            {t('Script de lancement', 'Launch script')}
-            <input
-              value={scriptPath || data.scriptPath || ''}
-              onChange={(e) => setScriptPath(e.target.value)}
-              placeholder="~/.hindsight/start-api.sh"
-            />
-          </label>
-          <Button
-            icon={FolderOpen}
-            onClick={() => void run('server.script', { path: scriptPath || data.scriptPath })}
-          >
-            {' '}
-            {t('Charger ce script', 'Load this script')}
-          </Button>
-          {data.backups?.map((backup: Row) => (
-            <div className="backup-row" key={backup.url}>
-              <span>{date(backup.date, true)}</span>
-              <Button
-                disabled={busy}
-                onClick={() => void run('server.restore', { path: backup.url })}
-              >
-                {' '}
-                {t('Restaurer cette sauvegarde', 'Restore this backup')}
-              </Button>
-            </div>
-          ))}
-          <h3>{t('Journal du service', 'Service log')}</h3>
-          <pre className="json-view">
-            {service.log || t('Aucun journal disponible.', 'No log available.')}
-          </pre>
-          {service.installed && (
-            <Button kind="danger" onClick={() => void run('service.uninstall')}>
-              {' '}
-              {t('Désinstaller le service', 'Uninstall service')}
-            </Button>
-          )}
-        </div>
-      </details>
       {role && (
         <Modal
           title={role.id === 'decision' ? t('Modèle de décision', 'Decision model') : role.title}

@@ -29,7 +29,7 @@ try {
   await page.goto('http://127.0.0.1:16428/?demo=1');
   await expect(page.getByRole('navigation', { name: 'Navigation principale' })).toBeVisible();
   await page
-    .getByRole('navigation', { name: 'Navigation principale' })
+    .getByRole('navigation', { name: 'Réglages du serveur et de l’application' })
     .getByRole('button', { name: /^Modèles/ })
     .click();
   await expect.poll(() => page.evaluate(() => location.hash)).toBe('#model-settings');
@@ -48,9 +48,10 @@ try {
     .selectOption('claude-haiku-5-5');
   await expect(graph.locator('[data-node="answer"]')).toContainText('claude-haiku-5-5');
   await expect(graph.getByRole('button', { name: /Modifier/ })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Gérer les modèles', exact: true }).click();
-  await expect.poll(() => page.evaluate(() => location.hash)).toBe('#server');
-  await expect(graph).toHaveCount(0);
+  // Comptes et rôles sont sur la même page, sous le schéma : rien à ouvrir ailleurs.
+  await expect(page.getByRole('button', { name: 'Gérer les modèles', exact: true })).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe('#model-settings');
+  await expect(graph).toBeVisible();
   await expect(
     page.locator('.account-rows [data-state="connected"] .account-status-dot'),
   ).toHaveCount(2);
@@ -70,6 +71,9 @@ try {
     animations: 'disabled',
   });
   await page.getByRole('button', { name: 'Activer le thème sombre', exact: true }).click();
+  // Tous les rôles sont repliés par défaut ; le brouillon du schéma s’y retrouve.
+  await expect(page.locator('.role-card').first()).toBeHidden();
+  await page.locator('summary', { hasText: 'Tous les rôles et réglages avancés' }).click();
   await expect(
     page
       .locator('.role-card')
@@ -210,7 +214,6 @@ try {
   await expect(decisionFlag).toHaveValue('true');
   await expect(decisionFlag.locator('option[value="__custom_model__"]')).toHaveCount(0);
   await editor.getByRole('button', { name: 'Annuler', exact: true }).click();
-  await page.getByRole('button', { name: 'Choix rapide des modèles', exact: true }).click();
   await expect(graph.getByRole('combobox', { name: 'Modèle · Rédaction' })).toHaveValue(
     'claude-haiku-5-5',
   );
@@ -271,7 +274,7 @@ try {
   });
   if (errors.length) throw new Error(errors.join('\n'));
   console.log(
-    'Sidebar Models: selectors, settings handoff with shared draft, independent decisions, loops, tooltips and save/cancel verified.',
+    'Sidebar Models: selectors, accounts and roles on the same page with a shared draft, independent decisions, loops, tooltips and save/cancel verified.',
   );
 } finally {
   await browser?.close();

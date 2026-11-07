@@ -1,25 +1,30 @@
+import { useState } from 'react';
 import { Settings2 } from 'lucide-react';
 import { ModelWorkflowSettings } from '../components/ModelWorkflow';
 import { useI18n } from '../i18n';
 import type { PageProps } from '../types';
 import { Button, Empty, ErrorNotice, Loading, PageHeader } from '../ui';
+import { ModelManagement, type ModelRequest } from './Manage';
 
-export default function ModelChoices({ data, run, busy, navigate }: PageProps) {
+/**
+ * Modèles : le seul endroit où se règlent les modèles. Le schéma porte le choix rapide et la barre
+ * d'enregistrement ; dessous, les comptes, tous les rôles et l'installation.
+ */
+export default function ModelChoices(props: PageProps) {
+  const { data, run, busy, navigate } = props;
   const { t } = useI18n();
-  const manage = () => navigate('server');
+  const [request, setRequest] = useState<ModelRequest>();
+  const configure = (id: string) => setRequest({ kind: 'role', id, nonce: Date.now() });
+  const tools = () => setRequest({ kind: 'tools', nonce: Date.now() });
+  const configured = Boolean(data.modelWorkflow || data.roles?.length || data.accounts?.length);
   return (
     <>
       <PageHeader
         title={t('Modèles', 'Models')}
         description={t(
-          'Choisissez vos modèles et voyez leur rôle dans la mémoire.',
-          'Choose your models and see how they work in memory.',
+          'Le modèle de chaque fonction de la mémoire. Choisissez sur le schéma ; les comptes, tous les rôles et l’installation sont plus bas.',
+          'The model behind each memory function. Choose on the diagram; accounts, every role and installation are further down.',
         )}
-        actions={
-          <Button icon={Settings2} onClick={manage}>
-            {t('Gérer les modèles', 'Manage models')}
-          </Button>
-        }
       />
       <ErrorNotice message={data.error} />
       {data.modelWorkflow ? (
@@ -28,26 +33,27 @@ export default function ModelChoices({ data, run, busy, navigate }: PageProps) {
           run={run}
           busy={busy}
           quick
-          configure={manage}
-          tools={manage}
+          configure={configure}
+          tools={tools}
         />
-      ) : busy ? (
+      ) : busy && !configured ? (
         <Loading />
       ) : (
         <Empty
           icon={Settings2}
-          title={t('Configurez vos modèles', 'Configure your models')}
+          title={t('Choisissez le script du serveur', 'Choose the server script')}
           description={t(
-            'Ajoutez vos fournisseurs et choisissez le script du serveur dans « Serveur & modèles ».',
-            'Add your providers and choose the server script in Server & models.',
+            'Les modèles et leurs fournisseurs sont lus dans le script de lancement du serveur, à choisir dans Réglages › Serveur.',
+            'Models and their providers are read from the server launch script, chosen in Settings › Server.',
           )}
           action={
-            <Button onClick={manage}>
-              {t('Ouvrir Serveur & modèles', 'Open Server & models')}
+            <Button onClick={() => navigate('server')}>
+              {t('Ouvrir Réglages › Serveur', 'Open Settings › Server')}
             </Button>
           }
         />
       )}
+      {configured && <ModelManagement {...props} request={request} />}
     </>
   );
 }

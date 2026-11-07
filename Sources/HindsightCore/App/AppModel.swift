@@ -40,7 +40,6 @@ public final class AppModel {
     /// Documents de la banque sélectionnée et leurs sources (dossiers suivis, conversations) : la liste de
     /// l'écran « Documents ».
     public private(set) var coverage: FileCoverageViewModel!
-    public private(set) var projectSync: ProjectSyncViewModel!
     /// Service launchd qui exécute le serveur Hindsight (démarrer / arrêter depuis l'app).
     public private(set) var service: HindsightServiceViewModel!
     /// Modèle de décision servi sur ce Mac (son installation et son service launchd).
@@ -119,17 +118,6 @@ public final class AppModel {
             await self.pause.apply(action, reason: "Plafond atteint — " + reason)
         }
         self.coverage.pauseGate = self.pause.gate
-        self.projectSync = ProjectSyncViewModel(settings: settings, runner: processRunner, bank: { [unowned self] in self.selectedBankID })
-        self.projectSync.pauseGate = self.pause.gate
-        self.projectSync.estimate = { @MainActor [unowned self] bank, kind in self.services.estimator.estimate(kind, bank: bank) }
-        self.projectSync.pendingRetains = { @MainActor [unowned self] bank in
-            var n = 0
-            for status in ["pending", "processing"] {
-                guard let ops = try? await self.pause.listOperations(bank, status: status) else { return nil }
-                n += ops.filter { $0.taskType.contains("retain") }.count
-            }
-            return n
-        }
         self.coverage.historicalCost = { @MainActor @Sendable [unowned self] bank, ids in self.consumption.documentCost(ids, bank: bank) }
         clientRef = { [unowned self] in self.client }
         self.services.estimator.roleModel = { [unowned self] role in self.serverSettings.providerAndModel(forRole: role) }

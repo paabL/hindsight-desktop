@@ -16,7 +16,7 @@ export async function nativeRequest(command: string, args: Row = {}) {
 }
 
 export async function pickDirectory(
-  title = t('Choisir le dossier mémoire', 'Choose the memory folder'),
+  title = t('Choisir un dossier', 'Choose a folder'),
 ): Promise<string | null> {
   if (window.__TAURI_INTERNALS__) {
     const { open } = await import('@tauri-apps/plugin-dialog');
@@ -58,7 +58,7 @@ export async function pickDocuments(): Promise<string[]> {
     const selected = await open({
       directory: false,
       multiple: true,
-      title: t('Ajouter des documents au dossier mémoire', 'Add documents to the memory folder'),
+      title: t('Ajouter des documents au catalogue', 'Add documents to the catalog'),
       filters: [{ name: 'Documents', extensions: ['tex', 'md', 'pdf'] }],
     });
     return Array.isArray(selected) ? selected : typeof selected === 'string' ? [selected] : [];

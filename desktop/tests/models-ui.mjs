@@ -62,12 +62,23 @@ try {
   const settings = page.getByRole('tablist', { name: 'Vues des réglages' });
   await settings.getByRole('tab', { name: 'Comportement de la mémoire', exact: true }).click();
   await page.getByRole('tab', { name: 'Réponses', exact: true }).click();
+  // Le réglage fin reste sur la page, replié sous « Options avancées ».
+  const advanced = page.locator('summary', { hasText: 'Options avancées' });
+  await expect(page.getByRole('switch')).toHaveCount(0);
+  await advanced.click();
   await expect(page.getByRole('switch')).toHaveCount(3);
   await page.getByRole('tab', { name: 'Recherche', exact: true }).click();
+  await advanced.click();
   await expect(page.getByRole('switch', { name: /Écarter les faits inutiles/ })).not.toBeChecked();
   await page.getByRole('switch', { name: /Retirer les doublons/ }).check();
   await expect(page.getByRole('switch', { name: /Retirer les doublons/ })).toBeChecked();
-  await settings.getByRole('tab', { name: 'Serveur & modèles', exact: true }).click();
+  // Une valeur modifiée est signalée sur la section repliée et comptée sur Enregistrer.
+  await expect(advanced).toContainText('1 modifiée');
+  await expect(page.getByRole('button', { name: 'Enregistrer (1)', exact: true })).toBeEnabled();
+  await page
+    .getByRole('navigation', { name: 'Réglages du serveur et de l’application' })
+    .getByRole('button', { name: /^Modèles/ })
+    .click();
   await page.getByText('Installation et services des modèles', { exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Modèles Hindsight', exact: true })).toBeVisible();
   await mkdir(path.join(root, 'screenshots'), { recursive: true });
