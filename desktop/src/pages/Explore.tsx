@@ -35,14 +35,27 @@ import {
 } from '../ui';
 import { factTypeLabel, factTypePluralLabel } from '../fact-types';
 import { DocumentReader } from './Library';
+import { requestGraphMode } from '../graph-mode';
+import { nativeSystemMessage } from '../native-messages';
+import { serverFunctionLabel } from '../server-functions';
 
 export function Dashboard({ data, navigate, run, busy }: PageProps) {
   useI18n();
   const stats = data.snapshot?.stats || {};
   const [reader, setReader] = useState<Row | null>(null);
-  const types = Object.entries(stats.nodes_by_fact_type || {}) as [string, number][];
+  // Totaux lus en direct quand le moteur les a (mêmes que Faits et Documents) ; sinon les statistiques du serveur.
+  const liveTypes: Record<string, number> | undefined = data.snapshot?.liveFactTypes;
+  const types = (
+    liveTypes
+      ? Object.entries(liveTypes).filter(([, count]) => count > 0)
+      : Object.entries(stats.nodes_by_fact_type || {})
+  ) as [string, number][];
+  const factTotal = data.snapshot?.liveFactTotal ?? stats.total_nodes;
+  const observationTotal = liveTypes?.observation ?? stats.total_observations ?? 0;
+  const documentTotal = data.snapshot?.liveDocumentTotal ?? stats.total_documents;
+  const operationCounts: Row | undefined = data.snapshot?.operationCounts;
   const recent: Row[] = data.snapshot?.recentDocuments || [];
-  const empty = Boolean(data.snapshot) && !Number(stats.total_documents);
+  const empty = Boolean(data.snapshot) && !Number(documentTotal);
   const header = (
     <PageHeader
       eyebrow={t('Un regard d’ensemble', 'At a glance')}
@@ -74,23 +87,24 @@ export function Dashboard({ data, navigate, run, busy }: PageProps) {
       <div className="metrics-grid three">
         <Metric
           label={t('Faits en mémoire', 'Facts in memory')}
-          // Même total que la barre latérale (`fact_count` du serveur) et que la page Faits : observations comprises.
-          value={number(stats.total_nodes)}
+          // Même total que la page Faits (lu en direct) : observations comprises.
+          value={number(factTotal)}
           note={t(
-            `Dont ${number(stats.total_observations ?? 0)} observations`,
-            `Including ${number(stats.total_observations ?? 0)} observations`,
+            `Dont ${number(observationTotal)} ${observationTotal > 1 ? 'observations' : 'observation'}`,
+            `Including ${number(observationTotal)} ${observationTotal === 1 ? 'observation' : 'observations'}`,
           )}
           icon={Sparkles}
           onClick={() => navigate('facts')}
         />
         <Metric
           label={t('Documents', 'Documents')}
-          value={number(stats.total_documents)}
+          value={number(documentTotal)}
           note={
+            // La liste est triée par dernière modification (retag, retraitement compris), comme « Mis à jour » dans Documents.
             recent[0]?.updated_at
               ? t(
-                  `Dernier ajout le ${date(recent[0].updated_at)}`,
-                  `Last added on ${date(recent[0].updated_at)}`,
+                  `Dernière mise à jour le ${date(recent[0].updated_at)}`,
+                  `Last updated on ${date(recent[0].updated_at)}`,
                 )
               : undefined
           }
@@ -99,12 +113,16 @@ export function Dashboard({ data, navigate, run, busy }: PageProps) {
           onClick={() => navigate('documents')}
         />
         <Metric
-          label={t('Relations', 'Relationships')}
+          label={t('Liens', 'Links')}
           value={number(stats.total_links)}
-          note={t('Liens entre les faits', 'Links between facts')}
+          note={t('Entre les faits (statistiques du serveur)', 'Between facts (server statistics)')}
           icon={GitBranch}
           tone="blue"
-          onClick={() => navigate('graph')}
+          onClick={() => {
+            // Ce total compte les liens entre faits : le graphe s'ouvre sur les faits, pas sur les entités.
+            requestGraphMode('facts');
+            navigate('graph');
+          }}
         />
       </div>
       <div className="two-columns">
@@ -150,24 +168,26 @@ export function Dashboard({ data, navigate, run, busy }: PageProps) {
               </Button>
             }
           />
+          {/* Mêmes compteurs que Traitements (lus en direct), même état de consolidation. */}
           <div className="queue-overview">
             <div>
               <span className="status-dot warning" />
               <span>{t('En attente', 'Pending')}</span>
-              <strong>{number(stats.pending_operations)}</strong>
+              <strong>{number(operationCounts?.pending ?? stats.pending_operations)}</strong>
             </div>
+            {operationCounts && (
+              <div>
+                <span className="status-dot green" />
+                <span>{t('En cours', 'Processing')}</span>
+                <strong>{number(operationCounts.processing)}</strong>
+              </div>
+            )}
             <div>
               <span className="status-dot red" />
               <span>{t('En échec', 'Failed')}</span>
-              <strong>{number(stats.failed_operations)}</strong>
+              <strong>{number(operationCounts?.failed ?? stats.failed_operations)}</strong>
             </div>
-            <div>
-              <span className="status-dot green" />
-              <span>{t('Dernière consolidation', 'Last consolidation')}</span>
-              <strong className="small-value">
-                {stats.last_consolidated_at ? date(stats.last_consolidated_at) : '—'}
-              </strong>
-            </div>
+            <ConsolidationLine status={data.snapshot.consolidation} stats={stats} />
           </div>
         </section>
       </div>
@@ -211,6 +231,61 @@ export function Dashboard({ data, navigate, run, busy }: PageProps) {
   );
 }
 
+/** État de la consolidation, le même que dans Traitements : désactivée, en cours, faits à consolider
+ * ou à jour, avec la date de la dernière consolidation qui a réellement traité des faits. */
+export function consolidationSummary(status: Row | undefined): {
+  value: string;
+  tone: '' | 'green' | 'warning';
+} {
+  switch (status?.phase) {
+    case 'disabled':
+      return { value: t('Désactivée', 'Turned off'), tone: '' };
+    case 'running':
+      return { value: t('En cours', 'Processing'), tone: 'green' };
+    case 'queued':
+      return { value: t('En attente', 'Pending'), tone: 'warning' };
+    case 'pending': {
+      const n = Number(status.pendingFacts);
+      return {
+        value: t(
+          `${number(n)} ${n > 1 ? 'faits' : 'fait'} à consolider`,
+          `${number(n)} ${n === 1 ? 'fact' : 'facts'} to consolidate`,
+        ),
+        tone: 'warning',
+      };
+    }
+    default:
+      return { value: t('À jour', 'Up to date'), tone: 'green' };
+  }
+}
+
+function ConsolidationLine({ status, stats }: { status?: Row; stats: Row }) {
+  const last = status ? status.lastConsolidatedAt : stats.last_consolidated_at;
+  if (!status)
+    return (
+      <div>
+        <span className="status-dot green" />
+        <span>{t('Dernière consolidation', 'Last consolidation')}</span>
+        <strong className="small-value">{last ? date(last) : '—'}</strong>
+      </div>
+    );
+  const { value, tone } = consolidationSummary(status);
+  return (
+    <div>
+      <span className={`status-dot ${tone}`} />
+      <span className="queue-label">
+        {t('Consolidation', 'Consolidation')}
+        <small>
+          {last
+            ? t(`Dernière le ${date(last)}`, `Last on ${date(last)}`)
+            : t('Aucune consolidation effectuée', 'No consolidation yet')}
+        </small>
+      </span>
+      <strong className="small-value">{value}</strong>
+    </div>
+  );
+}
+
 /** Un fait sur une ligne : son type, son texte, sa date et le chemin vers son document. */
 export function FactRow({
   fact,
@@ -239,8 +314,8 @@ export function FactRow({
             {fact.state === 'invalidated' && !!fact.sourceFactIDs?.length && ' · '}
             {!!fact.sourceFactIDs?.length &&
               t(
-                `Issue de ${number(fact.sourceFactIDs.length)} faits`,
-                `Derived from ${number(fact.sourceFactIDs.length)} facts`,
+                `Issue de ${number(fact.sourceFactIDs.length)} fait${fact.sourceFactIDs.length > 1 ? 's' : ''}`,
+                `Derived from ${number(fact.sourceFactIDs.length)} fact${fact.sourceFactIDs.length === 1 ? '' : 's'}`,
               )}
           </small>
         )}
@@ -309,7 +384,10 @@ export function Facts({ data, run, busy, refresh, notify }: PageProps) {
         ) +
         (activeQuery ? t(` pour « ${activeQuery} »`, ` for “${activeQuery}”`) : '') +
         (activeType !== 'all' ? ` · ${factTypePluralLabel(activeType)}` : '')
-      : t(`${number(total)} faits dans la banque`, `${number(total)} facts in the bank`);
+      : t(
+          `${number(total)} fait${total > 1 ? 's' : ''} dans la banque`,
+          `${number(total)} fact${total === 1 ? '' : 's'} in the bank`,
+        );
 
   return (
     <>
@@ -409,7 +487,7 @@ export function Facts({ data, run, busy, refresh, notify }: PageProps) {
         />
       )}
       {facts.length > limit && (
-        <Button onClick={() => setLimit(limit + 80)}>{t('Afficher la suite', 'Load more')}</Button>
+        <Button onClick={() => setLimit(limit + 80)}>{t('Afficher la suite', 'Show more')}</Button>
       )}
       {reader && (
         <DocumentReader reader={reader} busy={busy} run={run} onClose={() => setReader(null)} />
@@ -491,7 +569,10 @@ export function Timeline({ data, run, busy, refresh }: PageProps) {
                   `${number(data.facts.length)} fait${data.facts.length > 1 ? 's' : ''} pour « ${activeQuery} »`,
                   `${number(data.facts.length)} fact${data.facts.length === 1 ? '' : 's'} for “${activeQuery}”`,
                 )
-              : t(`${number(data.facts.length)} faits`, `${number(data.facts.length)} facts`)
+              : t(
+                  `${number(data.facts.length)} fait${data.facts.length > 1 ? 's' : ''}`,
+                  `${number(data.facts.length)} fact${data.facts.length === 1 ? '' : 's'}`,
+                )
             : '—'}
         </span>
         {activeQuery && (
@@ -561,7 +642,7 @@ export function Timeline({ data, run, busy, refresh }: PageProps) {
         />
       )}
       {groups.reduce((n, [, f]) => n + f.length, 0) > limit && (
-        <Button onClick={() => setLimit(limit + 80)}>{t('Afficher la suite', 'Load more')}</Button>
+        <Button onClick={() => setLimit(limit + 80)}>{t('Afficher la suite', 'Show more')}</Button>
       )}
       {reader && (
         <DocumentReader reader={reader} run={run} busy={busy} onClose={() => setReader(null)} />
@@ -597,15 +678,30 @@ export function Audit({ data, run, busy }: PageProps) {
           'See who reads your memory and which model calls were made.',
         )}
         actions={
+          // Pas de bouton tant que l’état du journal est inconnu ; inactif si le serveur refuserait l’écriture.
           data.auditStatus === 'enabled' ? (
-            <Button onClick={() => void run('audit.disable')} disabled={busy}>
+            <Button
+              onClick={() => void run('audit.disable')}
+              disabled={busy || data.canToggleAudit === false}
+            >
               {t('Désactiver le journal', 'Disable logging')}
             </Button>
-          ) : (
-            <Button onClick={() => void run('audit.enable')} disabled={busy}>
+          ) : data.auditStatus === 'disabled' ? (
+            <Button
+              onClick={() => void run('audit.enable')}
+              disabled={busy || data.canToggleAudit === false}
+              title={
+                data.canToggleAudit === false
+                  ? t(
+                      'Ce serveur n’accepte pas les réglages par banque : ajoutez HINDSIGHT_API_AUDIT_LOG_ENABLED=true au script de lancement, puis redémarrez-le.',
+                      'This server does not accept per-bank settings: add HINDSIGHT_API_AUDIT_LOG_ENABLED=true to the launch script, then restart it.',
+                    )
+                  : undefined
+              }
+            >
               {t('Activer le journal', 'Enable logging')}
             </Button>
-          )
+          ) : undefined
         }
       />
       <Tabs
@@ -616,9 +712,14 @@ export function Audit({ data, run, busy }: PageProps) {
           {
             id: 'traces',
             label: t('Appels aux modèles', 'Model calls'),
-            count: data.traces?.length,
+            // Le total du serveur, comme le texte sous les onglets (pas seulement les lignes chargées).
+            count: Math.max(Number(data.traceTotal) || 0, data.traces?.length || 0),
           },
-          { id: 'audit', label: t('Journal d’accès', 'Access log'), count: data.audit?.length },
+          {
+            id: 'audit',
+            label: t('Journal d’accès', 'Access log'),
+            count: Math.max(Number(data.auditTotal) || 0, data.audit?.length || 0),
+          },
         ]}
       />
       <ErrorNotice message={tab === 'traces' ? data.traceError : data.error} />
@@ -635,10 +736,24 @@ export function Audit({ data, run, busy }: PageProps) {
           </div>
           <span className="muted">
             {shown < rows.length
-              ? `${number(shown)} ${t('affichés sur', 'shown of')} ${number(rows.length)} ${t('événements', 'events')}`
-              : `${number(rows.length)} ${t('événements', 'events')}`}
+              ? t(
+                  `${number(shown)} affiché${shown > 1 ? 's' : ''} sur ${number(rows.length)} événement${rows.length > 1 ? 's' : ''}`,
+                  `${number(shown)} shown of ${number(rows.length)} event${rows.length === 1 ? '' : 's'}`,
+                )
+              : t(
+                  `${number(rows.length)} événement${rows.length > 1 ? 's' : ''}`,
+                  `${number(rows.length)} event${rows.length === 1 ? '' : 's'}`,
+                )}
             {typeof serverTotal === 'number' && serverTotal > all.length
-              ? ` · ${t('les', 'the')} ${number(all.length)} ${t('plus récents sur', 'most recent of')} ${number(serverTotal)}`
+              ? all.length === 1
+                ? t(
+                    ` · le plus récent sur ${number(serverTotal)}`,
+                    ` · the most recent of ${number(serverTotal)}`,
+                  )
+                : t(
+                    ` · les ${number(all.length)} plus récents sur ${number(serverTotal)}`,
+                    ` · the ${number(all.length)} most recent of ${number(serverTotal)}`,
+                  )
               : ''}
           </span>
         </div>
@@ -659,10 +774,8 @@ export function Audit({ data, run, busy }: PageProps) {
                     <td>
                       <span className="inline-icon">
                         <Activity size={15} />
-                        {row.who ||
-                          row.action ||
-                          row.operation ||
-                          row.operation_type ||
+                        {(row.who && nativeSystemMessage(row.who)) ||
+                          serverFunctionLabel(row.action || row.operation || row.operation_type) ||
                           row.method ||
                           t('Appel', 'Call')}
                       </span>

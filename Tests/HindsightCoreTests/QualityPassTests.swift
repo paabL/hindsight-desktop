@@ -113,10 +113,35 @@ final class MergeSafetyTests: XCTestCase {
         let t = MockTransport()
         prepare(t, importResult: #"{"operation_id":"i1","status":"completed","result_metadata":{"documents_imported":1,"documents_skipped":2}}"#)
         let vm = make(t)
-        vm.requestMerge(source: "scratch", into: testBank, conflict: .skip, after: .deleteSource)
+        await vm.requestMerge(source: "scratch", into: testBank, conflict: .skip, after: .deleteSource)
         await vm.confirmation!.perform()
         XCTAssertFalse(t.requests.contains { $0.method == "DELETE" })
         XCTAssertTrue(vm.message?.contains("CONSERVÉE") == true, vm.message ?? "")
+    }
+
+    func testMergeIntoABankWithoutObservationsPromisesNoConsolidation() async throws {
+        let t = MockTransport()
+        prepare(t, importResult: #"{"operation_id":"i1","status":"completed","result_metadata":{"documents_imported":2,"facts_imported":40,"observations_skipped":0}}"#)
+        t.on("GET", "\(bankPath)/config", json: #"{"bank_id":"b","config":{"enable_observations":false},"overrides":{}}"#)
+        let vm = make(t)
+        await vm.requestMerge(source: "scratch", into: testBank)
+        let c = try XCTUnwrap(vm.confirmation)
+        XCTAssertTrue(c.message.contains("« \(testBank) » ne crée pas d'observations"), c.message)
+        XCTAssertFalse(c.message.contains("appels LLM"), c.message)
+        await c.perform()
+        XCTAssertEqual(vm.message, "Fusion terminée (2 documents ajoutés, 40 faits).")
+    }
+
+    func testMergeTellsWhatWaitsWhenTheTargetDoesNotConsolidateByItself() async throws {
+        let t = MockTransport()
+        prepare(t, importResult: #"{"operation_id":"i1","status":"completed","result_metadata":{"documents_imported":1}}"#)
+        t.on("GET", "\(bankPath)/config", json: #"{"bank_id":"b","config":{"enable_observations":true,"enable_auto_consolidation":false},"overrides":{}}"#)
+        t.on("GET", "\(bankPath)/stats", json: #"{"bank_id":"b","total_nodes":0,"total_links":0,"total_documents":1,"nodes_by_fact_type":{},"links_by_link_type":{},"links_by_fact_type":{},"links_breakdown":{},"pending_operations":0,"failed_operations":0,"pending_consolidation":12,"failed_consolidation":0,"total_observations":0}"#)
+        let vm = make(t)
+        await vm.requestMerge(source: "scratch", into: testBank)
+        XCTAssertTrue(vm.confirmation?.message.contains("attendront que vous lanciez la consolidation") == true)
+        await vm.confirmation?.perform()
+        XCTAssertEqual(vm.message, "Fusion terminée (1 document ajouté). 12 faits attendent la consolidation de « \(testBank) » : lancez-la depuis « Activité › Traitements ».")
     }
 
     func testAliasFailureAfterDeleteIsReportedTruthfully() async throws {
@@ -124,7 +149,7 @@ final class MergeSafetyTests: XCTestCase {
         prepare(t, importResult: #"{"operation_id":"i1","status":"completed","result_metadata":{"documents_imported":2}}"#)
         t.on("POST", "\(bankPath)/aliases", json: #"{"detail":"alias en cours de libération"}"#, status: 409)
         let vm = make(t)
-        vm.requestMerge(source: "scratch", into: testBank, conflict: .skip, after: .deleteAndAlias)
+        await vm.requestMerge(source: "scratch", into: testBank, conflict: .skip, after: .deleteAndAlias)
         await vm.confirmation!.perform()
         XCTAssertTrue(t.requests.contains { $0.method == "DELETE" })
         XCTAssertTrue(vm.message?.contains("supprimée, mais l'alias") == true, vm.message ?? "")

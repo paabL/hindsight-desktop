@@ -48,11 +48,11 @@ test('les détails de coût sont traduits et la question utilisateur reste stric
   const query = 'Créer une banque ?\n\nNe pas modifier ce texte : Estimation : ≈ 3 jetons LLM.';
   const result = localizeConfirmation(
     confirmation({
-      title: 'Interroger la mémoire ?',
+      title: 'Obtenir une réponse ?',
       message:
         "Le modèle rédigera une réponse à partir des faits de cette banque.\n\nEstimation : ≈ 4 k–9 k jetons LLM, pris sur l'abonnement — valeurs par défaut (aucune trace récente).\n\n" +
         query,
-      confirmTitle: 'Générer la réponse',
+      confirmTitle: 'Obtenir la réponse',
       requiredText: undefined,
       destructive: false,
     }),
@@ -125,24 +125,41 @@ test('les messages d’état composés du moteur sont traduits sans toucher aux 
   );
   assert.equal(
     nativeSystemMessage(
-      'Fusion terminée (documents_imported 3) ; « brouillon » supprimée. Lancez la consolidation de « équipe » pour intégrer les nouveaux faits aux observations.',
+      'Fusion terminée (3 documents ajoutés, 1 234 faits, 1 document ignoré) ; « brouillon » supprimée.',
     ),
-    'Merge complete (documents_imported 3); “brouillon” deleted. Run consolidation on “équipe” to add the new facts to its observations.',
+    'Merge complete (3 documents added, 1 234 facts, 1 skipped document); “brouillon” deleted.',
+  );
+  assert.equal(
+    nativeSystemMessage(
+      'Fusion terminée (1 document ajouté). 12 faits attendent la consolidation de « équipe » : lancez-la depuis « Activité › Traitements ».',
+    ),
+    'Merge complete (1 document added). 12 facts are waiting for consolidation in “équipe”. Run it from Activity › Processing.',
+  );
+  assert.equal(
+    nativeSystemMessage(
+      "Fusion terminée (2 documents ajoutés, 1 document ignoré). « brouillon » est CONSERVÉE : 1 document ignoré n'existe que dans la source. Vérifiez, puis supprimez-la depuis « Réglages › Banque ».",
+    ),
+    'Merge complete (2 documents added, 1 skipped document). “brouillon” was KEPT: 1 skipped document exists only in the source. Check, then delete it from Settings › Memory bank.',
   );
   assert.equal(
     nativeSystemMessage('« équipe » est en pause. 2 régénérations de connaissances annulées.'),
     '“équipe” is paused. 2 knowledge regenerations cancelled.',
   );
-  assert.equal(nativeSystemMessage('1 fait(s) supprimé(s).'), '1 fact deleted.');
+  assert.equal(nativeSystemMessage('1 fait effacé.'), '1 fact cleared.');
+  assert.equal(nativeSystemMessage('1 234 observations effacées.'), '1 234 observations cleared.');
   assert.equal(
     nativeSystemMessage('3 sources envoyées ; traitement à suivre dans cette liste.'),
     '3 sources uploaded. Follow processing in this list.',
   );
   assert.equal(
     nativeSystemMessage(
-      "L'opération op-7 n'est pas terminée ; suivez-la dans « Activité › Traitements ».",
+      "L'opération n'est pas encore terminée ; suivez-la dans « Activité › Traitements ».",
     ),
-    'Operation op-7 is not finished yet. Follow it in Activity › Processing.',
+    'The operation has not finished yet. Follow it in Activity › Processing.',
+  );
+  assert.equal(
+    nativeSystemMessage("L'opération a échoué : archive invalide"),
+    'The operation failed: archive invalide',
   );
   // Préfixe générique : une règle plus précise passe avant « Échec : … ».
   assert.equal(
@@ -197,4 +214,123 @@ test('les erreurs secondaires des sections et les pages de connaissance sont tra
   assert.equal(result.data.detailError, 'Unknown memory bank.');
   assert.equal(result.confirmations[0].title, 'Delete knowledge page “Projet”?');
   assert.equal(result.messages[0], 'Knowledge page deleted.');
+});
+
+test('la consolidation dit en anglais ce qu’elle traitera, et pourquoi elle est refusée', () => {
+  setLanguage('en');
+  const request = localizeConfirmation(
+    confirmation({
+      title: 'Consolider les faits ?',
+      message:
+        "Le serveur va créer ou mettre à jour les observations à partir des 27 619 faits pas encore consolidés. Cela appelle le LLM de consolidation. Chaque fait rejoint les observations de sa portée (celle de son document).\n\nEstimation : ≈ 6,2 M–24,9 M jetons LLM, pris sur l'abonnement (≈ 21 $ à l'usage) — valeurs par défaut (aucune trace récente).",
+      confirmTitle: 'Consolider',
+      destructive: false,
+      requiredText: undefined,
+    }),
+  );
+  assert.equal(request.title, 'Consolidate facts?');
+  assert.equal(request.confirmTitle, 'Consolidate');
+  assert.match(
+    request.message,
+    /^The server will create or update observations from the 27 619 facts not yet consolidated\./,
+  );
+  assert.match(request.message, /Estimate: ≈ 6,2 M–24,9 M LLM tokens, uses subscription quota/);
+  const single = localizeConfirmation(
+    confirmation({
+      title: 'Consolider les faits ?',
+      message:
+        'Le serveur va créer ou mettre à jour les observations à partir du seul fait pas encore consolidé. Cela appelle le LLM de consolidation. Chaque fait rejoint les observations de sa portée (celle de son document).',
+    }),
+  );
+  assert.match(
+    single.message,
+    /^The server will create or update observations from the only fact not yet consolidated\./,
+  );
+  const recover = localizeConfirmation(
+    confirmation({
+      title: 'Reconsolider les faits en échec ?',
+      message:
+        "Les 3 faits en échec de consolidation seront remis dans la file. Aucune observation n'est supprimée.",
+      confirmTitle: 'Reconsolider',
+    }),
+  );
+  assert.equal(recover.title, 'Reconsolidate failed facts?');
+  assert.equal(
+    recover.message,
+    'The 3 facts that failed consolidation will be requeued. No observations are deleted.',
+  );
+  assert.equal(recover.confirmTitle, 'Reconsolidate');
+  for (const [french, english] of [
+    [
+      "La consolidation est désactivée pour cette banque : le serveur ne crée pas d'observations. Activez « Créer des observations » dans « Réglages › Comportement de la mémoire › Consolidation ».",
+      'Consolidation is turned off for this memory bank: the server does not create observations. Turn on “Create observations” in Settings › Memory behavior › Consolidation.',
+    ],
+    [
+      'Une consolidation est déjà en cours pour cette banque.',
+      'A consolidation is already running for this memory bank.',
+    ],
+    ['Consolidation mise en file.', 'Consolidation queued.'],
+    ['1 fait remis en file.', '1 fact requeued.'],
+    ['12 faits remis en file.', '12 facts requeued.'],
+  ])
+    assert.equal(nativeSystemMessage(french), english);
+  setLanguage('fr');
+});
+
+test('les erreurs du service, des mises à jour, des dossiers et du journal d’accès sont traduites', () => {
+  setLanguage('en');
+  for (const [french, english] of [
+    [
+      "Installation impossible : Le script a changé pendant l'installation : vérifiez-le à nouveau.",
+      'Installation failed: The script changed during installation. Review it again.',
+    ],
+    ['Arrêt impossible : boom', 'Stop failed: boom'],
+    ["Le service ne s'est pas arrêté dans les 30 s.", 'The service did not stop within 30 s.'],
+    [
+      "Le service a été lancé mais l'API ne répond pas (code de sortie 1). Consultez le journal ci-dessous.",
+      'The service was started but the API does not respond (exit code 1). See the log below.',
+    ],
+    ['git fetch a échoué : refus', 'git fetch failed: refus'],
+    [
+      'La compilation a échoué (code 2) : voir le journal.',
+      'The build failed (code 2). See the log.',
+    ],
+    [
+      'Application construite invalide : identifiant « a.b » au lieu de « c.d »',
+      'Invalid built app: identifier “a.b” instead of “c.d”',
+    ],
+    ["/x/run.sh n'est pas exécutable (chmod u+x).", '/x/run.sh is not executable (chmod u+x).'],
+    ['Vérification : échec (code 1). Voir le journal.', 'Check: failed (code 1). See the log.'],
+    [
+      'Traces illisibles pour demo : Serveur injoignable : délai',
+      'Unreadable traces for demo: Server unreachable: délai',
+    ],
+    ['repo : git ls-files a échoué : fatal', 'repo: git ls-files failed: fatal'],
+    [
+      'Réponse inattendue pour /v1/x : champ manquant « id » à .items[0]',
+      'Unexpected response for /v1/x: missing field “id” at .items[0]',
+    ],
+    ['mcp · client non identifié (profil 3fa2)', 'mcp · unidentified client (profile 3fa2)'],
+    ['http · appelant non identifié', 'http · unidentified caller'],
+    [
+      '1 source envoyée ; traitement à suivre dans cette liste.',
+      '1 source uploaded. Follow processing in this list.',
+    ],
+    ['Relance : 2 sur 5…', 'Retrying: 2 of 5…'],
+  ])
+    assert.equal(nativeSystemMessage(french), english);
+  // Le nombre capturé n'apporte jamais d'espace en trop.
+  assert.equal(
+    localizeConfirmation(
+      confirmation({
+        title: 'Appliquer le gabarit à « demo » ?',
+        message: 'Effet prévu : 1 modèle mental créé, 3 directives mises à jour.',
+        confirmTitle: 'Appliquer le gabarit',
+        requiredText: undefined,
+        destructive: false,
+      }),
+    ).message,
+    'Expected effect: 1 mental model created, 3 directives updated.',
+  );
+  setLanguage('fr');
 });

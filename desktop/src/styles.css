@@ -5009,7 +5009,7 @@ td {
 .workspace-bulk > span {
   margin-right: auto;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--secondary);
 }
 
 /* The model editor keeps its actions in view; only the fields scroll. */
@@ -5404,4 +5404,55 @@ button.folder-row > svg:last-child {
 }
 .settings-card > .action-row + details {
   margin-top: 18px;
+}
+
+/* Consolidation : même état dans la Vue d'ensemble et dans Traitements. */
+.queue-overview .queue-label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.queue-overview .queue-label small {
+  font-size: 10px;
+  color: var(--faint);
+}
+.operations-summary .consolidation-state strong {
+  font-size: 12px;
+}
+.notice.consolidation-off {
+  align-items: center;
+  justify-content: space-between;
+}
+.setting-toggle.is-disabled {
+  opacity: 0.6;
+}
+
+/* Dernier test des modèles : un rôle par ligne, son état en badge, à côté du bouton qui le lance. */
+.model-test {
+  margin: 4px 0 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.model-test-title {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  margin: 0 0 8px;
+}
+.model-test-title span,
+.model-test li small {
+  color: var(--secondary);
+}
+.model-test ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.model-test li {
+  display: flex;
+  gap: 10px;
+  align-items: center;
 }

@@ -15,8 +15,9 @@ import {
   Trash2,
   Zap,
 } from 'lucide-react';
-import type { PageProps, Row } from '../types';
+import type { PageProps, PauseState, Row } from '../types';
 import { nativeSystemMessage } from '../native-messages';
+import { serverFunctionLabel } from '../server-functions';
 import {
   Button,
   CardHeader,
@@ -35,25 +36,45 @@ import {
 export function PauseTools({
   run,
   busy,
-  paused = false,
-}: Pick<PageProps, 'run' | 'busy'> & { paused?: boolean }) {
+  pause,
+  bank,
+  readOnly = false,
+}: Pick<PageProps, 'run' | 'busy'> & {
+  pause?: PauseState;
+  bank?: string | null;
+  readOnly?: boolean;
+}) {
   useI18n();
   const [open, setOpen] = useState(false);
   const [all, setAll] = useState(false);
+  const allPaused = !!pause?.all;
+  const bankPaused = !!bank && !!pause?.banks?.includes(bank);
+  // Ce que la portée choisie dans les options permet : mettre en pause ou reprendre, jamais les deux.
+  const scopePaused = all ? allPaused : bankPaused;
+  const frozen = !!pause?.frozen;
+  const disabled = busy || readOnly;
   return (
     <>
-      {paused ? (
+      {allPaused ? (
         <Button
           icon={Play}
-          disabled={busy}
+          disabled={disabled}
+          onClick={() => void run('pause.resume', { all: true })}
+        >
+          {t('Reprendre toutes les banques', 'Resume all banks')}
+        </Button>
+      ) : bankPaused ? (
+        <Button
+          icon={Play}
+          disabled={disabled}
           onClick={() => void run('pause.resume', { all: false })}
         >
-          {t('Reprendre les traitements', 'Resume processing')}
+          {t('Reprendre', 'Resume')}
         </Button>
       ) : (
         <Button
           icon={Pause}
-          disabled={busy}
+          disabled={disabled}
           onClick={() => void run('pause.pause', { all: false })}
         >
           {t('Mettre en pause', 'Pause')}
@@ -62,21 +83,21 @@ export function PauseTools({
       <IconButton
         icon={MoreHorizontal}
         label={t('Autres options de traitement', 'More processing options')}
-        disabled={busy}
+        disabled={disabled}
         onClick={() => setOpen(true)}
       />
       {open && (
         <Modal
           title={t('Options de traitement', 'Processing options')}
           subtitle={t(
-            'Pour toutes les banques ou pour le serveur entier.',
-            'For every memory bank or the whole server.',
+            'Pour cette banque, toutes les banques ou le serveur entier.',
+            'For this bank, every bank or the whole server.',
           )}
           onClose={() => setOpen(false)}
         >
           <label className="checkbox-label scope-choice">
             <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} />
-            {t('Appliquer à toutes les banques', 'Apply to all banks')}
+            {t('Appliquer à toutes les banques', 'Apply to all memory banks')}
           </label>
           <div className="pause-options">
             <article>
@@ -84,24 +105,32 @@ export function PauseTools({
                 <Pause size={21} />
               </span>
               <div>
-                <h3>{t('Mettre en pause', 'Pause')}</h3>
+                <h3>{scopePaused ? t('Reprendre', 'Resume') : t('Mettre en pause', 'Pause')}</h3>
                 <p>
-                  {t(
-                    'Suspend les nouveaux envois de cette app et la consolidation automatique.',
-                    'Pause new uploads from this app and automatic consolidation.',
-                  )}
+                  {scopePaused
+                    ? t(
+                        'Les envois reprennent et la consolidation automatique retrouve son réglage d’avant la pause.',
+                        'Uploads resume and automatic consolidation returns to its setting from before the pause.',
+                      )
+                    : t(
+                        'Suspend les envois de cette app, la consolidation automatique et les régénérations de connaissances. Les opérations déjà en file continuent.',
+                        'Pause uploads from this app, automatic consolidation and knowledge regenerations. Operations already queued keep running.',
+                      )}
                 </p>
                 <div className="action-row">
-                  <Button disabled={busy} onClick={() => void run('pause.pause', { all })}>
-                    {t('Mettre en pause', 'Pause')}
-                  </Button>
-                  <Button
-                    icon={Play}
-                    disabled={busy}
-                    onClick={() => void run('pause.resume', { all })}
-                  >
-                    {t('Reprendre', 'Resume')}
-                  </Button>
+                  {scopePaused ? (
+                    <Button
+                      icon={Play}
+                      disabled={disabled}
+                      onClick={() => void run('pause.resume', { all })}
+                    >
+                      {t('Reprendre', 'Resume')}
+                    </Button>
+                  ) : (
+                    <Button disabled={disabled} onClick={() => void run('pause.pause', { all })}>
+                      {t('Mettre en pause', 'Pause')}
+                    </Button>
+                  )}
                 </div>
               </div>
             </article>
@@ -110,20 +139,40 @@ export function PauseTools({
                 <Snowflake size={21} />
               </span>
               <div>
-                <h3>{t('Geler la file du serveur', 'Freeze the server queue')}</h3>
+                <h3>
+                  {frozen
+                    ? t('Dégeler la file du serveur', 'Unfreeze the server queue')
+                    : t('Geler la file du serveur', 'Freeze the server queue')}
+                </h3>
                 <p>
-                  {t(
-                    'Redémarre le serveur avec son traitement en arrière-plan suspendu. Toutes les banques sont concernées.',
-                    'Restart the server with background processing suspended. All banks are affected.',
-                  )}
+                  {!pause?.canFreeze && !frozen
+                    ? t(
+                        'Possible seulement pour un serveur lancé par le service de l’app (Réglages › Serveur).',
+                        'Only available for a server started by the app’s service (Settings › Server).',
+                      )
+                    : frozen
+                      ? t(
+                          'Le serveur redémarre avec son traitement en arrière-plan : les opérations en attente seront traitées.',
+                          'The server restarts with background processing: pending operations will be processed.',
+                        )
+                      : t(
+                          'Redémarre le serveur avec son traitement en arrière-plan suspendu. Toutes les banques sont concernées.',
+                          'Restart the server with background processing suspended. All banks are affected.',
+                        )}
                 </p>
                 <div className="action-row">
-                  <Button disabled={busy} onClick={() => void run('pause.freeze')}>
-                    {t('Geler', 'Freeze')}
-                  </Button>
-                  <Button disabled={busy} onClick={() => void run('pause.unfreeze')}>
-                    {t('Dégeler', 'Unfreeze')}
-                  </Button>
+                  {frozen ? (
+                    <Button disabled={disabled} onClick={() => void run('pause.unfreeze')}>
+                      {t('Dégeler', 'Unfreeze')}
+                    </Button>
+                  ) : (
+                    <Button
+                      disabled={disabled || !pause?.canFreeze}
+                      onClick={() => void run('pause.freeze')}
+                    >
+                      {t('Geler', 'Freeze')}
+                    </Button>
+                  )}
                 </div>
               </div>
             </article>
@@ -141,7 +190,7 @@ export function PauseTools({
                 </p>
                 <Button
                   kind="danger"
-                  disabled={busy}
+                  disabled={disabled}
                   onClick={() => void run('pause.drain', { all })}
                 >
                   {t('Vider la file', 'Clear the queue')}
@@ -168,6 +217,7 @@ export default function Consumption({ data, run, busy, notify }: PageProps) {
   const today = summary.today || {};
   const events: Row[] = data.events || [];
   const gauges: Row[] = (data.gauges || []).filter((gauge: Row) => gauge.id === 'dollars.day');
+  const dailyLimit: Row | undefined = gauges.find((gauge) => Number(gauge.limit) > 0);
   // La période se compte jusqu’au dernier relevé (l’heure actuelle à défaut), pas jusqu’au dernier appel :
   // une banque au repos depuis deux jours n’affiche rien sur 24 heures. Le graphique, la répartition et le
   // nombre d’appels portent tous sur cette même période.
@@ -176,7 +226,17 @@ export default function Consumption({ data, run, busy, notify }: PageProps) {
     const cutoff = reference - (period === 'day' ? 86_400_000 : 7 * 86_400_000);
     return events.filter((event) => (Date.parse(event.date) || 0) >= cutoff);
   }, [events, period, data.lastPoll]);
-  const chart = useMemo(() => {
+  // Moteur natif : agrégats complets de la période. Mode exemple : recalcul à partir des appels fournis.
+  const engine: Row | undefined = data.periods?.[period];
+  type Bar = { key: string; tokens: number; calls: number; label: string };
+  const chart = useMemo((): Bar[] => {
+    if (engine)
+      return (engine.buckets || []).map((bucket: Row): Bar => ({
+        key: bucket.start,
+        tokens: Number(bucket.tokens) || 0,
+        calls: Number(bucket.calls) || 0,
+        label: period === 'day' ? `${new Date(bucket.start).getHours()} h` : date(bucket.start),
+      }));
     const groups = new Map<string, { tokens: number; calls: number; label: string }>();
     const pad = (n: number) => String(n).padStart(2, '0');
     for (const event of periodEvents) {
@@ -196,9 +256,14 @@ export default function Consumption({ data, run, busy, notify }: PageProps) {
     return [...groups.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([key, value]) => ({ key, ...value }));
-  }, [periodEvents, period, language]);
+  }, [periodEvents, period, language, engine]);
   const peak = Math.max(1, ...chart.map((c) => c.tokens));
-  const distribution = useMemo(() => {
+  const distribution = useMemo((): [string, number][] => {
+    if (engine)
+      return (engine.operations || []).map(
+        (share: Row) =>
+          [share.id || t('Autre', 'Other'), Number(share.tokens) || 0] as [string, number],
+      );
     const groups = new Map<string, number>();
     for (const e of periodEvents)
       groups.set(
@@ -208,7 +273,8 @@ export default function Consumption({ data, run, busy, notify }: PageProps) {
           (e.tokens?.output || 0),
       );
     return [...groups.entries()].sort((a, b) => b[1] - a[1]);
-  }, [periodEvents, language]);
+  }, [periodEvents, language, engine]);
+  const periodCalls = engine ? Number(engine.calls) || 0 : periodEvents.length;
   const periodLabel = period === 'day' ? t('24 heures', '24 hours') : t('7 jours', '7 days');
   const sum = distribution.reduce((n, [, v]) => n + v, 0) || 1;
   function editBudgets() {
@@ -234,17 +300,38 @@ export default function Consumption({ data, run, busy, notify }: PageProps) {
         }
       />
       <ErrorNotice message={data.error} />
+      {data.tracesOff && (
+        <div className="notice">
+          {t(
+            'Le serveur n’enregistre pas ses appels LLM : rien n’est mesuré ici et un plafond ne peut pas se déclencher. Ajoutez HINDSIGHT_API_LLM_TRACE_ENABLED=true à son environnement (Modèles), puis redémarrez-le.',
+            'The server does not record its model calls: nothing is measured here and a limit cannot trigger. Add HINDSIGHT_API_LLM_TRACE_ENABLED=true to its environment (Models), then restart it.',
+          )}
+        </div>
+      )}
       <div className="metrics-grid">
         <Metric
           label={t('Coût estimé aujourd’hui', 'Estimated cost today')}
-          value={money(today.dollars)}
-          note={t('Appels facturés à l’usage · USD', 'Pay-per-use calls · USD')}
+          value={data.tracesOff ? '—' : money(today.dollars)}
+          // Le plafond quotidien se lit ici, avec le coût qu'il borne : un seul endroit pour ce chiffre.
+          note={
+            dailyLimit && data.tracesOff
+              ? t(
+                  `Plafond : ${money(dailyLimit.limit)} par jour, inopérant sans traces`,
+                  `Limit: ${money(dailyLimit.limit)} per day, inactive without traces`,
+                )
+              : dailyLimit
+                ? t(
+                    `Plafond : ${money(dailyLimit.limit)} par jour (${Math.round((dailyLimit.used / dailyLimit.limit) * 100)} %)`,
+                    `Limit: ${money(dailyLimit.limit)} per day (${Math.round((dailyLimit.used / dailyLimit.limit) * 100)}%)`,
+                  )
+                : t('Appels facturés à l’usage · USD', 'Pay-per-use calls · USD')
+          }
           icon={CircleDollarSign}
         />
         <Metric
           label={t('Appels aujourd’hui', 'Calls today')}
           value={number(today.calls)}
-          note={t('Toutes les banques', 'All banks')}
+          note={t('Toutes les banques', 'All memory banks')}
           icon={Activity}
           tone="sage"
         />
@@ -319,7 +406,7 @@ export default function Consumption({ data, run, busy, notify }: PageProps) {
                 {t('Jetons en entrée et sortie', 'Input and output tokens')}
                 <span className="spacer" />
                 <span>
-                  {number(periodEvents.length)} {t('appels sur', 'calls in')} {periodLabel}
+                  {number(periodCalls)} {t('appels sur', 'calls in')} {periodLabel}
                 </span>
               </div>
             </>
@@ -344,14 +431,7 @@ export default function Consumption({ data, run, busy, notify }: PageProps) {
               <div key={key} className="distribution-row">
                 <div>
                   <span className={`legend-dot color-${i % 4}`} />
-                  <span>
-                    {{
-                      retain: t('Extraction des faits', 'Fact extraction'),
-                      consolidation: t('Consolidation', 'Consolidation'),
-                      reflect: t('Réponses', 'Answers'),
-                      mental_model: t('Connaissances', 'Knowledge'),
-                    }[key] || key}
-                  </span>
+                  <span>{serverFunctionLabel(key)}</span>
                   <strong>{number((value / sum) * 100)} %</strong>
                 </div>
                 <div className="progress-track">
@@ -439,40 +519,6 @@ export default function Consumption({ data, run, busy, notify }: PageProps) {
           </p>
         </section>
       )}
-      {!!gauges.length && (
-        <section className="card">
-          <CardHeader
-            title={t('Vos plafonds', 'Your limits')}
-            action={
-              <Button kind="ghost" onClick={editBudgets}>
-                {t('Modifier', 'Edit')}
-              </Button>
-            }
-          />
-          <div className="budget-gauges">
-            {gauges.map((gauge) => {
-              // Les plafonds en dollars gardent leurs centimes : « 0,42 $ / 1,00 $ », pas « 0 / 1 ».
-              const amount =
-                gauge.unit === 'dollars' || String(gauge.id).startsWith('dollars.')
-                  ? money
-                  : number;
-              return (
-                <div key={gauge.id}>
-                  <strong>{nativeSystemMessage(gauge.title)}</strong>
-                  <span>
-                    {amount(gauge.used)} / {amount(gauge.limit)}
-                  </span>
-                  <div className="progress-track">
-                    <span
-                      style={{ width: `${Math.min(100, (gauge.used / gauge.limit) * 100)}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
       <p className="page-footnote">
         <Clock3 size={13} />
         {data.lastPoll
@@ -492,6 +538,14 @@ export default function Consumption({ data, run, busy, notify }: PageProps) {
           )}
           onClose={() => setBudgets(false)}
         >
+          {data.tracesOff && (
+            <div className="notice">
+              {t(
+                'Le serveur n’enregistre pas ses appels LLM : ces plafonds ne pourront pas se déclencher tant que ses traces sont coupées.',
+                'The server does not record its model calls: these limits cannot trigger while its traces are off.',
+              )}
+            </div>
+          )}
           <form
             className="form-stack"
             onSubmit={(e) => {
@@ -539,7 +593,7 @@ export default function Consumption({ data, run, busy, notify }: PageProps) {
                 {t('Action autorisée', 'Allowed action')}
                 <select value={budgetAction} onChange={(e) => setBudgetAction(e.target.value)}>
                   <option value="softPause">
-                    {t('Mettre les traitements en pause', 'Pause processing')}
+                    {t('Mettre toutes les banques en pause', 'Pause all memory banks')}
                   </option>
                   <option value="freezeQueue">
                     {t(
@@ -550,10 +604,18 @@ export default function Consumption({ data, run, busy, notify }: PageProps) {
                 </select>
               </label>
             )}
+            {autoPause && budgetAction === 'freezeQueue' && data.canFreeze === false && (
+              <p className="form-hint">
+                {t(
+                  'Cette app n’a pas lancé le serveur : elle ne peut pas geler sa file. Au dépassement, toutes les banques seront mises en pause.',
+                  'This app did not start the server, so it cannot freeze its queue. When a limit is reached, all memory banks will be paused.',
+                )}
+              </p>
+            )}
             <p className="form-hint">
               {t(
-                'La pause automatique nécessite de laisser cette application ouverte. Sans cette option, les plafonds déclenchent une alerte.',
-                'Automatic pause requires this app to stay open. Otherwise, limits trigger an alert.',
+                'L’action automatique nécessite de laisser cette application ouverte. Sans elle, un plafond atteint déclenche une alerte.',
+                'The automatic action requires this app to stay open. Without it, a reached limit triggers an alert.',
               )}
             </p>
             <div className="modal-actions">

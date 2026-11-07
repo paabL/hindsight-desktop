@@ -36,7 +36,8 @@ final class OperationCountTests: XCTestCase {
         XCTAssertTrue(vm.rows.isEmpty)
         XCTAssertEqual(vm.operationCounts, ["failed": 0, "pending": 1, "processing": 2])
         XCTAssertTrue(mock.requests.filter { $0.path.hasSuffix("/stats") }.allSatisfy { $0.queryValue("refresh") == nil })
-        let reads = mock.requests.filter { $0.path.hasSuffix("/operations") }
+        // L'état de consolidation se lit à part (type « consolidation ») : hors des compteurs.
+        let reads = mock.requests.filter { $0.path.hasSuffix("/operations") && $0.queryValue("type") != "consolidation" }
         XCTAssertEqual(reads.count, 3)
         XCTAssertEqual(reads.filter { $0.queryValue("status") == "failed" }.count, 1, "Reuse the displayed filter's total")
         XCTAssertTrue(reads.filter { $0.queryValue("status") != "failed" }.allSatisfy { $0.queryValue("limit") == "1" })
@@ -54,7 +55,7 @@ final class OperationCountTests: XCTestCase {
         XCTAssertEqual(vm.operationCounts?["pending"], 1)
         XCTAssertEqual(vm.operationCounts?["processing"], 1)
         XCTAssertEqual(vm.operationCounts?["failed"], 3)
-        XCTAssertEqual(mock.requests.filter { $0.path.hasSuffix("/operations") }.count, 1)
+        XCTAssertEqual(mock.requests.filter { $0.path.hasSuffix("/operations") && $0.queryValue("type") != "consolidation" }.count, 1)
     }
 
     func testFilteredPaginationUsesFullTotalAndPreservesGlobalScope() async {
@@ -80,22 +81,27 @@ final class OperationCountTests: XCTestCase {
         XCTAssertTrue(vm.canLoadMore)
     }
 
-    func testTypeAndParentFiltersDoNotNarrowBankWideCounters() async {
+    func testTypeFilterDoesNotNarrowCountersWhichSkipParentBatchesLikeRetry() async {
         let mock = MockTransport(); mock.installStandardRoutes()
         mock.on("GET", bankPath + "/operations") { request in
             let status = request.queryValue("status") ?? "all"
-            let scoped = request.queryValue("type") != nil || request.queryValue("exclude_parents") == "true"
-            let total = scoped ? 2 : (["failed": 9, "pending": 5, "processing": 3][status] ?? 0)
+            let typed = request.queryValue("type") != nil
+            // Sans exclusion des lots parents, un échec de plus (le lot) : les compteurs ne doivent pas le voir.
+            let parents = request.queryValue("exclude_parents") == "true" ? 0 : 1
+            let total = typed ? 2 : (["failed": 9, "pending": 5, "processing": 3][status] ?? 0) + parents
             return countPage(total, status: status, limit: Int(request.queryValue("limit") ?? "100")!)
         }
         let vm = OperationsViewModel(client: makeClient(mock), bank: testBank)
-        vm.statusFilter = .failed; vm.typeFilter = "retain"; vm.excludeParents = true
+        vm.statusFilter = .failed; vm.typeFilter = "retain"
         await vm.reload()
         XCTAssertEqual(vm.rows.count, 2)
         XCTAssertEqual(vm.operationCounts, ["failed": 9, "pending": 5, "processing": 3])
-        let counters = mock.requests.filter { $0.path.hasSuffix("/operations") && $0.queryValue("limit") == "1" }
+        // Les deux lectures de l'état de consolidation (type « consolidation ») ne sont pas des compteurs.
+        let counters = mock.requests.filter {
+            $0.path.hasSuffix("/operations") && $0.queryValue("limit") == "1" && $0.queryValue("type") != "consolidation"
+        }
         XCTAssertEqual(counters.count, 3)
-        XCTAssertTrue(counters.allSatisfy { $0.queryValue("type") == nil && $0.queryValue("exclude_parents") == nil })
+        XCTAssertTrue(counters.allSatisfy { $0.queryValue("type") == nil && $0.queryValue("exclude_parents") == "true" })
     }
 
     func testCounterFailureKeepsRowsWithoutPresentingCachedCountsAsLive() async {

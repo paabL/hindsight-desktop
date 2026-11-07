@@ -95,8 +95,8 @@ final class DocumentAdminTests: XCTestCase {
         r.requestUpdateTags(["task:002", "revu", " "])
         let c = try XCTUnwrap(r.confirmation)
         XCTAssertEqual(c.severity, .destructive, "un tag retiré")
-        XCTAssertTrue(c.message.contains("Ajoutés : revu"))
-        XCTAssertTrue(c.message.contains("Retirés : source:codex"))
+        XCTAssertTrue(c.message.contains("Ajoutées : revu"))
+        XCTAssertTrue(c.message.contains("Retirées : source:codex"))
         await c.perform()
         let body = try XCTUnwrap(t.requests.first { $0.method == "PATCH" }?.bodyJSON)
         XCTAssertEqual(body["tags"], ["revu", "task:002"])
@@ -107,10 +107,10 @@ final class DocumentAdminTests: XCTestCase {
         let r = await reader(t)
         t.on("POST", "\(bankPath)/documents/codex-abc-task-002/reprocess", json: #"{"success":true,"operation_id":"op9","items_count":1}"#)
         t.on("DELETE", "\(bankPath)/documents/codex-abc-task-002", json: #"{"success":true,"message":"ok","document_id":"codex-abc-task-002","memory_units_deleted":30}"#)
-        r.requestReprocess()
-        XCTAssertTrue(r.confirmation!.message.contains("30 fait(s)"))
+        await r.requestReprocess()
+        XCTAssertTrue(r.confirmation!.message.hasPrefix("Ses 30 faits seront supprimés puis ré-extraits"))
         await r.confirmation!.perform()
-        XCTAssertTrue(r.actionMessage!.contains("op9"))
+        XCTAssertEqual(r.actionMessage, "Retraitement en file : suivez-le dans « Activité › Traitements ».", "pas d'identifiant technique")
         var deleted = false
         r.onDeleted = { deleted = true }
         r.requestDelete()
@@ -119,7 +119,7 @@ final class DocumentAdminTests: XCTestCase {
         XCTAssertTrue(c.isSatisfied(by: "codex-abc-task-002"))
         await c.perform()
         XCTAssertTrue(deleted)
-        XCTAssertEqual(r.actionMessage, "Supprimé (30 fait(s)).")
+        XCTAssertEqual(r.actionMessage, "Document supprimé (30 faits).")
     }
 }
 
@@ -202,6 +202,20 @@ final class BankAdminTests: XCTestCase {
         XCTAssertNil(vm.exported)
     }
 
+    func testFailedExportNeverReturnsThePreviousFile() async {
+        let t = MockTransport()
+        let vm = make(t)
+        t.on("POST", "\(bankPath)/transfer/export", json: #"{"operation_id":"exp1","status":"pending"}"#)
+        t.on("GET", "\(bankPath)/operations/exp1", json: #"{"operation_id":"exp1","status":"completed","result_metadata":{"download_url":"/v1/default/files/download/banks%2Fb%2Fx.zip","filename":"b.zip","byte_size":4}}"#)
+        t.on("GET", "/v1/default/files/download/banks/b/x.zip") { _ in .bytes(Data("PK\u{3}\u{4}".utf8), contentType: "application/zip") }
+        await vm.exportArchiveForTests()
+        XCTAssertEqual(vm.exported?.filename, "b.zip")
+        t.on("GET", "\(bankPath)/export", json: #"{"detail":"boom"}"#, status: 500)
+        await vm.exportTemplate()
+        XCTAssertNil(vm.exported, "l'archive précédente ne doit pas passer pour la structure demandée")
+        XCTAssertTrue(vm.actionMessage!.hasPrefix("Échec de l'export"))
+    }
+
     func testCloneAndDangerZoneNeedTypedBankID() async throws {
         let t = MockTransport()
         let vm = make(t)
@@ -231,7 +245,7 @@ final class BankAdminTests: XCTestCase {
         vm.requestDeleteMemories(type: "observation")
         XCTAssertEqual(vm.confirmation?.requiredText, testBank)
         await vm.confirmation!.perform()
-        XCTAssertEqual(vm.actionMessage, "4 fait(s) supprimé(s).")
+        XCTAssertEqual(vm.actionMessage, "4 faits effacés.")
         XCTAssertEqual(refreshed, 3, "le nombre de faits de la banque est relu")
         vm.requestClearObservations()
         XCTAssertEqual(vm.confirmation?.requiredText, testBank)
@@ -249,9 +263,9 @@ final class BankAdminTests: XCTestCase {
         XCTAssertEqual(vm.templateDryRun?.directivesCreated, ["Style"])
         XCTAssertTrue(t.requests.allSatisfy { $0.queryValue("dry_run") != "false" })
         vm.requestApplyTemplate()
-        XCTAssertTrue(vm.confirmation!.message.contains("1 directive(s) créée(s)"))
+        XCTAssertTrue(vm.confirmation!.message.contains("1 directive créée"), vm.confirmation!.message)
         await vm.confirmation!.perform()
-        XCTAssertEqual(vm.actionMessage, "Modèle appliqué.")
+        XCTAssertEqual(vm.actionMessage, "Gabarit appliqué.")
         await vm.validateTemplate(Data("pas du json".utf8))
         XCTAssertTrue(vm.actionMessage!.contains("invalide"))
     }

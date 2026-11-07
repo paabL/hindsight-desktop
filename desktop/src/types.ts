@@ -36,7 +36,9 @@ export type Snapshot = {
     connectionError?: string | null;
     serverURLNotice?: string | null;
     version?: Row;
-    paused?: string[];
+    /** État réel de la pause : toutes les banques, banques une à une, consolidation pas encore coupée, file gelée. */
+    pause?: PauseState;
+    consultationOnly?: boolean;
   };
   section: Section;
   data: Row;
@@ -44,6 +46,15 @@ export type Snapshot = {
   /** Clé d’occurrence de chaque message (moteur natif) : un même texte produit de nouveau change de clé. */
   messageKeys?: string[];
   confirmations: Confirmation[];
+};
+export type PauseState = {
+  all: boolean;
+  banks: string[];
+  uncut?: string[];
+  unreleased?: string[];
+  frozen?: boolean;
+  workerOff?: boolean;
+  canFreeze?: boolean;
 };
 export type Request = (command: string, args?: Row) => Promise<any>;
 export type PageProps = {

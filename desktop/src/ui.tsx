@@ -38,25 +38,33 @@ function formats() {
   }
   return value;
 }
-let dateFormats:
-  | { offset: number; locale: string; day: Intl.DateTimeFormat; time: Intl.DateTimeFormat }
-  | undefined;
-function dateFormat(full: boolean) {
+type DateFormats = {
+  offset: number;
+  locale: string;
+  day: Intl.DateTimeFormat;
+  time: Intl.DateTimeFormat;
+  dayYear: Intl.DateTimeFormat;
+  timeYear: Intl.DateTimeFormat;
+};
+let dateFormats: DateFormats | undefined;
+/** Jour et mois ; l'année s'ajoute dès que la date n'est pas de l'année en cours (comme les dates du moteur). */
+function dateFormat(full: boolean, withYear: boolean) {
   // Recréés si le fuseau de la machine change en cours de session, comme un formateur créé à chaque appel.
   const offset = new Date().getTimezoneOffset();
   const locale = getLocale();
-  if (dateFormats?.offset !== offset || dateFormats?.locale !== locale)
+  if (dateFormats?.offset !== offset || dateFormats?.locale !== locale) {
+    const day = { day: 'numeric', month: 'short' } as const;
+    const time = { ...day, hour: '2-digit', minute: '2-digit' } as const;
     dateFormats = {
       offset,
       locale,
-      day: new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' }),
-      time: new Intl.DateTimeFormat(locale, {
-        day: 'numeric',
-        month: 'short',
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
+      day: new Intl.DateTimeFormat(locale, day),
+      time: new Intl.DateTimeFormat(locale, time),
+      dayYear: new Intl.DateTimeFormat(locale, { ...day, year: 'numeric' }),
+      timeYear: new Intl.DateTimeFormat(locale, { ...time, year: 'numeric' }),
     };
+  }
+  if (withYear) return full ? dateFormats.timeYear : dateFormats.dayYear;
   return full ? dateFormats.time : dateFormats.day;
 }
 
@@ -68,7 +76,7 @@ export function date(value: unknown, full = false) {
   const d = new Date(String(value));
   return Number.isNaN(d.getTime())
     ? tr('Date inconnue', 'Unknown date')
-    : dateFormat(full).format(d);
+    : dateFormat(full, d.getFullYear() !== new Date().getFullYear()).format(d);
 }
 export const display = (value: unknown) =>
   typeof value === 'string' ? value : JSON.stringify(value, null, 2);

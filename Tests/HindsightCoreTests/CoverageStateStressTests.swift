@@ -369,7 +369,7 @@ final class CoverageStateStressTests: XCTestCase {
         }
         let confirmation = try await sendConfirmation(e)
         await confirmation.perform()
-        XCTAssertTrue(e.vm.actionMessage?.hasPrefix("0/1 fichier(s)") == true)
+        XCTAssertTrue(e.vm.actionMessage?.hasPrefix("0 fichier sur 1") == true)
         XCTAssertTrue(e.vm.actionMessage?.contains("refusé") == true)
         XCTAssertTrue(e.vm.queuedIDs.isEmpty)
     }
@@ -450,7 +450,7 @@ final class CoverageStateStressTests: XCTestCase {
         e.vm.selection = [e.vm.library[0].id]
         e.vm.requestRemoveSelection()
         await e.vm.confirmation!.perform()
-        XCTAssertTrue(e.vm.actionMessage?.hasPrefix("0/1 document(s)") == true)
+        XCTAssertTrue(e.vm.actionMessage?.hasPrefix("0 document retiré sur 1") == true)
         XCTAssertTrue(e.vm.actionMessage?.contains("not deleted") == true)
         XCTAssertFalse(e.documents.value.isEmpty)
     }

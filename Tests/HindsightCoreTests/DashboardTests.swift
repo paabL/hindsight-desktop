@@ -225,5 +225,53 @@ final class DashboardTests: XCTestCase {
         XCTAssertTrue(vm.snapshot?.consultationOnly == true)
         await vm.testLLM()
         XCTAssertFalse(t.requests.contains { $0.method == "POST" })
+        XCTAssertEqual(vm.llmTestRefusal, "Le serveur est en mode consultation : le test des modèles est désactivé.")
+        XCTAssertEqual(vm.llmTestMessage, vm.llmTestRefusal, "un test qui ne part pas dit pourquoi")
+    }
+
+    func testDisabledProbeIsRefusedBeforeAnyCall() async {
+        let t = MockTransport()
+        t.installStandardRoutes()
+        t.on("GET", "/version", json: Fixture.string("version").replacingOccurrences(of: #""bank_llm_health":true"#, with: #""bank_llm_health":false"#))
+        let vm = DashboardViewModel(client: makeClient(t), bank: testBank)
+        await vm.reload()
+        XCTAssertTrue(vm.llmTestRefusal?.contains("HINDSIGHT_API_ENABLE_BANK_LLM_HEALTH=true") == true)
+        await vm.testLLM()
+        XCTAssertFalse(t.requests.contains { $0.method == "POST" })
+        XCTAssertEqual(vm.llmTestMessage, vm.llmTestRefusal)
+    }
+
+    func testModelTestIsDatedAndAFailedRetestDropsTheOldResult() async {
+        let t = MockTransport()
+        t.installStandardRoutes()
+        t.on("POST", "\(bankPath)/health/llm", json: #"{"bank_id":"b","operations":[{"operation":"retain","ok":true,"status":"connected","latency_ms":420},{"operation":"reflect","ok":false,"status":"auth_failed"}]}"#)
+        let vm = DashboardViewModel(client: makeClient(t), bank: testBank)
+        await vm.reload()
+        await vm.testLLM()
+        XCTAssertNotNil(vm.llmTestedAt)
+        XCTAssertEqual(LLMHealthSummary.sentence(vm.llmHealth!), "Rôle LLM en échec : Réponses (clé refusée).")
+        t.on("POST", "\(bankPath)/health/llm", json: #"{"detail":"boom"}"#, status: 500)
+        await vm.testLLM()
+        XCTAssertNil(vm.llmHealth, "l'ancien résultat ne doit pas passer pour celui du test raté")
+        XCTAssertNil(vm.llmTestedAt)
+        XCTAssertTrue(vm.llmTestMessage?.hasPrefix("Le test des LLM n'a pas abouti") == true)
+    }
+
+    func testModelTestSentencesUseTheModelsPageWords() {
+        let ok = BankLlmHealthResponse(bankId: "b", operations: [
+            LlmOperationHealth(operation: "retain", ok: true, status: "connected"),
+            LlmOperationHealth(operation: "consolidation", ok: true, status: "connected"),
+        ])
+        XCTAssertEqual(LLMHealthSummary.sentence(ok), "Les 2 rôles LLM testés répondent.")
+        let bad = BankLlmHealthResponse(bankId: "b", operations: [
+            LlmOperationHealth(operation: "retain", ok: false, status: "unreachable"),
+            LlmOperationHealth(operation: "consolidation", ok: false, status: "not_configured"),
+        ])
+        XCTAssertEqual(
+            LLMHealthSummary.sentence(bad),
+            "Rôles LLM en échec : Extraction des faits (injoignable), Consolidation (aucun fournisseur configuré).")
+        XCTAssertEqual(
+            LLMHealthSummary.sentence(BankLlmHealthResponse(bankId: "b", operations: [])),
+            "Le serveur n'a renvoyé aucun résultat pour le test des modèles.")
     }
 }

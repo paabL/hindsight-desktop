@@ -46,8 +46,12 @@ public final class BankSession {
         self.memoryDesign = MemoryDesignViewModel(client: client, bank: bank, estimator: services?.estimator)
         let is110 = ServerCapabilities.is110(apiVersion)
         self.operations.serverIs110 = is110
+        self.operations.serverObservations = features?.observations
         self.documents.serverIs110 = is110
         self.memoryDesign.serverIs110 = is110
+        let configWritable = ServerCapabilities.bankConfigWritable(features)
+        self.memoryDesign.configWritable = configWritable
+        self.admin.configWritable = configWritable
         let is120 = ServerCapabilities.is120(apiVersion)
         self.memoryDesign.serverIs120 = is120
         self.search.serverIs120 = is120

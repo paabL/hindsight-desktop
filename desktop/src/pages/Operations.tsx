@@ -11,7 +11,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import type { PageProps, Row } from '../types';
+import type { PageProps, PauseState, Row } from '../types';
 import {
   Badge,
   Button,
@@ -25,14 +25,18 @@ import {
   number,
 } from '../ui';
 import { PauseTools } from './Consumption';
+import { consolidationSummary } from './Explore';
+import { requestMemoryTab } from '../memory-tab';
 
 export default function Operations({
   data,
   run,
   busy,
   refresh,
-  paused = false,
-}: PageProps & { paused?: boolean }) {
+  navigate,
+  pause,
+  bank,
+}: PageProps & { pause?: PauseState; bank?: string | null }) {
   useI18n();
   const labels: Record<string, string> = {
     pending: t('En attente', 'Pending'),
@@ -84,6 +88,12 @@ export default function Operations({
   const allItems: Row[] = data.items || [];
   // Mode consultation : le moteur ignore toute écriture, les actions sont donc désactivées.
   const readOnly = !!data.consultationOnly;
+  // Même état que la Vue d'ensemble. Sans observations, le serveur termine une consolidation sans rien
+  // traiter : « Consolider » n'apparaît que s'il reste des faits à consolider, ou grisé pendant qu'une
+  // consolidation attend ou tourne.
+  const consolidation: Row | undefined = data.consolidation;
+  const phase: string | undefined = consolidation?.phase;
+  const consolidationState = consolidation ? consolidationSummary(consolidation) : null;
   // « Exécuter maintenant » ne concerne que les opérations dont le moteur accepte l’avance.
   const runNow = useMemo(() => new Set<string>(data.runNowIDs || []), [data.runNowIDs]);
   const [visibleLimit, setVisibleLimit] = useState(100);
@@ -128,28 +138,66 @@ export default function Operations({
         )}
         actions={
           <>
-            <PauseTools run={run} busy={busy} paused={paused} />
-            <Button
-              icon={Layers3}
-              kind="primary"
-              disabled={busy || readOnly}
-              title={t(
-                'Fusionne les faits récents en observations (appels LLM).',
-                'Merges recent facts into observations (LLM calls).',
-              )}
-              onClick={() => void run('operations.consolidate')}
-            >
-              {t('Consolider', 'Consolidate')}
-            </Button>
+            <PauseTools run={run} busy={busy} pause={pause} bank={bank} readOnly={readOnly} />
+            {(!consolidation || ['pending', 'running', 'queued'].includes(phase || '')) && (
+              <Button
+                icon={Layers3}
+                kind="primary"
+                disabled={busy || readOnly || phase === 'running' || phase === 'queued'}
+                title={
+                  phase === 'running'
+                    ? t(
+                        'Une consolidation est déjà en cours pour cette banque.',
+                        'A consolidation is already running for this memory bank.',
+                      )
+                    : phase === 'queued'
+                      ? t(
+                          'Une consolidation est déjà en attente pour cette banque.',
+                          'A consolidation is already queued for this memory bank.',
+                        )
+                      : t(
+                          'Regroupe en observations les faits pas encore consolidés (appels LLM).',
+                          'Groups facts not yet consolidated into observations (LLM calls).',
+                        )
+                }
+                onClick={() => void run('operations.consolidate')}
+              >
+                {t('Consolider', 'Consolidate')}
+              </Button>
+            )}
           </>
         }
       />
-      {data.consultationOnly && (
+      {phase === 'disabled' && (
+        <div className="notice consolidation-off">
+          <span>
+            {t(
+              'La consolidation est désactivée pour cette banque : les faits restent tels quels et aucune observation n’est créée, ni automatiquement ni à la demande.',
+              'Consolidation is turned off for this memory bank: facts stay as they are and no observations are created, automatically or on demand.',
+            )}
+          </span>
+          <Button
+            kind="ghost"
+            onClick={() => {
+              requestMemoryTab('observations');
+              navigate('memory');
+            }}
+          >
+            {t('Ouvrir le réglage', 'Open the setting')}
+          </Button>
+        </div>
+      )}
+      {(pause?.frozen || pause?.workerOff) && (
         <div className="notice">
-          {t(
-            'Le serveur est en mode consultation. Les traitements sont désactivés.',
-            'The server is in read-only mode. Processing is disabled.',
-          )}
+          {pause?.frozen
+            ? t(
+                'La file du serveur est gelée : les opérations attendent jusqu’au dégel (⋯ › Dégeler).',
+                'The server queue is frozen: operations wait until it is unfrozen (⋯ › Unfreeze).',
+              )
+            : t(
+                'Le worker du serveur est arrêté par sa configuration : les opérations attendent.',
+                'The server worker is turned off by its configuration: operations wait.',
+              )}
         </div>
       )}
       <div className="operations-summary">
@@ -171,6 +219,13 @@ export default function Operations({
         {!data.counts && (
           <small>{t('Parmi les opérations chargées', 'Among loaded operations')}</small>
         )}
+        {consolidationState && (
+          <div className="consolidation-state">
+            <span className={`status-dot ${consolidationState.tone}`} />
+            <span>{t('Consolidation', 'Consolidation')}</span>
+            <strong>{consolidationState.value}</strong>
+          </div>
+        )}
         <span className="spacer" />
         {count('failed') > 0 && (
           <Button
@@ -186,7 +241,7 @@ export default function Operations({
             {t('Relancer les échecs', 'Retry failed operations')}
           </Button>
         )}
-        {Number(data.failedConsolidation) > 0 && (
+        {Number(data.failedConsolidation) > 0 && consolidation?.enabled !== false && (
           <Button
             kind="ghost"
             icon={RotateCcw}
@@ -260,7 +315,10 @@ export default function Operations({
                         : labels[item.status] || item.status}
                     </Badge>
                   </div>
-                  <p>{item.document_id || item.mental_model_id || item.filename || item.id}</p>
+                  {/* L'identifiant technique reste dans le détail ; une consolidation porte sur toute la banque. */}
+                  {(item.document_id || item.mental_model_id || item.filename) && (
+                    <p>{item.document_id || item.mental_model_id || item.filename}</p>
+                  )}
                   {item.progress && (
                     <small>
                       {[
@@ -350,7 +408,7 @@ export default function Operations({
               disabled={busy || data.loadingMore || data.refreshing}
               onClick={() => void loadMore()}
             >
-              {t('Afficher la suite', 'Load more')}
+              {t('Afficher la suite', 'Show more')}
             </Button>
             <span>
               {number(items.length)} {t('sur', 'of')} {number(data.total)}

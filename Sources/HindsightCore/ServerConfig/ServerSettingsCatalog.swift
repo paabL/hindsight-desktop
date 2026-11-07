@@ -48,6 +48,14 @@ public enum ServerSettingsCatalog {
         public var isModelRole: Bool { ["default", "retain", "consolidation", "reflect", "mental_model", "vlm"].contains(id) }
     }
 
+    /// « Extraction des faits › Modèle » : où la page Modèles montre cette variable ; nil si elle n'y figure pas.
+    public static func label(forVariable name: String) -> String? {
+        for role in roles {
+            if let field = role.fields.first(where: { $0.name == name }) { return "\(role.title) › \(field.label)" }
+        }
+        return nil
+    }
+
     static func llmFields(_ prefix: String) -> [Field] {
         [
             Field(name: "HINDSIGHT_API_\(prefix)PROVIDER", label: "Fournisseur", help: "ex. claude-code, gemini, openai, anthropic, ollama…"),

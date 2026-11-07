@@ -144,13 +144,43 @@ final class DocumentReaderTests: XCTestCase {
     }
 }
 
+/// Banque qui ne crée pas d'observations : le lecteur ne promet aucune reconsolidation et refuse la portée.
+@MainActor
+final class ReaderWithoutObservationsTests: XCTestCase {
+    func testTagsAndScopeFollowTheBankSetting() async throws {
+        let t = MockTransport()
+        let doc = "\(bankPath)/documents/d1"
+        t.on("GET", doc, json: #"{"id":"d1","bank_id":"b","original_text":"x","created_at":"","updated_at":"","memory_unit_count":1,"tags":["a"],"observation_scopes":"shared"}"#)
+        t.on("GET", "\(doc)/chunks", json: #"{"items":[],"total":0,"limit":1000,"offset":0}"#)
+        t.on("GET", "\(doc)/history", json: #"{"document_id":"d1","items":[],"total":0,"limit":50,"offset":0}"#)
+        t.on("GET", "\(bankPath)/config", json: #"{"bank_id":"b","config":{"enable_observations":false},"overrides":{"enable_observations":false}}"#)
+        let client = makeClient(t)
+        let r = DocumentReaderViewModel(client: client, bank: testBank, documentID: "d1", attachmentLoader: AttachmentLoader(client: client))
+        r.serverIs110 = true
+        await r.load()
+        XCTAssertEqual(r.createsObservations, false)
+
+        r.requestUpdateTags(["a", "b"])
+        let c = try XCTUnwrap(r.confirmation)
+        XCTAssertEqual(c.title, "Enregistrer les étiquettes du document ?")
+        XCTAssertTrue(c.message.hasSuffix("Cette banque ne crée pas d'observations : rien n'est reconsolidé."), c.message)
+        XCTAssertFalse(c.message.contains("appel LLM"))
+        r.confirmation = nil
+
+        r.requestUpdateScope("per_tag")
+        XCTAssertNil(r.confirmation)
+        XCTAssertEqual(r.actionMessage, "Cette banque ne crée pas d'observations : changer la portée n'aurait aucun effet.")
+        XCTAssertFalse(t.requests.contains { $0.method == "PATCH" })
+    }
+}
+
 /// Portée d'observation d'un document (`observation_scopes`, ou à défaut `retain_params`).
 final class ObservationScopeTests: XCTestCase {
     func testLabelsScopeFromDocumentOrRetainParams() {
-        XCTAssertEqual(ObservationScope.label(.string("shared")), "commune")
-        XCTAssertEqual(ObservationScope.label(nil, retainParams: ["observation_scopes": .string("per_tag")]), "par tag")
+        XCTAssertEqual(ObservationScope.label(.string("shared")), "partagée")
+        XCTAssertEqual(ObservationScope.label(nil, retainParams: ["observation_scopes": .string("per_tag")]), "par étiquette")
         XCTAssertEqual(
-            ObservationScope.label(.array([.array([.string("repo:a"), .string("kind:b")]), .array([.string("c")])])), "tags : repo:a + kind:b, c")
+            ObservationScope.label(.array([.array([.string("repo:a"), .string("kind:b")]), .array([.string("c")])])), "étiquettes : repo:a + kind:b, c")
         XCTAssertNil(ObservationScope.label(nil, retainParams: nil), "rien à dire si le serveur ne l'a pas gardée")
         XCTAssertNil(ObservationScope.label(.null))
     }
@@ -196,13 +226,18 @@ final class Server110FeaturesTests: XCTestCase {
         await old.load()
         XCTAssertNil(old.history, "serveur 1.0.0 : pas d'historique demandé")
         XCTAssertFalse(t.requests.contains { $0.path.hasSuffix("/history") })
+        old.requestUpdateScope("per_tag")
+        XCTAssertNil(old.confirmation, "serveur 1.0.0 : la portée ne change pas")
+        XCTAssertEqual(old.actionMessage, "Changer la portée d'un document demande un serveur Hindsight 1.1.0 ou plus récent.")
 
         let r = DocumentReaderViewModel(client: client, bank: testBank, documentID: "d1", attachmentLoader: AttachmentLoader(client: client))
         r.serverIs110 = true
         await r.load()
         XCTAssertEqual(r.history?.first?.factsAdded, 3)
+        XCTAssertEqual(r.currentScopeMode, "shared")
         r.requestUpdateScope("shared")
         XCTAssertNil(r.confirmation, "même portée : rien à confirmer")
+        XCTAssertEqual(r.actionMessage, "Ce document a déjà cette portée.")
         r.requestUpdateScope("per_tag")
         await r.confirmation?.perform()
         let patch = try XCTUnwrap(t.requests.last { $0.method == "PATCH" })

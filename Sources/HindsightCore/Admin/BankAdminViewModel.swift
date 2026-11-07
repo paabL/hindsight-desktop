@@ -53,11 +53,38 @@ public final class BankAdminViewModel {
         if config.value == nil, !config.isLoading { await reload() }
     }
 
-    public func reload() async {
+    public func reload(withTotals: Bool = false) async {
         async let c: Void = loadConfig()
         async let d: Void = loadDirectives()
         async let m: Void = loadMentalModels()
-        _ = await (c, d, m)
+        async let r: Void = loadRefreshing()
+        async let t: Void = withTotals ? loadTotals() : ()
+        _ = await (c, d, m, r, t)
+    }
+
+    /// Faux quand le serveur refuse les réglages par banque (`bank_config_api`) : rien n'est proposé à l'écriture.
+    public var configWritable = true
+    /// Faits (observations comprises) et observations de la banque, pour ne pas proposer d'effacer ce qui n'existe pas.
+    public private(set) var factTotal: Int?
+    public private(set) var observationTotal: Int?
+
+    func loadTotals() async {
+        async let all = try? client.listMemories(bank, MemoryListQuery(limit: 1)).total
+        async let observations = try? client.listMemories(bank, MemoryListQuery(type: "observation", limit: 1)).total
+        factTotal = await all
+        observationTotal = await observations
+    }
+
+    /// Connaissances dont une régénération attend ou tourne (opérations `refresh_mental_model`).
+    public private(set) var refreshingIDs: Set<String> = []
+
+    func loadRefreshing() async {
+        var ids = Set<String>()
+        for status in ["pending", "processing"] {
+            guard let page = try? await client.listOperations(bank, status: status, type: "refresh_mental_model", limit: 100) else { continue }
+            ids.formUnion(page.operations.compactMap(\.mentalModelId))
+        }
+        refreshingIDs = ids
     }
 
     func loadConfig() async {
@@ -78,9 +105,18 @@ public final class BankAdminViewModel {
         }
     }
 
+    /// Toutes les connaissances, page après page : le compteur et le filtre de la page portent sur la banque entière.
     func loadMentalModels() async {
         mentalModels = .loading
-        do { mentalModels = .loaded(try await client.listMentalModels(bank).items) } catch is CancellationError {} catch {
+        do {
+            var all: [MentalModelResponse] = []
+            while true {
+                let page = try await client.listMentalModels(bank, limit: 100, offset: all.count)
+                all += page.items
+                if page.items.isEmpty || all.count >= page.total || all.count >= 5_000 { break }
+            }
+            mentalModels = .loaded(all)
+        } catch is CancellationError {} catch {
             mentalModels = .failed(error.userMessage)
         }
     }
@@ -92,29 +128,16 @@ public final class BankAdminViewModel {
     public func requestSetOverride(key: String, rawJSON: String) -> Bool {
         let k = key.trimmingCharacters(in: .whitespaces)
         guard !k.isEmpty, let value = Self.parseJSONValue(rawJSON) else { return false }
+        guard configWritable else {
+            actionMessage = ServerCapabilities.bankConfigDisabledMessage
+            return true
+        }
         confirmation = ConfirmationRequest(
             title: "Modifier « \(k) » pour cette banque ?",
             message: "Nouvelle valeur : \(value.prettyString())\nLe serveur refuse les réglages non surchargeables (ex. modèles LLM : voir « Modèles »).",
             confirmTitle: "Appliquer", severity: .normal
         ) { [weak self] in await self?.patch([k: value], success: "« \(k) » mis à jour.") }
         return true
-    }
-
-    public func requestResetConfig() {
-        let n = config.value?.overrides.count ?? 0
-        confirmation = ConfirmationRequest(
-            title: "Supprimer les \(n) override(s) de la banque ?",
-            message: "La banque revient aux valeurs globales du serveur (missions, disposition, réglages d'extraction et de recherche…).",
-            confirmTitle: "Réinitialiser"
-        ) { [weak self] in
-            guard let self else { return }
-            do {
-                _ = try await self.client.resetBankConfig(self.bank)
-                self.actionMessage = "Configuration réinitialisée."
-                await self.loadConfig()
-                await self.onConfigChanged?()
-            } catch { self.actionMessage = "Échec : \(error.userMessage)" }
-        }
     }
 
     static func parseJSONValue(_ raw: String) -> JSONValue? {
@@ -216,7 +239,8 @@ public final class BankAdminViewModel {
             }
             do {
                 let r = try await self.client.createMentalModel(self.bank, CreateMentalModelRequest(name: n, sourceQuery: q, tags: tags))
-                self.actionMessage = "Modèle mental créé ; génération lancée (\(r.operationId))."
+                _ = r
+                self.actionMessage = "Modèle mental créé ; sa génération est en file : suivi dans « Activité › Traitements »."
                 onCreated()
                 await self.loadMentalModels()
             } catch { self.actionMessage = "Échec : \(error.userMessage)" }
@@ -226,6 +250,10 @@ public final class BankAdminViewModel {
     public func requestRefreshMentalModel(_ m: MentalModelResponse) {
         if let reason = pauseGate?(bank) {
             actionMessage = reason
+            return
+        }
+        guard !refreshingIDs.contains(m.id) else {
+            actionMessage = "Une régénération de « \(m.name) » est déjà en cours ou en file."
             return
         }
         confirmation = ConfirmationRequest(
@@ -242,8 +270,9 @@ public final class BankAdminViewModel {
                 return
             }
             do {
-                let r = try await self.client.refreshMentalModel(self.bank, id: m.id)
-                self.actionMessage = "Régénération lancée (\(r.operationId))."
+                _ = try await self.client.refreshMentalModel(self.bank, id: m.id)
+                self.refreshingIDs.insert(m.id)
+                self.actionMessage = "Régénération de « \(m.name) » mise en file : suivi dans « Activité › Traitements »."
             } catch { self.actionMessage = "Échec : \(error.userMessage)" }
         }
     }
@@ -296,6 +325,8 @@ public final class BankAdminViewModel {
     }
 
     public func exportArchive(includeData: Bool = true, includeConfig: Bool = true, includeHistory: Bool = false) async {
+        // Un export qui échoue ne doit jamais rendre le fichier d'un export précédent (peut-être de l'autre sorte).
+        exported = nil
         longTask = "Export en cours…"
         defer { longTask = nil }
         do {
@@ -321,13 +352,14 @@ public final class BankAdminViewModel {
 
     /// Modèle de banque (configuration, modèles mentaux, directives) en JSON.
     public func exportTemplate() async {
+        exported = nil
         do {
             let m = try await client.exportTemplate(bank)
             let enc = JSONEncoder()
             enc.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
             exported = ExportedFile(filename: "\(bank)-template.json", data: try enc.encode(m))
         } catch {
-            actionMessage = "Échec : \(error.userMessage)"
+            actionMessage = "Échec de l'export : \(error.userMessage)"
         }
     }
 
@@ -364,11 +396,11 @@ public final class BankAdminViewModel {
     public func requestImportArchive(data: Data, filename: String, merge: Bool, target: String?, conflict: String = "skip") {
         let t = target?.trimmingCharacters(in: .whitespaces)
         confirmation = ConfirmationRequest(
-            title: merge ? "Fusionner l'archive dans « \(bank) » ?" : "Restaurer l'archive dans une nouvelle banque ?",
+            title: merge ? "Importer l'archive dans « \(bank) » ?" : "Restaurer l'archive dans une nouvelle banque ?",
             message: merge
-                ? "Les documents de l'archive sont ajoutés. Documents déjà présents : \(conflict == "replace" ? "REMPLACÉS" : conflict == "new-id" ? "importés sous un nouvel identifiant" : "ignorés")."
+                ? "Les documents de l'archive sont ajoutés à la banque. Documents déjà présents : \(conflict == "replace" ? "REMPLACÉS" : conflict == "new-id" ? "importés sous un nouvel identifiant" : "ignorés")."
                 : "La banque « \(t?.isEmpty == false ? t! : "(id de l'archive)") » sera créée ; elle ne doit pas exister.",
-            confirmTitle: merge ? "Fusionner" : "Restaurer", severity: merge && conflict == "replace" ? .destructive : .normal
+            confirmTitle: merge ? "Importer" : "Restaurer", severity: merge && conflict == "replace" ? .destructive : .normal
         ) { [weak self] in
             guard let self else { return }
             self.longTask = "Import…"
@@ -405,19 +437,19 @@ public final class BankAdminViewModel {
         guard let m = pendingTemplate, let dry = templateDryRun else { return }
         let parts = [
             dry.configApplied ? "configuration" : nil,
-            dry.mentalModelsCreated.isEmpty ? nil : "\(dry.mentalModelsCreated.count) modèle(s) mental(aux) créés",
-            dry.mentalModelsUpdated.isEmpty ? nil : "\(dry.mentalModelsUpdated.count) mis à jour",
-            dry.directivesCreated.isEmpty ? nil : "\(dry.directivesCreated.count) directive(s) créée(s)",
-            dry.directivesUpdated.isEmpty ? nil : "\(dry.directivesUpdated.count) mise(s) à jour",
+            dry.mentalModelsCreated.isEmpty ? nil : Format.count(dry.mentalModelsCreated.count, "modèle mental créé", "modèles mentaux créés"),
+            dry.mentalModelsUpdated.isEmpty ? nil : Format.count(dry.mentalModelsUpdated.count, "modèle mental mis à jour", "modèles mentaux mis à jour"),
+            dry.directivesCreated.isEmpty ? nil : Format.count(dry.directivesCreated.count, "directive créée", "directives créées"),
+            dry.directivesUpdated.isEmpty ? nil : Format.count(dry.directivesUpdated.count, "directive mise à jour", "directives mises à jour"),
         ].compactMap { $0 }
         confirmation = ConfirmationRequest(
-            title: "Appliquer le modèle à « \(bank) » ?", message: "Effet prévu : " + (parts.isEmpty ? "aucun changement" : parts.joined(separator: ", ")) + ".",
-            confirmTitle: "Appliquer", severity: .normal
+            title: "Appliquer le gabarit à « \(bank) » ?", message: "Effet prévu : " + (parts.isEmpty ? "aucun changement" : parts.joined(separator: ", ")) + ".",
+            confirmTitle: "Appliquer le gabarit", severity: .normal
         ) { [weak self] in
             guard let self else { return }
             do {
                 _ = try await self.client.importTemplate(self.bank, manifest: m, dryRun: false)
-                self.actionMessage = "Modèle appliqué."
+                self.actionMessage = "Gabarit appliqué."
                 self.templateDryRun = nil
                 self.pendingTemplate = nil
                 await self.reload()
@@ -428,16 +460,26 @@ public final class BankAdminViewModel {
     // MARK: Zone dangereuse (identifiant de banque à retaper)
 
     public func requestClearObservations() {
+        if observationTotal == 0 {
+            actionMessage = "Aucune observation à effacer."
+            return
+        }
+        // Recréées seulement si la banque crée des observations (réglage lu avec la page).
+        let recreated = config.value.map { ConsolidationStatus.createsObservations($0, serverObservations: nil) } ?? true
         confirmation = ConfirmationRequest(
             title: "Effacer toutes les observations de « \(bank) » ?",
-            message: "Les faits sont conservés ; les observations seront recréées par une nouvelle consolidation (appels LLM).",
+            message: recreated
+                ? "Les faits sont conservés ; les observations seront recréées par une nouvelle consolidation (appels LLM)."
+                : "Les faits sont conservés. Cette banque ne crée pas d'observations : elles ne seront pas recréées tant que « Créer des observations » reste désactivé.",
             confirmTitle: "Effacer les observations", requiredText: bank
         ) { [weak self] in
             guard let self else { return }
             do {
                 let r = try await self.client.clearObservations(self.bank)
-                self.actionMessage = "\(r.deletedCount ?? 0) observation(s) effacée(s)."
+                let n = r.deletedCount ?? 0
+                self.actionMessage = n == 0 ? "Aucune observation à effacer." : Format.count(n, "observation effacée", "observations effacées") + "."
                 // Le nombre de faits affiché pour la banque inclut les observations.
+                await self.loadTotals()
                 await self.onBanksChanged?()
             } catch { self.actionMessage = "Échec : \(error.userMessage)" }
         }
@@ -445,15 +487,21 @@ public final class BankAdminViewModel {
 
     /// `type` : world, experience, observation, ou nil pour tous les faits.
     public func requestDeleteMemories(type: String?) {
+        if type == nil, factTotal == 0 {
+            actionMessage = "Aucun fait à effacer."
+            return
+        }
         confirmation = ConfirmationRequest(
-            title: type.map { "Supprimer tous les faits « \($0) » de « \(bank) » ?" } ?? "Supprimer TOUS les faits de « \(bank) » ?",
+            title: type.map { "Effacer tous les faits « \($0) » de « \(bank) » ?" } ?? "Effacer TOUS les faits de « \(bank) » ?",
             message: "Irréversible. Les documents restent, mais leurs faits disparaissent. Exportez la banque d'abord.",
-            confirmTitle: "Supprimer", requiredText: bank
+            confirmTitle: "Effacer les faits", requiredText: bank
         ) { [weak self] in
             guard let self else { return }
             do {
                 let r = try await self.client.deleteAllMemories(self.bank, type: type)
-                self.actionMessage = "\(r.deletedCount ?? 0) fait(s) supprimé(s)."
+                let n = r.deletedCount ?? 0
+                self.actionMessage = n == 0 ? "Aucun fait à effacer." : Format.count(n, "fait effacé", "faits effacés") + "."
+                await self.loadTotals()
                 await self.onBanksChanged?()
             } catch { self.actionMessage = "Échec : \(error.userMessage)" }
         }

@@ -543,7 +543,7 @@ public final class MemoryWorkspace {
             let id = "bank:" + doc.id
             let hold = policyReason(id: doc.id, repo: doc.documentMetadata?["repo"]?.stringValue ?? "", path: doc.documentMetadata?["path"]?.stringValue ?? "")
             records.append(["id": id, "title": doc.id, "kind": "documents", "project": "", "project_name": "En mémoire", "repository": doc.documentMetadata?["repo"]?.stringValue ?? "", "files": [:], "source_updated_at": doc.updatedAt,
-                            "memory": ["state": hold == nil ? (doc.documentMetadata?["source_record_id"] == nil ? "unlinked" : "missing") : "excluded", "enabled": false, "stored": true, "can_remove": hold == nil || policyIndex.isWorkspaceExclusion(doc.id), "locked": hold != nil && !policyIndex.isWorkspaceExclusion(doc.id), "document_id": doc.id, "stored_hash": doc.contentHash ?? "", "reason": hold ?? "Source à relier au catalogue"]])
+                            "memory": ["state": hold == nil ? (doc.documentMetadata?["source_record_id"] == nil ? "unlinked" : "missing") : "excluded", "enabled": false, "stored": true, "can_remove": hold == nil || policyIndex.isWorkspaceExclusion(doc.id), "locked": hold != nil && !policyIndex.isWorkspaceExclusion(doc.id), "document_id": doc.id, "stored_hash": doc.contentHash ?? "", "reason": hold ?? "Document de la banque qu'aucune source du catalogue ne décrit"]])
             targets[id] = doc.id
         }
         changedRecords = records.filter { row in
@@ -648,7 +648,7 @@ public final class MemoryWorkspace {
         let chars = selected.reduce(0) { $0 + (texts[$1["id"] as? String ?? ""]?.count ?? 0) }
         let binds = boundBank == nil
         var consumed = false
-        confirmation = ConfirmationRequest(title: "Envoyer les sources à Hindsight ?", message: "\(items.count) sources complètes vers « \(bank) », environ \(chars / 4) jetons de texte avant extraction.\n\n" + selected.map { "• " + ($0["title"] as? String ?? "") + " — " + (targets[$0["id"] as? String ?? ""] ?? "") }.joined(separator: "\n") + "\n\nLes sources modifiées remplacent leur version mémorisée. Aucune suppression d’autres documents. La consolidation dépend des réglages de la banque." + (binds ? "\n\nCe dossier sera rattaché à « \(bank) » : ses sources ne pourront pas être envoyées à une autre banque." : ""), confirmTitle: "Envoyer") { [weak self] in
+        confirmation = ConfirmationRequest(title: "Envoyer les sources à Hindsight ?", message: "\(Format.count(items.count, "source complète", "sources complètes")) vers « \(bank) », environ \(Format.number(chars / 4)) jetons de texte avant extraction.\n\n" + selected.map { "• " + ($0["title"] as? String ?? "") + " — " + (targets[$0["id"] as? String ?? ""] ?? "") }.joined(separator: "\n") + "\n\nLes sources modifiées remplacent leur version mémorisée. Aucune suppression d’autres documents. La consolidation dépend des réglages de la banque." + (binds ? "\n\nCe dossier sera rattaché à « \(bank) » : ses sources ne pourront pas être envoyées à une autre banque." : ""), confirmTitle: "Envoyer") { [weak self] in
             guard let self else { return }
             guard !consumed else { return }; consumed = true
             guard self.context == expected else { self.error = "Le contexte a changé ; préparez un nouvel aperçu."; return }
@@ -690,7 +690,7 @@ public final class MemoryWorkspace {
                     guard try await currentClient.retain(bank, request).success else { throw self.failure("Le serveur n’a pas accepté l’envoi. Vérifiez son état avant toute reprise.") }
                     try self.requireContext(expected)
                 }
-                self.message = "\(items.count) sources envoyées ; traitement à suivre dans cette liste."
+                self.message = "\(Format.count(items.count, "source envoyée", "sources envoyées")) ; traitement à suivre dans cette liste."
             } catch {
                 guard self.context == expected else { return }
                 self.error = error.localizedDescription
@@ -729,7 +729,7 @@ public final class MemoryWorkspace {
             let expectedPolicy = try JSONSerialization.data(withJSONObject: policy, options: .sortedKeys)
             let expectedPreferences = preferences
             var consumed = false
-            confirmation = ConfirmationRequest(title: "Vérifier ou reprendre l’envoi initial ?", message: "Le même lot de \(request.items.count) sources sera présenté au serveur avec son identifiant initial. Un lot déjà accepté ne sera pas extrait deux fois. Le texte est celui de l’aperçu initial.\n\n" + request.items.compactMap(\.documentId).joined(separator: "\n"), confirmTitle: "Vérifier / reprendre", severity: .normal) { [weak self] in
+            confirmation = ConfirmationRequest(title: "Vérifier ou reprendre l’envoi initial ?", message: "Le même lot de \(Format.count(request.items.count, "source")) sera présenté au serveur avec son identifiant initial. Un lot déjà accepté ne sera pas extrait deux fois. Le texte est celui de l’aperçu initial.\n\n" + request.items.compactMap(\.documentId).joined(separator: "\n"), confirmTitle: "Vérifier / reprendre", severity: .normal) { [weak self] in
                 guard let self, self.context == expected, !consumed else { return }; consumed = true
                 guard !self.actionInProgress else { return }
                 self.actionInProgress = true
@@ -776,15 +776,15 @@ public final class MemoryWorkspace {
                 try self.requireContext(expected)
                 try self.loadPolicy(); self.buildRows()
                 guard self.pending[target] == nil else { throw self.failure("Attendez la fin du traitement avant de retirer cette source.") }
-                guard self.targets[id] == target, (self.records.first(where: { $0["id"] as? String == id })?["memory"] as? [String: Any])?["can_remove"] as? Bool == true else { throw self.failure("La sélection ou la politique a changé ; rechargez la vue.") }
-                guard self.policyReason(id: target, repo: "", path: "") == nil || (self.policy["excluded_document_ids"] as? [String: [String: Any]])?[target]?["origin"] as? String == "workspace" else { throw self.failure("La politique a changé ; rechargez la vue.") }
+                guard self.targets[id] == target, (self.records.first(where: { $0["id"] as? String == id })?["memory"] as? [String: Any])?["can_remove"] as? Bool == true else { throw self.failure("La sélection ou la politique a changé ; actualisez la vue.") }
+                guard self.policyReason(id: target, repo: "", path: "") == nil || (self.policy["excluded_document_ids"] as? [String: [String: Any]])?[target]?["origin"] as? String == "workspace" else { throw self.failure("La politique a changé ; actualisez la vue.") }
                 let backup = root.appendingPathComponent("archives/hindsight/retraits-app/" + UUID().uuidString, isDirectory: true)
                 try FileManager.default.createDirectory(at: backup, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
                 if self.documents[target] != nil {
                     let doc = try await currentClient.document(bank, id: target)
                     try self.requireContext(expected)
                     try JSONEncoder().encode(doc).write(to: backup.appendingPathComponent("document.json"), options: .atomic)
-                    if let expected = expectedHash, SHA256.hex(Data((doc.originalText ?? "").utf8)) != expected { throw self.failure("La version mémorisée a changé ; rechargez la vue.") }
+                    if let expected = expectedHash, SHA256.hex(Data((doc.originalText ?? "").utf8)) != expected { throw self.failure("La version mémorisée a changé ; actualisez la vue.") }
                 }
                 // Persist exclusions before delete, so a failed request cannot cause a future re-send.
                 if let reason = self.pauseGate?(bank) { throw self.failure(reason) }

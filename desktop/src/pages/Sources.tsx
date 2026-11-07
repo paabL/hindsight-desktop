@@ -54,6 +54,7 @@ import {
   shortName,
 } from '../ui';
 import { nativeSourceReason } from '../native-messages';
+import { sharedFileStates } from '../file-states';
 import { pickDirectory, pickDocuments } from '../transport';
 
 type SourcesProps = PageProps & {
@@ -99,16 +100,16 @@ export default function Sources(props: SourcesProps) {
 
 const memoryLabels: Record<string, string> = {
   get new() {
-    return t('À ajouter', 'To add');
+    return sharedFileStates.toUpload;
   },
   get current() {
-    return t('À jour', 'Up to date');
+    return sharedFileStates.current;
   },
   get modified() {
-    return t('À mettre à jour', 'Update needed');
+    return sharedFileStates.modified;
   },
   get queued() {
-    return t('En cours', 'In progress');
+    return sharedFileStates.queued;
   },
   get error() {
     return t('Source illisible', 'Unreadable source');
@@ -123,10 +124,11 @@ const memoryLabels: Record<string, string> = {
     return t('État non vérifié', 'Unchecked status');
   },
   get excluded() {
-    return t('Exclu des envois', 'Excluded from uploads');
+    return sharedFileStates.excluded;
   },
   get unlinked() {
-    return t('Source à relier', 'Link this source');
+    // Document de la banque qu'aucune source du catalogue ne décrit (envoyé d'un dossier ordinaire, par exemple).
+    return t('Hors catalogue', 'Not in the catalog');
   },
   get missing() {
     return t('Source absente du catalogue', 'Source missing from catalog');
@@ -145,7 +147,7 @@ function projectLabel(record: Row): string {
 function collectorStatus(status: unknown): string {
   const value = String(status || '');
   if (/^(ok|success)/.test(value)) return t('OK', 'OK');
-  if (/disabled/.test(value)) return t('Désactivé', 'Disabled');
+  if (/disabled/.test(value)) return t('Désactivé', 'Off');
   if (/partial/.test(value)) return t('Partiel', 'Partial');
   if (/error|fail/.test(value)) return t('Erreur', 'Error');
   if (/skip/.test(value)) return t('Ignoré', 'Skipped');
@@ -620,10 +622,19 @@ function CatalogFolder({
           <section className="card source-list">
             <CardHeader
               title={t('Sources et mémoire', 'Sources and memory')}
-              subtitle={t(
-                `${number(records.length)} sources${projects.length ? ` dans ${number(projects.length)} projet${projects.length > 1 ? 's' : ''}` : ''}`,
-                `${number(records.length)} sources${projects.length ? ` in ${number(projects.length)} project${projects.length > 1 ? 's' : ''}` : ''}`,
-              )}
+              // Même compte que « Sources du catalogue » ; les autres documents de la banque sont annoncés à part.
+              subtitle={
+                t(
+                  `${number(catalogCount)} source${catalogCount > 1 ? 's' : ''}${projects.length ? ` dans ${number(projects.length)} projet${projects.length > 1 ? 's' : ''}` : ''}`,
+                  `${number(catalogCount)} source${catalogCount === 1 ? '' : 's'}${projects.length ? ` in ${number(projects.length)} project${projects.length > 1 ? 's' : ''}` : ''}`,
+                ) +
+                (records.length > catalogCount
+                  ? t(
+                      ` · ${number(records.length - catalogCount)} autre${records.length - catalogCount > 1 ? 's' : ''} document${records.length - catalogCount > 1 ? 's' : ''} de la banque`,
+                      ` · ${number(records.length - catalogCount)} other bank document${records.length - catalogCount === 1 ? '' : 's'}`,
+                    )
+                  : '')
+              }
               action={
                 <span className="subtle-label">
                   <Clock3 size={13} />
@@ -789,7 +800,7 @@ function CatalogFolder({
                 action={
                   <Badge>
                     {t(
-                      `${number(activeSources.length)} actifs`,
+                      `${number(activeSources.length)} actif${activeSources.length > 1 ? 's' : ''}`,
                       `${number(activeSources.length)} active`,
                     )}
                   </Badge>
@@ -830,13 +841,15 @@ function CatalogFolder({
               )}
               {!!sources.length && (
                 <button className="collector-more" onClick={() => setCollectorsOpen(true)}>
-                  {t(
-                    `Voir les ${number(sources.length)} collecteurs`,
-                    `View all ${number(sources.length)} collectors`,
-                  )}
+                  {sources.length === 1
+                    ? t('Voir le collecteur', 'View the collector')
+                    : t(
+                        `Voir les ${number(sources.length)} collecteurs`,
+                        `View all ${number(sources.length)} collectors`,
+                      )}
                   {sources.length > activeSources.length &&
                     t(
-                      ` (${number(sources.length - activeSources.length)} désactivés)`,
+                      ` (${number(sources.length - activeSources.length)} désactivé${sources.length - activeSources.length > 1 ? 's' : ''})`,
                       ` (${number(sources.length - activeSources.length)} disabled)`,
                     )}
                   <ArrowRight size={14} />
@@ -1310,6 +1323,19 @@ function folderSummary(folder: Row, comparing: boolean, offline: boolean): strin
   ];
   if (folder.queued)
     parts.push(t(`${number(folder.queued)} en file`, `${number(folder.queued)} queued`));
+  const missing = Number(folder.missing || 0);
+  if (missing)
+    parts.push(
+      t(`${number(missing)} disparu${missing > 1 ? 's' : ''}`, `${number(missing)} missing`),
+    );
+  const excluded = Number(folder.excluded || 0);
+  if (excluded)
+    parts.push(
+      t(
+        `${number(excluded)} exclu${excluded > 1 ? 's' : ''} des envois`,
+        `${number(excluded)} excluded from uploads`,
+      ),
+    );
   return parts.join(' · ');
 }
 
@@ -1535,14 +1561,20 @@ function FolderList({
   );
 }
 
-const fileStates: Record<string, { fr: string; en: string; tone: string }> = {
-  current: { fr: 'À jour', en: 'Up to date', tone: 'sage' },
-  notSent: { fr: 'Non envoyé', en: 'Not sent', tone: 'amber' },
-  modified: { fr: 'Modifié', en: 'Modified', tone: 'amber' },
-  noFacts: { fr: 'Sans fait', en: 'No facts', tone: 'amber' },
-  fileMissing: { fr: 'Fichier disparu', en: 'File missing', tone: 'neutral' },
-  queued: { fr: 'En file', en: 'Queued', tone: 'blue' },
-  stored: { fr: 'En mémoire', en: 'In memory', tone: 'neutral' },
+const fileStates: Record<string, { label: () => string; tone: string }> = {
+  current: { label: () => sharedFileStates.current, tone: 'sage' },
+  notSent: { label: () => sharedFileStates.toUpload, tone: 'amber' },
+  modified: { label: () => sharedFileStates.modified, tone: 'amber' },
+  noFacts: { label: () => t('Sans fait', 'No facts'), tone: 'amber' },
+  fileMissing: { label: () => t('Fichier disparu', 'File missing'), tone: 'neutral' },
+  excluded: { label: () => sharedFileStates.excluded, tone: 'neutral' },
+  // PDF jamais envoyé : l’app envoie sa source TeX ou Markdown, pas le PDF.
+  needsSource: {
+    label: () => t('PDF : envoyez sa source', 'PDF: upload its source'),
+    tone: 'neutral',
+  },
+  queued: { label: () => sharedFileStates.queued, tone: 'blue' },
+  stored: { label: () => t('En mémoire', 'In memory'), tone: 'neutral' },
 };
 
 /** Dossier ordinaire : ses fichiers comparés aux documents de la banque, envoi et retrait après confirmation. */
@@ -1661,7 +1693,7 @@ function PlainFolder({ data, run, busy, demo, banks = [] }: SourcesProps) {
               void perform(() => run('coverage.auto', { id: folder.path, enabled: false }))
             }
           >
-            {t('Désactiver l’ancienne synchro auto.', 'Turn off legacy auto-sync')}
+            {t('Désactiver l’ancienne synchronisation automatique', 'Turn off legacy auto-sync')}
           </Button>
         )}
       </div>
@@ -1787,7 +1819,7 @@ function PlainFolder({ data, run, busy, demo, banks = [] }: SourcesProps) {
                         {item.location && <small>{item.location}</small>}
                       </td>
                       <td>
-                        <Badge tone={state.tone}>{t(state.fr, state.en)}</Badge>
+                        <Badge tone={state.tone}>{state.label()}</Badge>
                       </td>
                       <td>{number(item.facts ?? 0)}</td>
                     </tr>

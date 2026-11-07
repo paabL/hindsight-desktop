@@ -12,7 +12,16 @@ public struct DashboardSnapshot: Sendable {
     public var recentFailures: [OperationResponse] = []
     /// Consolidations en cours ou en file : on ne propose pas d'en lancer une autre.
     public var activeConsolidations = 0
+    /// Totaux vivants des opérations (en attente, en cours, en échec), lus comme dans Traitements :
+    /// `/stats` met ses compteurs d'opérations en cache avec ses agrégats coûteux.
+    public var operationCounts: [String: Int]?
+    /// Même état de consolidation que Traitements.
+    public var consolidation: ConsolidationStatus?
     public var config: BankConfigResponse?
+    /// Totaux lus en direct, comme les pages Faits et Documents : `/stats` sert des agrégats en cache.
+    public var liveFactTotal: Int?
+    public var liveFactTypes: [String: Int]?
+    public var liveDocumentTotal: Int?
     public var llmHealth: BankLlmHealthResponse?
     public var consultationOnly = false
     public var fetchedAt: Date
@@ -76,7 +85,7 @@ public enum DashboardInsights {
             out.append(
                 Insight(
                     id: "failed-operations", severity: .critical,
-                    title: "\(st.failedOperations) opération(s) en échec",
+                    title: "\(Format.count(st.failedOperations, "opération")) en échec",
                     detail: s.recentFailures.first?.errorMessage.map { "Dernière erreur : \(String($0.prefix(200)))" }
                         ?? "Ouvrez le suivi pour lire les messages d'erreur et relancer.",
                     action: .openOperations(status: "failed"), actionTitle: "Voir les échecs"))
@@ -85,7 +94,7 @@ public enum DashboardInsights {
             out.append(
                 Insight(
                     id: "failed-consolidation", severity: .critical,
-                    title: "\(st.failedConsolidation) fait(s) définitivement en échec de consolidation",
+                    title: "\(Format.count(st.failedConsolidation, "fait")) définitivement en échec de consolidation",
                     detail: "Ils ne seront plus retentés automatiquement tant qu'on ne les remet pas en file.",
                     action: .recoverConsolidation, actionTitle: "Remettre en file"))
         }
@@ -101,7 +110,8 @@ public enum DashboardInsights {
         }
         // Réglages résolus POUR CETTE BANQUE (serveur → banque) d'abord : un override de banque peut
         // activer ce que le serveur désactive globalement (et inversement).
-        let observationsEnabled = s.config?.config["enable_observations"]?.boolValue ?? s.version?.features.observations ?? true
+        let observationsEnabled = s.consolidation?.enabled
+            ?? s.config?.config["enable_observations"]?.boolValue ?? s.version?.features.observations ?? true
         if observationsEnabled, st.pendingConsolidation > 0 {
             let stale: Bool
             if let last = s.lastConsolidation { stale = now.timeIntervalSince(last) > 24 * 3600 } else { stale = true }
@@ -109,7 +119,7 @@ public enum DashboardInsights {
             out.append(
                 Insight(
                     id: "pending-consolidation", severity: running ? .info : stale ? .warning : .info,
-                    title: "\(st.pendingConsolidation) fait(s) attendent la consolidation",
+                    title: st.pendingConsolidation == 1 ? "1 fait attend la consolidation" : "\(Format.number(st.pendingConsolidation)) faits attendent la consolidation",
                     detail: running
                         ? "Une consolidation est en cours : elle les traite. Suivi dans « Activité › Traitements »."
                         : s.lastConsolidation.map { "Dernière consolidation : \(Self.relative($0, now: now))." } ?? "Aucune consolidation enregistrée.",
@@ -128,7 +138,7 @@ public enum DashboardInsights {
         if st.pendingOperations > 0 {
             out.append(
                 Insight(
-                    id: "pending-operations", severity: .info, title: "\(st.pendingOperations) opération(s) en file",
+                    id: "pending-operations", severity: .info, title: "\(Format.count(st.pendingOperations, "opération")) en file",
                     detail: "Le serveur les traite à son rythme.", action: .openOperations(status: "pending"),
                     actionTitle: "Suivre"))
         }

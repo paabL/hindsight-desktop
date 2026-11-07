@@ -171,7 +171,7 @@ try {
           serverURL: 'http://127.0.0.1:8888',
           bank: 'dense',
           banks: [{ bank_id: 'dense', name: 'Banque de vérification', fact_count: 100 }],
-          paused: [],
+          pause: { all: false, banks: [] },
         },
         section: 'graph',
         data: {

@@ -774,7 +774,10 @@ public final class FileCoverageViewModel {
         guard !entries.isEmpty else { invalidateApproval(); return }
         preparingAction = token
         defer { if preparingAction == token { preparingAction = nil } }
+        // La consolidation n'entre dans l'estimation que si la banque consolide après l'extraction.
+        async let bankConfig = try? client.bankConfig(bank)
         let prepared = await Task.detached(priority: .userInitiated) { Self.prepareFiles(entries.map(\.file), roots: context.roots) }.value
+        let consolidates = ConsolidationStatus.consolidatesAfterExtraction(await bankConfig, serverObservations: nil)
         guard pendingAction == token, matches(context), selection == approvedSelection, !Task.isCancelled else {
             if pendingAction == token { invalidateApproval() }
             return
@@ -787,13 +790,17 @@ public final class FileCoverageViewModel {
         }
         let replaced = entries.filter { !$0.documents.isEmpty }.count
         var lines = [
-            "\(upload.count) fichier(s) → banque « \(bank) » : \(upload.items.count) en texte, \(upload.files.count) converti(s) par le serveur (HTML, Office).",
+            "\(Format.count(upload.count, "fichier")) → banque « \(bank) » : \(Format.number(upload.items.count)) en texte, \(Format.number(upload.files.count)) à convertir par le serveur (HTML, Office).",
             "≈ \(Format.number(upload.approxTokens)) jetons envoyés au LLM d'extraction (estimation grossière pour les fichiers convertis).",
         ]
         lines.append("Documents sélectionnés :\n" + prepared.sources.map { "• " + $0.file.key }.joined(separator: "\n"))
-        if replaced > 0 { lines.append("\(replaced) document(s) existant(s) seront REMPLACÉS : leurs faits sont supprimés puis réextraits.") }
-        if !upload.unreadable.isEmpty { lines.append("Ignoré(s) : " + upload.unreadable.joined(separator: ", ")) }
-        if let e = estimate?(bank, .retain(characters: upload.characters, images: 0, consolidation: true)) { lines.append(e.summary) }
+        if replaced > 0 {
+            lines.append(replaced == 1
+                ? "1 document existant sera REMPLACÉ : ses faits sont supprimés puis réextraits."
+                : "\(Format.number(replaced)) documents existants seront REMPLACÉS : leurs faits sont supprimés puis réextraits.")
+        }
+        if !upload.unreadable.isEmpty { lines.append("Non envoyés : " + upload.unreadable.joined(separator: ", ")) }
+        if let e = estimate?(bank, .retain(characters: upload.characters, images: 0, consolidation: consolidates)) { lines.append(e.summary) }
         lines.append("Les images intégrées aux HTML sont retirées. L'extraction se fait en tâche de fond ; suivez-la dans « Activité › Traitements ».")
         confirmation = ConfirmationRequest(
             title: "Envoyer à « \(bank) » ?", message: lines.joined(separator: "\n"), confirmTitle: "Envoyer",
@@ -888,7 +895,7 @@ public final class FileCoverageViewModel {
         sending = nil
         if selection == approvedSelection { selection = [] }
         actionMessage =
-            "\(sent)/\(upload.count) fichier(s) mis en file d'extraction dans « \(bank) » (\(operations) opération(s))."
+            "\(Format.count(sent, "fichier")) sur \(Format.number(upload.count)) mis en file d'extraction dans « \(bank) » (\(Format.count(operations, "opération")))."
             + (errors.isEmpty ? "" : " Refusés : " + errors.joined(separator: " ; "))
         if sent > 0, reportContext == context { await refreshMemory() }
         return sent
@@ -924,7 +931,7 @@ public final class FileCoverageViewModel {
 
     /// Supprime les documents dont le fichier n'a pas été trouvé.
     public func requestRemoveOrphans() {
-        requestRemove(state.value?.orphans ?? [], what: "documents sans fichier")
+        requestRemove(state.value?.orphans ?? [], what: "Documents sans fichier")
     }
 
     public func requestRemove(_ docs: [DocumentListItem], what: String) {
@@ -944,7 +951,7 @@ public final class FileCoverageViewModel {
         pendingAction = token
         let facts = docs.reduce(0) { $0 + $1.memoryUnitCount }
         confirmation = ConfirmationRequest(
-            title: "Retirer \(docs.count) document(s) de « \(bank) » ?",
+            title: "Retirer \(Format.count(docs.count, "document")) de « \(bank) » ?",
             message: "\(what) : \(Format.count(docs.count, "document")) et \(Format.count(facts, "fait")) supprimés définitivement de la banque. Les fichiers ne sont pas touchés ; les renvoyer coûtera une nouvelle extraction.",
             confirmTitle: "Retirer", severity: .destructive, requiredText: docs.count > 10 ? bank : nil
         ) { [weak self] in
@@ -1001,7 +1008,7 @@ public final class FileCoverageViewModel {
         }
         guard matches(context), !Task.isCancelled else { return }
         if selection == approvedSelection { selection = [] }
-        actionMessage = "\(removed)/\(docs.count) document(s) retiré(s) de « \(bank) »." + (errors.isEmpty ? "" : " Échecs : " + errors.joined(separator: " ; "))
+        actionMessage = "\(Format.count(removed, "document retiré", "documents retirés")) sur \(Format.number(docs.count)) de « \(bank) »." + (errors.isEmpty ? "" : " Échecs : " + errors.joined(separator: " ; "))
         await refreshMemory()
     }
 

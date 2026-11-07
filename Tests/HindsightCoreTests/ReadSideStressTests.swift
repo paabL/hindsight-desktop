@@ -425,7 +425,7 @@ final class DocumentWriteRefreshTests: XCTestCase {
             switch action {
             case "tags": reader.requestUpdateTags(["after-write"])
             case "scope": reader.requestUpdateScope("per_tag")
-            default: reader.requestReprocess()
+            default: await reader.requestReprocess()
             }
             let confirmation = try XCTUnwrap(reader.confirmation)
             var finished = false
@@ -440,7 +440,7 @@ final class DocumentWriteRefreshTests: XCTestCase {
             XCTAssertTrue(finished)
             XCTAssertTrue(vm.reader === reader)
             XCTAssertTrue(vm.items.first { $0.id == documentID }?.tags.contains("after-write") == true)
-            if action == "reprocess" { XCTAssertTrue(reader.actionMessage?.contains("synthetic-op") == true) }
+            if action == "reprocess" { XCTAssertEqual(reader.actionMessage, "Retraitement en file : suivez-le dans « Activité › Traitements ».") }
         }
     }
 
@@ -468,7 +468,7 @@ final class DocumentWriteRefreshTests: XCTestCase {
             XCTAssertTrue(vm.items.isEmpty, "list refresh is complete when deletion returns")
             XCTAssertEqual(vm.total, 0)
             XCTAssertTrue(vm.deletedIDs.contains(documentID))
-            XCTAssertTrue(vm.actionMessage?.contains("Supprimé") == true)
+            XCTAssertEqual(vm.actionMessage, "Document supprimé (30 faits).")
             vm.closeReader()
         }
     }

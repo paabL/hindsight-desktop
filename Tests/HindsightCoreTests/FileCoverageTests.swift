@@ -115,11 +115,12 @@ final class FileCoverageTests: XCTestCase {
         XCTAssertEqual(report.entries.map(\.status), [.current, .missing, .missing])
 
         vm.selectVisible()
-        XCTAssertEqual(vm.selection.count, 2, "un fichier à jour n'est pas envoyable")
+        XCTAssertEqual(vm.selection.count, 1, "ni un fichier à jour ni un PDF (on envoie sa source) ne sont envoyables")
+        XCTAssertFalse(report.entries.first { $0.file.path == "docs/article.pdf" }!.canSend)
         await vm.requestSend()
         let confirmation = try XCTUnwrap(vm.confirmation)
         XCTAssertTrue(t.requests.allSatisfy { $0.method == "GET" }, "rien n'est envoyé avant confirmation")
-        XCTAssertTrue(confirmation.message.contains("fournir la source TeX ou Markdown"))
+        XCTAssertFalse(confirmation.message.contains("article.pdf"), "le PDF n'est ni compté ni proposé")
         await confirmation.perform()
 
         let retain = try XCTUnwrap(t.requests.first { $0.path == "\(bankPath)/memories" }?.bodyJSON)
@@ -128,7 +129,7 @@ final class FileCoverageTests: XCTestCase {
         XCTAssertEqual(retain["items"]?[0]?["metadata"]?["path"], .string("docs/notes.md"))
         XCTAssertFalse(t.requests.contains { $0.path == "\(bankPath)/files/retain" }, "aucun PDF n'est transmis")
         XCTAssertTrue(vm.selection.isEmpty)
-        XCTAssertEqual(vm.actionMessage?.hasPrefix("1/1 fichier(s)"), true)
+        XCTAssertEqual(vm.actionMessage?.hasPrefix("1 fichier sur 1 mis en file d'extraction"), true, vm.actionMessage ?? "")
     }
 
     func testCommonPolicyBlocksAndIsRecheckedBeforeSend() async throws {

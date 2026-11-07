@@ -100,6 +100,10 @@ public final class AppModel {
             self.serverSettings.acknowledgeStartedScript(self.service.startedScriptHash)
             if self.connection.isConnected { await self.refreshServerInfo() } else { await self.connect() }
         }
+        // Serveur arrêté depuis l'app : la barre latérale ne doit plus le dire connecté.
+        self.service.onServerStopped = { @MainActor @Sendable [unowned self] in
+            if case .connected = self.connection { self.connection = .failed("Serveur arrêté.") }
+        }
         self.serverSettings.service = self.service
         self.localDecision = LocalDecisionModel(runner: processRunner, paths: .standard(service: servicePaths))
         self.pause = PauseController(
@@ -196,6 +200,8 @@ public final class AppModel {
             banks = list.banks
             // Rattrape ce que la pause n'a pas pu faire serveur injoignable (couper ou rétablir la consolidation,
             // annuler les rafraîchissements de pages arrivés entre-temps).
+            // Sans actions automatiques (l'app de bureau), rien n'est écrit sans clic : le bandeau de pause
+            // signale ce qui reste à couper ou à rétablir et propose « Réessayer ».
             if automaticActions {
                 Task {
                     await pause.reconcile()
@@ -231,6 +237,9 @@ public final class AppModel {
         // La suppression de la banque remplace cette session : son message passe par la gestion des banques.
         s.admin.onAppMessage = { [weak self] text in self?.bankManagement.message = text }
         s.operations.pauseGate = pause.gate
+        s.operations.workerOff = { [weak self] in self?.pause.serverWorkerOff ?? false }
+        s.memoryDesign.pauseCutAutoConsolidation = { [weak self] in self?.pause.cutAutoConsolidation(id) ?? false }
+        s.memoryDesign.onConfigReset = { [weak self] bank in await self?.pause.bankConfigWasReset(bank) }
         s.documents.pauseGate = pause.gate
         // Supprimé, retraité ou retagué depuis le lecteur : la liste de l'écran Documents suit.
         s.documents.onDocumentChanged = { [weak self, weak s] documentID, reprocessed in
@@ -318,9 +327,17 @@ public final class AppModel {
                 return false
             }
             _ = try await client.createOrUpdateBank(id, request: CreateBankRequest(name: name.isEmpty ? nil : name))
-            if !mission.isEmpty { _ = try? await client.updateBankConfig(id, updates: ["reflect_mission": .string(mission)]) }
+            var missionFailure: String?
+            if !mission.isEmpty {
+                do { _ = try await client.updateBankConfig(id, updates: ["reflect_mission": .string(mission)]) }
+                catch { missionFailure = error.userMessage }
+            }
             await refreshBanks()
             selectBank(id)
+            // La banque existe : le dire, avec la mission qui n'a pas pu être posée (à refaire dans « Réglages › Banque »).
+            if let missionFailure {
+                bannerError = "Banque « \(id) » créée, mais sa mission n'a pas été enregistrée : \(missionFailure)"
+            }
             return true
         } catch {
             bannerError = "Création impossible : \(error.userMessage)"

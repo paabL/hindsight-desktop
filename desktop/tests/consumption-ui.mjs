@@ -142,8 +142,13 @@ try {
     await expect(page.getByRole('table')).toContainText('hs-embed-1');
 
     await page.evaluate(() => window.__consumptionFixture.installLegacy());
-    await expect(page.locator('.budget-gauges > div')).toHaveCount(1);
-    await expect(page.locator('.budget-gauges')).toContainText('Daily USD');
+    // Seul le plafond en dollars par jour reste, lu sous le coût du jour qu'il borne.
+    const today = page
+      .locator('.metric')
+      .filter({ hasText: fr ? 'Coût estimé aujourd’hui' : 'Estimated cost today' });
+    await expect(today).toContainText(fr ? /Plafond : 5,00\s/ : /Limit: (US)?\$5\.00 per day/);
+    await expect(today).toContainText(fr ? 'par jour (8 %)' : 'per day (8%)');
+    await expect(page.locator('body')).not.toContainText(/Claude Code tokens|Quota Codex/);
     async function noQuotas() {
       await expect(page.locator('.quota-card, .quota-grid, .subscription-limits')).toHaveCount(0);
       await expect(page.locator('body')).not.toContainText(

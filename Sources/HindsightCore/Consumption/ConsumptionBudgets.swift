@@ -16,7 +16,7 @@ public struct ConsumptionBudgets: Codable, Sendable, Hashable {
         public var title: String {
             switch self {
             case .alert: return "Alerter seulement"
-            case .softPause: return "Mettre en pause"
+            case .softPause: return "Mettre toutes les banques en pause"
             case .freezeQueue: return "Geler la file"
             }
         }

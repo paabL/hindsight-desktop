@@ -23,6 +23,9 @@ public final class FactDetailViewModel: Identifiable {
     public private(set) var chunk: LoadState<ChunkResponse> = .idle
     public private(set) var sources: LoadState<[FactHit]> = .idle
     public private(set) var history: JSONValue?
+    /// « Créer des observations » pour cette banque, lu au chargement (nil si inconnu) : les dialogues ne
+    /// promettent une reconsolidation que si elle aura lieu.
+    public private(set) var createsObservations: Bool?
 
     /// Brouillon de correction (nil = pas en édition).
     public var edit: FactEdit?
@@ -53,11 +56,15 @@ public final class FactDetailViewModel: Identifiable {
         chunk = .idle
         sources = .idle
         history = nil
+        let client = client, bank = bank
+        async let bankConfig = try? client.bankConfig(bank)
         do {
             try Task.checkCancellation()
             let d = try await client.memory(bank, id: factID)
+            let config = await bankConfig
             try Task.checkCancellation()
             guard loadID == id else { return }
+            createsObservations = config.map { ConsolidationStatus.createsObservations($0, serverObservations: nil) }
             detail = .loaded(d)
             let enriched = FactHit(d, fallbackID: factID)
             // On garde le score et ce que la liste connaissait déjà si le détail est plus pauvre.
@@ -182,12 +189,21 @@ public final class FactDetailViewModel: Identifiable {
             return
         }
         let textChanged = e.text != hit.text
+        let noObservations = createsObservations == false
+        let effect: String
+        switch (textChanged, noObservations) {
+        case (true, false):
+            effect = "Le nouveau texte sera ré-indexé ; les observations et liens qui en dérivent sont supprimés puis reconsolidés (appel LLM de consolidation)."
+        case (true, true):
+            effect = "Le nouveau texte sera ré-indexé ; les observations et liens qui en dérivent sont supprimés. Cette banque ne crée pas d'observations : elles ne seront pas recréées."
+        case (false, false):
+            effect = "Le serveur exige le texte avec toute correction : il sera ré-indexé tel quel, et les observations qui en dérivent reconsolidées."
+        case (false, true):
+            effect = "Le serveur exige le texte avec toute correction : il sera ré-indexé tel quel."
+        }
         confirmation = ConfirmationRequest(
             title: "Corriger ce fait ?",
-            message: (textChanged
-                ? "Le nouveau texte sera ré-indexé ; les observations et liens qui en dérivent sont supprimés puis reconsolidés (appel LLM de consolidation)."
-                : "Le serveur exige le texte avec toute correction : il sera ré-indexé tel quel, et les observations qui en dérivent reconsolidées.")
-                + "\n\nL'ancienne version reste dans l'archive de curation du serveur.",
+            message: effect + "\n\nL'ancienne version reste dans l'archive de curation du serveur.",
             confirmTitle: "Enregistrer", severity: .normal
         ) { [weak self] in
             await self?.write(req, success: "Fait corrigé.")
@@ -199,7 +215,7 @@ public final class FactDetailViewModel: Identifiable {
         let r = reason.trimmingCharacters(in: .whitespacesAndNewlines)
         confirmation = ConfirmationRequest(
             title: "Invalider ce fait ?",
-            message: "Il sera exclu du recall et de la consolidation ; ses liens et observations dérivées sont retirés. C'est réversible (« Rétablir »).",
+            message: "Il sera exclu de la recherche et de la consolidation ; ses liens et observations dérivées sont retirés. C'est réversible (« Rétablir »).",
             confirmTitle: "Invalider"
         ) { [weak self] in
             await self?.write(UpdateMemoryRequest(state: "invalidated", reason: r.isEmpty ? nil : r), success: "Fait invalidé.")
@@ -208,7 +224,8 @@ public final class FactDetailViewModel: Identifiable {
 
     public func requestRevalidate() {
         confirmation = ConfirmationRequest(
-            title: "Rétablir ce fait ?", message: "Il redevient visible du recall et sera reconsolidé.",
+            title: "Rétablir ce fait ?",
+            message: createsObservations == false ? "Il redevient visible de la recherche." : "Il redevient visible de la recherche et sera reconsolidé.",
             confirmTitle: "Rétablir", severity: .normal
         ) { [weak self] in
             await self?.write(UpdateMemoryRequest(state: "valid"), success: "Fait rétabli.")
@@ -218,13 +235,16 @@ public final class FactDetailViewModel: Identifiable {
     public func requestClearObservations() {
         confirmation = ConfirmationRequest(
             title: "Effacer les observations issues de ce fait ?",
-            message: "Les observations qui en dérivent sont supprimées ; elles pourront être recréées par la prochaine consolidation.",
+            message: createsObservations == false
+                ? "Les observations qui en dérivent sont supprimées. Cette banque ne crée pas d'observations : elles ne seront pas recréées."
+                : "Les observations qui en dérivent sont supprimées ; elles pourront être recréées par la prochaine consolidation.",
             confirmTitle: "Effacer"
         ) { [weak self] in
             guard let self else { return }
             do {
                 let r = try await self.client.clearMemoryObservations(self.bank, id: self.factID)
-                self.actionMessage = "\(r.deletedCount) observation(s) supprimée(s)."
+                self.actionMessage = r.deletedCount == 0
+                    ? "Aucune observation à effacer." : Format.count(r.deletedCount, "observation effacée", "observations effacées") + "."
                 self.onChanged?()
             } catch {
                 self.actionMessage = "Échec : \(error.userMessage)"

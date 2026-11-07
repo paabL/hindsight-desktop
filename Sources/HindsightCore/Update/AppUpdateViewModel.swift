@@ -245,7 +245,7 @@ public final class AppUpdateViewModel {
             // Des modifications locales : elles sont mises de côté (git stash), jamais perdues.
             lines.append("Modifications locales mises de côté avant la mise à jour (git stash ; « git stash pop » pour les reprendre) :")
             lines += dirtyFiles.prefix(10).map { "  \($0)" }
-            if dirtyFiles.count > 10 { lines.append("  … et \(dirtyFiles.count - 10) autre(s)") }
+            if dirtyFiles.count > 10 { lines.append("  … et \(Format.count(dirtyFiles.count - 10, "autre"))") }
             lines.append("")
         }
         if remoteChangedSinceApproval {
@@ -253,9 +253,9 @@ public final class AppUpdateViewModel {
         }
         lines.append("Dépôt : \(remoteURL)")
         lines.append("Branche : \(branch) → \(String(target.prefix(12)))")
-        lines.append("\(pending.count) commit(s) :")
+        lines.append("\(Format.count(pending.count, "commit")) :")
         lines += pending.prefix(15).map { "  \($0.short)  \($0.subject) — \($0.author), \($0.date)" }
-        if pending.count > 15 { lines.append("  … et \(pending.count - 15) autre(s)") }
+        if pending.count > 15 { lines.append("  … et \(Format.count(pending.count - 15, "autre"))") }
         lines.append("\nCe code sera compilé puis exécuté sur ce Mac, avec vos droits. N'acceptez que des commits d'une source de confiance.")
         lines.append("L'app sera remplacée ; il suffira ensuite de la relancer.")
         let checkedHead = head, checkedRepository = repoURL.path

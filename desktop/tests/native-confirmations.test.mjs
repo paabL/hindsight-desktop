@@ -3,32 +3,45 @@ import assert from 'node:assert/strict';
 import { setLanguage } from '../src/i18n-core.ts';
 import { advancedConfirmationMessage } from '../src/native-confirmations.ts';
 
-test('la fusion garde les identifiants et explique remplacement, suppression et coût différé', () => {
+test('la fusion dit ce qui suit les faits et ce que la cible fera de ceux pas encore consolidés', () => {
   setLanguage('en');
-  const body =
-    "Les documents de « source-1 » (1 234 faits) sont ajoutés à « target.2 » (87 faits).\nSans appel LLM : les faits sont ré-indexés avec le modèle d'embeddings de la cible et leurs entités fusionnées avec celles de la cible.\nDocuments dont l'identifiant existe déjà dans la cible : remplacer ceux de la cible.\nLes réglages, directives et modèles mentaux de la source ne sont PAS copiés. Les observations de la cible seront mises à jour par sa prochaine consolidation (appels LLM).\n« source-1 » sera ensuite SUPPRIMÉE, et son identifiant mènera à « target.2 ».";
-  const result = advancedConfirmationMessage('Fusionner « source-1 » dans « target.2 » ?', body);
-  assert.match(result, /from “source-1” \(1 234 facts\).*“target.2” \(87 facts\)/);
+  const intro =
+    "Les documents de « source-1 » (1 234 faits) sont ajoutés à « target.2 » (87 faits), avec leurs observations et connaissances. Les réglages et directives de la source ne sont PAS copiés.\nL'import n'appelle pas de LLM : les faits sont ré-indexés avec le modèle d'embeddings de la cible et leurs entités fusionnées avec celles de la cible.\nDocuments dont l'identifiant existe déjà dans la cible : remplacer ceux de la cible.\n";
+  const automatic =
+    "Les faits que la source n'avait pas encore consolidés seront consolidés automatiquement dans « target.2 » (appels LLM).\n";
+  const title = 'Fusionner « source-1 » dans « target.2 » ?';
+  const result = advancedConfirmationMessage(
+    title,
+    intro +
+      automatic +
+      '« source-1 » sera ensuite SUPPRIMÉE, et son identifiant mènera à « target.2 ».',
+  );
+  assert.match(
+    result,
+    /from “source-1” \(1 234 facts\).*“target.2” \(87 facts\), with their observations/,
+  );
   assert.match(result, /replace the target documents/);
-  assert.match(result, /NOT copied/);
-  assert.match(result, /next consolidation \(LLM calls\)/);
+  assert.match(result, /settings and directives are NOT copied/);
+  assert.match(result, /consolidated automatically in “target.2” \(LLM calls\)/);
   assert.match(
     result,
     /“source-1” will then be DELETED, and its identifier will point to “target.2”/,
   );
-  const keep = body.replace(
-    '« source-1 » sera ensuite SUPPRIMÉE, et son identifiant mènera à « target.2 ».',
-    '« source-1 » est conservée.',
+  const manual = advancedConfirmationMessage(
+    title,
+    intro +
+      "Les faits que la source n'avait pas encore consolidés attendront que vous lanciez la consolidation de « target.2 » (appels LLM).\n« source-1 » est conservée.",
   );
-  assert.match(
-    advancedConfirmationMessage('Fusionner « source-1 » dans « target.2 » ?', keep),
-    /“source-1” will be kept/,
+  assert.match(manual, /wait until you run consolidation on “target.2”/);
+  assert.match(manual, /“source-1” will be kept/);
+  const off = advancedConfirmationMessage(
+    title,
+    intro +
+      "« target.2 » ne crée pas d'observations : les faits que la source n'avait pas encore consolidés le resteront.\n« source-1 » sera ensuite SUPPRIMÉE.",
   );
-  const remove = body.replace(', et son identifiant mènera à « target.2 »', '');
-  assert.match(
-    advancedConfirmationMessage('Fusionner « source-1 » dans « target.2 » ?', remove),
-    /“source-1” will then be DELETED/,
-  );
+  assert.match(off, /“target.2” does not create observations/);
+  assert.match(off, /“source-1” will then be DELETED\.$/);
+  assert.doesNotMatch(off, /[àéè]|Les |ne crée/);
 });
 
 test('changer un identifiant conserve les deux variantes et avertit des écritures perdues', () => {
@@ -78,11 +91,12 @@ test('une commande personnalisée et les messages de commit sont conservés exac
   );
   const commits = '  abc123  Enregistrer le script de lancement ? — Auteur, 2026-11-04';
   const update =
-    'Dépôt : https://example.invalid/repo.git\nBranche : main → abc123\n1 commit(s) :\n' +
+    'Dépôt : https://example.invalid/repo.git\nBranche : main → abc123\n1 commit :\n' +
     commits +
     "\nCe code sera compilé puis exécuté sur ce Mac, avec vos droits. N'acceptez que des commits d'une source de confiance.\nL'app sera remplacée ; il suffira ensuite de la relancer.";
   const result = advancedConfirmationMessage('Installer la mise à jour ?', update);
   assert.match(result, /Repository: https:\/\/example.invalid\/repo.git/);
+  assert.match(result, /\n1 commit:\n/);
   assert.ok(result.includes(commits));
   assert.match(result, /with your permissions/);
 });

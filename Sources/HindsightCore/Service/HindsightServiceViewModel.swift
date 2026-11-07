@@ -82,6 +82,8 @@ public final class HindsightServiceViewModel {
     }
     /// Appelé quand le serveur vient de (re)démarrer et répond : l'app se reconnecte.
     @ObservationIgnored public var onServerStarted: (@MainActor @Sendable () async -> Void)?
+    /// Appelé après un arrêt dont l'API ne répond plus : l'app cesse de se dire connectée.
+    @ObservationIgnored public var onServerStopped: (@MainActor @Sendable () -> Void)?
 
     public init(
         settings: SettingsStore, runner: ProcessRunning = SystemProcessRunner(), paths: ServicePaths = .standard,
@@ -468,6 +470,7 @@ public final class HindsightServiceViewModel {
             message = apiReachable
                 ? "Le service est arrêté, mais l'API répond encore : un autre serveur tourne à cette adresse (lancé hors de l'app)."
                 : "Serveur arrêté."
+            if !apiReachable { onServerStopped?() }
         } catch {
             fail("Arrêt impossible : \(error)")
             await refreshOperationState()

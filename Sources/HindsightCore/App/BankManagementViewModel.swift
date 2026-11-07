@@ -206,7 +206,7 @@ public final class BankManagementViewModel {
 
     // MARK: Fusionner
 
-    public func requestMerge(source: String, into target: String, conflict: Conflict = .skip, after: AfterMerge = .keepSource) {
+    public func requestMerge(source: String, into target: String, conflict: Conflict = .skip, after: AfterMerge = .keepSource) async {
         guard item(source) != nil, item(target) != nil else {
             message = "Banque inconnue."
             return
@@ -216,11 +216,13 @@ public final class BankManagementViewModel {
             return
         }
         let s = item(source)!, t = item(target)!
+        // Ce que la cible fera des faits que la source n'avait pas encore consolidés dépend de ses réglages.
+        let targetConfig = try? await client.bankConfig(target)
         var lines = [
-            "Les documents de « \(source) » (\(Format.number(s.factCount)) faits) sont ajoutés à « \(target) » (\(Format.number(t.factCount)) faits).",
-            "Sans appel LLM : les faits sont ré-indexés avec le modèle d'embeddings de la cible et leurs entités fusionnées avec celles de la cible.",
+            "Les documents de « \(source) » (\(Format.number(s.factCount)) faits) sont ajoutés à « \(target) » (\(Format.number(t.factCount)) faits), avec leurs observations et connaissances. Les réglages et directives de la source ne sont PAS copiés.",
+            "L'import n'appelle pas de LLM : les faits sont ré-indexés avec le modèle d'embeddings de la cible et leurs entités fusionnées avec celles de la cible.",
             "Documents dont l'identifiant existe déjà dans la cible : \(conflict.label.lowercased()).",
-            "Les réglages, directives et modèles mentaux de la source ne sont PAS copiés. Les observations de la cible seront mises à jour par sa prochaine consolidation (appels LLM).",
+            Self.mergeConsolidationLine(target: target, config: targetConfig),
         ]
         switch after {
         case .keepSource: lines.append("« \(source) » est conservée.")
@@ -235,6 +237,43 @@ public final class BankManagementViewModel {
         ) { [weak self] in
             await self?.merge(source: source, into: target, conflict: conflict, after: after)
         }
+    }
+
+    /// Les faits déjà consolidés dans la source gardent leurs observations ; les autres suivent les réglages de la cible.
+    static func mergeConsolidationLine(target: String, config: BankConfigResponse?) -> String {
+        if !ConsolidationStatus.createsObservations(config, serverObservations: nil) {
+            return "« \(target) » ne crée pas d'observations : les faits que la source n'avait pas encore consolidés le resteront."
+        }
+        return ConsolidationStatus.consolidatesAfterExtraction(config, serverObservations: nil)
+            ? "Les faits que la source n'avait pas encore consolidés seront consolidés automatiquement dans « \(target) » (appels LLM)."
+            : "Les faits que la source n'avait pas encore consolidés attendront que vous lanciez la consolidation de « \(target) » (appels LLM)."
+    }
+
+    /// Compteurs du serveur après l'import, en clair (les clés inconnues sont omises).
+    static func mergeCounts(_ metadata: [String: JSONValue]) -> [String] {
+        let readable: [(key: String, one: String, many: String)] = [
+            ("documents_imported", "document ajouté", "documents ajoutés"),
+            ("facts_imported", "fait", "faits"),
+            ("observations_imported", "observation", "observations"),
+            ("mental_models_imported", "modèle mental", "modèles mentaux"),
+            ("knowledge_pages_imported", "page de connaissance", "pages de connaissance"),
+            ("documents_skipped", "document ignoré", "documents ignorés"),
+            ("observations_skipped", "observation ignorée", "observations ignorées"),
+        ]
+        return readable.compactMap { entry in
+            guard let n = metadata[entry.key]?.intValue, n > 0 || entry.key == "documents_imported" else { return nil }
+            return Format.count(n, entry.one, entry.many)
+        }
+    }
+
+    /// Faits arrivés non consolidés quand la cible ne consolide pas d'elle-même : le dire, avec où agir.
+    private func mergeWaitingFacts(_ target: String) async -> String {
+        let config = try? await client.bankConfig(target)
+        guard ConsolidationStatus.createsObservations(config, serverObservations: nil),
+            !ConsolidationStatus.consolidatesAfterExtraction(config, serverObservations: nil),
+            let pending = try? await client.bankStats(target, refresh: true).pendingConsolidation, pending > 0
+        else { return "" }
+        return " \(Format.count(pending, "fait")) \(pending > 1 ? "attendent" : "attend") la consolidation de « \(target) » : lancez-la depuis « Activité › Traitements »."
     }
 
     func merge(source: String, into target: String, conflict: Conflict, after: AfterMerge) async {
@@ -267,14 +306,17 @@ public final class BankManagementViewModel {
             }
             var summary = "Fusion terminée"
             let metadata = result.resultMetadata ?? [:]
-            let counts = metadata.compactMap { k, v -> String? in v.intValue.map { "\(k) \($0)" } }.sorted()
+            let counts = Self.mergeCounts(metadata)
             if !counts.isEmpty { summary += " (" + counts.joined(separator: ", ") + ")" }
             // Des documents ignorés (déjà présents dans la cible) n'existent plus que dans la source :
             // on ne la supprime pas sans que l'utilisateur l'ait vu.
-            let skipped = metadata.filter { $0.key.contains("skipped") }.compactMap { $0.value.intValue }.reduce(0, +)
+            let skipped = metadata["documents_skipped"]?.intValue ?? 0
             if after != .keepSource, conflict == .skip, skipped > 0 {
                 progress = nil
-                message = summary + ". « \(source) » est CONSERVÉE : \(skipped) document(s) ignoré(s) n'existent que dans la source. Vérifiez, puis supprimez-la depuis « Réglages › Banque »."
+                let only = skipped > 1
+                    ? "\(Format.number(skipped)) documents ignorés n'existent que dans la source"
+                    : "1 document ignoré n'existe que dans la source"
+                message = summary + ". « \(source) » est CONSERVÉE : \(only). Vérifiez, puis supprimez-la depuis « Réglages › Banque »."
                 await refreshBanks()
                 selectBank(target)
                 return
@@ -291,7 +333,7 @@ public final class BankManagementViewModel {
                 }
             }
             progress = nil
-            message = summary + ". Lancez la consolidation de « \(target) » pour intégrer les nouveaux faits aux observations."
+            message = summary + "." + (await mergeWaitingFacts(target))
             await refreshBanks()
             selectBank(target)
         } catch {

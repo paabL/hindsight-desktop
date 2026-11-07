@@ -72,7 +72,7 @@ try {
   const card = page.locator('.service-card');
   await expect(card.getByRole('button', { name: 'Démarrer', exact: true })).toBeEnabled();
   await card.getByRole('button', { name: 'Démarrer', exact: true }).click();
-  await expect(card).toContainText('En cours…');
+  await expect(card).toContainText('Démarrage…');
   await expect(card.getByRole('button', { name: 'Démarrer', exact: true })).toBeDisabled();
   await expect(card.getByRole('button', { name: 'Redémarrer', exact: true })).toBeDisabled();
   await expect

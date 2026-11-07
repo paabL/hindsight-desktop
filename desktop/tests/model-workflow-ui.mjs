@@ -220,10 +220,14 @@ try {
   await graph.getByRole('tab', { name: 'Recherche', exact: true }).click();
   await graph.getByRole('switch', { name: 'Décision · Recherche' }).click();
   await expect(graph.getByRole('switch')).toBeChecked();
-  await graph.getByRole('checkbox', { name: 'Filtrer', exact: true }).click();
-  await expect(graph.getByRole('checkbox', { name: 'Filtrer', exact: true })).toBeChecked();
-  await graph.getByRole('checkbox', { name: 'Dédupliquer', exact: true }).click();
-  await expect(graph.getByRole('checkbox', { name: 'Dédupliquer', exact: true })).toBeChecked();
+  await graph.getByRole('checkbox', { name: 'Écarter les faits inutiles', exact: true }).click();
+  await expect(
+    graph.getByRole('checkbox', { name: 'Écarter les faits inutiles', exact: true }),
+  ).toBeChecked();
+  await graph.getByRole('checkbox', { name: 'Retirer les doublons', exact: true }).click();
+  await expect(
+    graph.getByRole('checkbox', { name: 'Retirer les doublons', exact: true }),
+  ).toBeChecked();
   await graph.getByRole('tab', { name: 'Réponses', exact: true }).click();
   await expect(graph.locator('[data-node="rank"]')).toContainText('hs-decide-1-flash');
   await graph.getByRole('button', { name: 'Réglé dans Recherche', exact: false }).click();

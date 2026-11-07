@@ -24,8 +24,10 @@ struct BridgeMain {
         guard arguments.isEmpty else { exit(64) }
         let bridge = DesktopBridge()
         do {
-            for try await line in FileHandle.standardInput.bytes.lines {
-                guard let bytes = line.data(using: .utf8), bytes.count <= 16_000_000 else { continue }
+            // Découpe sur « \n » seulement : U+2028/U+2029/U+0085 d'un texte collé restent dans leur requête.
+            var reader = BridgeLineReader()
+            for try await byte in FileHandle.standardInput.bytes {
+                guard case .request(let bytes)? = reader.consume(byte) else { continue }
                 var id: Any = NSNull()
                 let reply: [String: Any]
                 do {
@@ -39,7 +41,7 @@ struct BridgeMain {
                 }
                 // Ordre des clés indifférent pour la coque : pas de tri sur des réponses de plusieurs mégaoctets.
                 if let data = try? JSONSerialization.data(withJSONObject: reply, options: [.fragmentsAllowed]) {
-                    FileHandle.standardOutput.write(data)
+                    FileHandle.standardOutput.write(BridgeLineReader.lineSafe(data))
                     FileHandle.standardOutput.write(Data([10]))
                 }
             }
@@ -99,6 +101,8 @@ final class DesktopBridge {
     let app: AppModel
     let settings: SettingsStore
     var ownConfirmation: ConfirmationRequest?
+    /// Vrai après une action confirmée : la prochaine lecture de Recherche relance sa recherche affichée.
+    var searchStale = false
     var section = "sources"
     var note: String?
     var workspace: MemoryWorkspace!
@@ -193,7 +197,7 @@ final class DesktopBridge {
             if !testing { await app.services.estimator.refreshProfile(bank: str("id")) }
         case "bank.create": app.requestCreateBank(id: str("id"), name: str("name"), mission: str("mission"))
         case "bank.rename": app.bankManagement.requestRename(try session().bank, name: str("name"))
-        case "bank.merge": app.bankManagement.requestMerge(source: str("source"), into: str("target"))
+        case "bank.merge": await app.bankManagement.requestMerge(source: str("source"), into: str("target"))
         case "section":
             section = str("section", "sources")
             try await load(section, p)
@@ -279,7 +283,7 @@ final class DesktopBridge {
             }
             if search.mode == .reflect {
                 let query = search.query, budget = search.budget, filter = search.filter
-                ownConfirmation = ConfirmationRequest(title: "Interroger la mémoire ?", message: "Le modèle rédigera une réponse à partir des faits de cette banque.\n\n" + (search.reflectEstimate?.summary ?? "Cette action consomme des jetons ; estimation indisponible.") + "\n\n" + query, confirmTitle: "Générer la réponse", severity: .normal) {
+                ownConfirmation = ConfirmationRequest(title: "Obtenir une réponse ?", message: "Le modèle rédigera une réponse à partir des faits de cette banque.\n\n" + (search.reflectEstimate?.summary ?? "Cette action consomme des jetons ; estimation indisponible.") + "\n\n" + query, confirmTitle: "Obtenir la réponse", severity: .normal) {
                     search.query = query; search.budget = budget; search.filter = filter; search.mode = .reflect
                     await search.run()
                 }
@@ -310,11 +314,13 @@ final class DesktopBridge {
             }
             switch command {
             case "document.delete": reader.requestDelete()
-            case "document.reprocess": reader.requestReprocess()
+            case "document.reprocess": await reader.requestReprocess()
             case "document.tags": reader.requestUpdateTags(strings("tags"))
             default: reader.requestUpdateScope(str("scope"))
             }
         case "documents.more": await (try session()).documents.loadMore()
+        // Trier par nom ou par nombre de faits porte sur toute la banque : on charge d'abord toutes les pages.
+        case "documents.all": await (try session()).documents.loadAll()
         case "model.open":
             let admin = try session().admin
             await admin.loadMentalModel(str("id"))
@@ -343,10 +349,19 @@ final class DesktopBridge {
         case "operations.recover": (try session()).operations.requestRecoverConsolidation()
         case "pause.pause", "pause.resume":
             let bank = p["all"] as? Bool == true ? nil : try session().bank
-            ownConfirmation = ConfirmationRequest(title: command == "pause.pause" ? "Mettre les traitements en pause ?" : "Reprendre les traitements ?", message: bank.map { "Banque : \($0)." } ?? "Toutes les banques sont concernées.", confirmTitle: command == "pause.pause" ? "Mettre en pause" : "Reprendre", severity: .normal) { [app] in
+            let pausing = command == "pause.pause"
+            let scope = bank.map { "« \($0) »" } ?? "Toutes les banques"
+            ownConfirmation = ConfirmationRequest(
+                title: pausing ? (bank.map { "Mettre « \($0) » en pause ?" } ?? "Mettre toutes les banques en pause ?")
+                    : (bank.map { "Reprendre « \($0) » ?" } ?? "Reprendre toutes les banques ?"),
+                message: pausing
+                    ? "\(scope) : plus aucun envoi depuis cette app, consolidation automatique coupée, régénérations de connaissances annulées. Les opérations déjà en file continuent ; pour les arrêter aussi, gelez la file."
+                    : "\(scope) : les envois reprennent et la consolidation automatique retrouve son réglage d'avant la pause.",
+                confirmTitle: pausing ? "Mettre en pause" : "Reprendre", severity: .normal) { [app] in
                 if command == "pause.pause" { await app.pause.pause(bank: bank, reason: "Pause manuelle depuis Hindsight Desktop") }
                 else { await app.pause.resume(bank: bank) }
             }
+        case "pause.reconcile": await app.pause.retryReconcile()
         case "pause.freeze": app.pause.requestFreeze()
         case "pause.unfreeze": app.pause.requestUnfreeze()
         case "pause.drain": await app.pause.requestDrain(bank: p["all"] as? Bool == true ? nil : try session().bank)
@@ -376,7 +391,6 @@ final class DesktopBridge {
         case "memory.reset": (try session()).memoryDesign.requestResetAll()
         case "admin.override":
             guard (try session()).admin.requestSetOverride(key: str("key"), rawJSON: str("value")) else { throw BridgeFailure("Valeur invalide.") }
-        case "admin.reset": (try session()).admin.requestResetConfig()
         case "directive.create": (try session()).admin.requestCreateDirective(name: str("name"), content: str("content"))
         case "directive.delete", "directive.update":
             let admin = try session().admin
@@ -387,7 +401,11 @@ final class DesktopBridge {
         case "admin.export", "admin.template":
             let admin = try session().admin
             if command == "admin.export" { await admin.exportArchive() } else { await admin.exportTemplate() }
-            guard let file = admin.exported else { throw BridgeFailure(admin.actionMessage ?? "Export impossible.") }
+            // Un seul retour : l'enregistrement du fichier le confirme, un échec revient comme erreur de la commande.
+            let outcome = admin.actionMessage
+            admin.actionMessage = nil
+            guard let file = admin.exported else { throw BridgeFailure(outcome ?? "Export impossible.") }
+            admin.exported = nil
             return ["filename": file.filename, "base64": file.data.base64EncodedString()]
         case "admin.import":
             guard let data = Data(base64Encoded: str("base64")) else { throw BridgeFailure("Archive invalide.") }
@@ -486,9 +504,12 @@ final class DesktopBridge {
             guard app.session != nil else { throw BridgeFailure("Choisissez une banque : le test des modèles passe par une banque du serveur.") }
             let dashboard = try session().dashboard
             await dashboard.loadIfNeeded()
+            // Pas de confirmation (ni de jetons promis) pour un test qui ne peut pas partir.
+            if let refusal = dashboard.llmTestRefusal { throw BridgeFailure(refusal) }
             ownConfirmation = ConfirmationRequest(title: "Tester les modèles du serveur ?", message: "Un court appel sera effectué pour chaque rôle LLM configuré. Cette vérification consomme des jetons.", confirmTitle: "Tester les modèles", severity: .normal) { [weak self] in
                 await dashboard.testLLM()
-                self?.note = dashboard.llmTestMessage ?? "Test des modèles terminé. Consultez le résultat dans Modèles."
+                self?.note = dashboard.llmTestMessage
+                    ?? dashboard.llmHealth.map(LLMHealthSummary.sentence) ?? "Le test des modèles n'a pas abouti."
             }
         case "confirm":
             guard let request = pending().first(where: { $0.id.uuidString == str("id") }), request.isSatisfied(by: str("typed")) else {
@@ -524,6 +545,8 @@ final class DesktopBridge {
             }
             else {
                 await request.perform()
+                // Une action confirmée a pu supprimer ou modifier des faits : Recherche relira ses résultats.
+                searchStale = true
                 if section == "sources" && !workspaceAction && openFolder?.catalog == true { await workspace.refresh() }
             }
             if activateSync { app.coverage.startAutoSync() }
@@ -617,8 +640,10 @@ final class DesktopBridge {
         if name == "admin", app.session == nil { return }
         let s = try session()
         switch name {
-        case "dashboard": await s.dashboard.reload()
-        case "models", "admin": await s.admin.reload()
+        // « Actualiser la vue » demande au serveur de recalculer ses statistiques (liens, répartition).
+        case "dashboard": await s.dashboard.reload(refreshStats: p["explicit"] as? Bool == true)
+        case "models": await s.admin.reload()
+        case "admin": await s.admin.reload(withTotals: true)
         case "documents":
             s.documents.query = p["query"] as? String ?? ""
             s.documents.selectedTags = p["tags"] as? [String] ?? []
@@ -644,7 +669,12 @@ final class DesktopBridge {
             await s.graph.reload(layout: false)
         case "audit": await s.audit.reload(); await s.reads.reload()
         case "memory": await s.memoryDesign.reload()
-        case "search": await s.catalog.loadIfNeeded()
+        case "search":
+            await s.catalog.loadIfNeeded()
+            if searchStale, p["polling"] as? Bool != true {
+                searchStale = false
+                await s.search.rerunAfterChange()
+            }
         default: throw BridgeFailure("Section inconnue.")
         }
     }
@@ -686,7 +716,9 @@ final class DesktopBridge {
         return [
             "app": ["connected": connected, "connectionError": wire(error), "serverURLNotice": wire(app.serverURLNotice), "serverURL": app.serverURL.absoluteString,
                     "version": wire(app.connection.version), "banks": wire(app.banks), "bank": wire(app.selectedBankID),
-                    "folder": wire(openFolder?.catalog == true ? app.memoryFolder.repository?.path : nil), "paused": wire(app.pause.heldBanks)],
+                    "folder": wire(openFolder?.catalog == true ? app.memoryFolder.repository?.path : nil), "pause": pauseSnapshot(),
+                    // Mode consultation (en-tête `X-Hindsight-Mode`) : lu avec la Vue d'ensemble ou Traitements, dit partout.
+                    "consultationOnly": app.session.map { $0.operations.consultationOnly || $0.dashboard.snapshot?.consultationOnly == true } ?? false],
             "serviceBusy": serviceTask != nil || app.service.isBusy,
             "updates": updateSnapshot(),
             "section": section, "data": sectionData(sourceRevision: sourceRevision), "messages": messages.map { SecretMasker.mask($0) },
@@ -695,6 +727,13 @@ final class DesktopBridge {
                                                "confirmTitle": $0.confirmTitle, "destructive": $0.severity == .destructive,
                                                "requiredText": wire($0.requiredText)] }
         ]
+    }
+
+    /// État réel de la pause (ce que le garde-fou applique), pas seulement où la consolidation a été coupée.
+    func pauseSnapshot() -> [String: Any] {
+        let pause: PauseController = app.pause
+        return ["all": pause.globalPause, "banks": pause.pausedBanks.sorted(), "uncut": pause.uncutBanks, "unreleased": pause.unreleasedBanks,
+                "frozen": pause.queueFrozen, "workerOff": pause.serverWorkerOff, "canFreeze": pause.canFreeze]
     }
 
     /// Résultats d'action et alertes affichés en bandeau par la coque.
@@ -780,8 +819,11 @@ final class DesktopBridge {
             return ["snapshot": wire(s?.dashboard.snapshot), "insights": wire(s?.dashboard.insights ?? []), "error": wire(s?.dashboard.state.errorMessage), "partialErrors": wire(s?.dashboard.partialErrors ?? [])]
         case "models", "admin":
             return ["models": wire(s?.admin.mentalModels.value ?? []), "directives": wire(s?.admin.directives.value ?? []),
+                    "refreshing": (s?.admin.refreshingIDs).map { Array($0).sorted() } ?? [],
                     "config": wire(s?.admin.config.value), "error": wire(s?.admin.config.errorMessage),
-                    "modelError": wire(s?.admin.mentalModels.errorMessage), "templateDryRun": wire(s?.admin.templateDryRun)]
+                    "modelError": wire(s?.admin.mentalModels.errorMessage), "templateDryRun": wire(s?.admin.templateDryRun),
+                    "configWritable": s?.admin.configWritable ?? true,
+                    "factTotal": wire(s?.admin.factTotal), "observationTotal": wire(s?.admin.observationTotal)]
         case "search":
             return ["hits": wire(s?.search.hits ?? []), "answer": wire(s?.search.answer), "total": s?.search.total ?? 0,
                     "canLoadMore": s?.search.canLoadMore ?? false, "error": wire(s?.search.state.errorMessage),
@@ -789,6 +831,7 @@ final class DesktopBridge {
                     "serverIs120": s?.search.serverIs120 ?? false]
         case "documents":
             return ["items": wire(s?.documents.sortedItems ?? []), "total": s?.documents.total ?? 0,
+                    "totalIsEstimate": s?.documents.totalIsEstimate ?? false,
                     "canLoadMore": s?.documents.canLoadMore ?? false, "error": wire(s?.documents.state.errorMessage),
                     "query": s?.documents.query ?? ""]
         case "operations":
@@ -799,10 +842,25 @@ final class DesktopBridge {
                     "consultationOnly": s?.operations.consultationOnly ?? false,
                     // « Exécuter maintenant » n'est proposé que là où le moteur l'accepte (serveur 1.1, prochaine tentative à venir).
                     "runNowIDs": s.map { s in s.operations.rows.filter { s.operations.canRunNow($0) }.map(\.id) } ?? [],
-                    "failedConsolidation": wire(s?.operations.stats?.failedConsolidation)]
+                    "failedConsolidation": wire(s?.operations.stats?.failedConsolidation),
+                    // Même état que la Vue d'ensemble : « Consolider » n'est proposé que s'il peut agir.
+                    "consolidation": wire(s?.operations.consolidation)]
         case "consumption":
             let m = app.consumption!
-            return ["summary": wire(m.summary), "gauges": wire(m.gauges),
+            // Totaux, histogramme et répartition calculés par le moteur sur tout l'historique suivi : la page ne
+            // recompte plus une liste tronquée (les 5 000 derniers appels) sous des totaux qui, eux, sont complets.
+            func period(_ p: ConsumptionMonitor.Period) -> [String: Any] {
+                let tokens = { (t: TokenCount) in t.input + t.output }
+                return ["calls": m.totals(p).calls,
+                        "buckets": m.buckets(p).filter { $0.calls > 0 }.map { ["start": HSDate.format($0.start), "tokens": $0.tokens, "calls": $0.calls] },
+                        "operations": m.breakdown(p, by: .operation, limit: 12).map { ["id": $0.id, "tokens": tokens($0.totals.tokens)] }
+                            .sorted { ($0["tokens"] as? Int ?? 0) > ($1["tokens"] as? Int ?? 0) }]
+            }
+            return ["summary": wire(m.summary), "gauges": wire(m.gauges), "periods": ["day": period(.day), "week": period(.week)],
+                    // Traces LLM coupées sur le serveur : rien n'est mesuré, les montants et les plafonds n'ont pas de sens.
+                    "tracesOff": app.connection.version?.features.llmTrace == false,
+                    // Le gel automatique ne vaut que pour un serveur lancé par cette app ; sinon la pause le remplace.
+                    "canFreeze": app.pause.canFreeze,
                     "events": wire(Array(m.events.suffix(5000))), "queues": wire(m.queues), "budgets": wire(m.budgets),
                     "prices": wire(app.services.estimator.priceBook), "lastPoll": wire(m.lastPoll), "error": wire(m.pollError),
                     "services": wire(m.services), "servicesError": wire(m.servicesError)]
@@ -832,10 +890,12 @@ final class DesktopBridge {
             default: auditStatus = "unknown"
             }
             return ["audit": wire(s?.audit.audit.value ?? []), "traces": wire(s?.audit.llm.value ?? []), "reads": wire(s?.reads.events ?? []), "error": wire(s?.audit.audit.errorMessage), "traceError": wire(s?.audit.llm.errorMessage),
-                    "auditStatus": auditStatus, "auditTotal": s?.audit.auditTotal ?? 0, "traceTotal": s?.audit.llmTotal ?? 0]
-        case "memory": return ["draft": wire(s?.memoryDesign.draft), "config": wire(s?.admin.config.value), "error": wire(s?.memoryDesign.state.errorMessage), "trial": wire(s?.memoryDesign.trial.value), "trialError": wire(s?.memoryDesign.trial.errorMessage), "problems": s?.memoryDesign.problems ?? [], "serverIs120": s?.memoryDesign.serverIs120 ?? false,
+                    "auditStatus": auditStatus, "canToggleAudit": s?.audit.canToggleAudit ?? false,
+                    "auditTotal": s?.audit.auditTotal ?? 0, "traceTotal": s?.audit.llmTotal ?? 0]
+        case "memory": return ["draft": wire(s?.memoryDesign.draft), "configWritable": s?.memoryDesign.configWritable ?? true, "config": wire(s?.admin.config.value), "error": wire(s?.memoryDesign.state.errorMessage), "trial": wire(s?.memoryDesign.trial.value), "trialError": wire(s?.memoryDesign.trial.errorMessage), "problems": s?.memoryDesign.problems ?? [], "serverIs120": s?.memoryDesign.serverIs120 ?? false,
                            // Clés propres à la banque : la page les signale, « Revenir aux réglages du serveur » les supprime toutes.
-                           "overridden": (s?.memoryDesign.overriddenKeys).map { Array($0).sorted() } ?? []]
+                           "overridden": (s?.memoryDesign.overriddenKeys).map { Array($0).sorted() } ?? [],
+                           "pauseCutAutoConsolidation": s.map { app.pause.cutAutoConsolidation($0.bank) } ?? false]
         case "server", "model-settings": return serverSnapshot()
         default: return [:]
         }
@@ -859,18 +919,31 @@ final class DesktopBridge {
                 row.merge(catalogSummary(root.url)) { $1 }
             } else if compared {
                 // Un dépôt atteint par deux dossiers suivis n'est compté qu'une fois, dans le premier.
-                let repos = Set(FileCoverageScanner.repositories(in: [root.url]).map(\.lastPathComponent)).subtracting(claimed)
+                let repoURLs = Dictionary(
+                    FileCoverageScanner.repositories(in: [root.url]).map { ($0.lastPathComponent, $0) }, uniquingKeysWith: { first, _ in first })
+                let repos = Set(repoURLs.keys).subtracting(claimed)
                 claimed.formUnion(repos)
                 let items = tracked.filter { repos.contains($0.group.title) }
+                // « Fichier disparu » seulement s'il n'est plus sur le disque ; sinon il est exclu du suivi
+                // (fichiers ignorés, « Inclure tous les fichiers texte » décoché).
+                func excluded(_ item: HindsightCore.LibraryItem) -> Bool {
+                    guard item.state == .fileMissing, let d = item.documents.first, let (repo, path) = FileCoverage.repoAndPath(d),
+                          let base = repoURLs[repo] else { return false }
+                    return FileManager.default.fileExists(atPath: base.appendingPathComponent(path).path)
+                }
+                let excludedIDs = Set(items.filter(excluded).map(\.id))
                 row["files"] = items.filter { $0.entry != nil }.count
-                row["toSend"] = items.filter { $0.entry?.canSend == true }.count
+                row["missing"] = items.filter { $0.state == .fileMissing && !excludedIDs.contains($0.id) }.count
+                row["excluded"] = excludedIDs.count
+                row["toSend"] = items.filter(\.canSend).count
                 row["modified"] = items.filter { $0.state == .modified }.count
                 row["queued"] = items.filter { $0.state == .queued }.count
                 if openFolder?.catalog == false, openFolder?.path == root.url.standardizedFileURL.path {
                     openItems = items.map { item in
                         var row = (wire(item) as? [String: Any]) ?? [:]
-                        row["state"] = item.state.rawValue
-                        row["canSend"] = item.entry?.canSend ?? false
+                        let pdfToSend = item.state == .notSent && item.entry.map { FileCoverage.needsTextSource($0.file.path) } == true
+                        row["state"] = excludedIDs.contains(item.id) ? "excluded" : pdfToSend ? "needsSource" : item.state.rawValue
+                        row["canSend"] = item.canSend
                         return row
                     }
                 }
@@ -887,7 +960,7 @@ final class DesktopBridge {
 
     /// Nombre de sources et date de collecte d'un catalogue, sans ses archives à part (comme la page du catalogue).
     func catalogSummary(_ folder: URL) -> [String: Any] {
-        var summary: [String: Any] = ["catalogBank": wire(SourceFolders.declaredBank(of: folder))]
+        let summary: [String: Any] = ["catalogBank": wire(SourceFolders.declaredBank(of: folder))]
         guard let url = SourceFolders.catalogURL(in: folder),
               let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
               let size = (attributes[.size] as? NSNumber)?.intValue else { return summary }
@@ -948,8 +1021,16 @@ final class DesktopBridge {
                 "connectingAccount": wire(settings.connections.activeAccount?.rawValue),
                 "authorizationURL": wire(settings.connections.authorizationURL?.absoluteString),
                 "diff": wire(settings.compactDiff), "backups": wire(settings.backups), "error": wire(settings.state.errorMessage),
-                "diagnostic": wire(app.session?.dashboard.snapshot?.llmHealth), "diagnosticError": wire(app.session?.dashboard.llmTestMessage),
-                "canTestModels": app.session != nil,
+                "diagnostic": wire(app.session?.dashboard.llmHealth?.operations.map { row in
+                    ["role": row.operation, "title": LLMHealthSummary.roleTitle(row.operation), "ok": row.ok,
+                     "status": LLMHealthSummary.statusLabel(row.status), "latencyMs": wire(row.latencyMs)] as [String: Any]
+                }),
+                "diagnosticAt": wire(app.session?.dashboard.llmTestedAt),
+                "diagnosticError": wire(app.session?.dashboard.llmTestMessage),
+                "canTestModels": app.session != nil && app.session?.dashboard.llmTestRefusal == nil,
+                "testModelsBlocked": wire(app.session == nil
+                    ? "Choisissez une banque pour tester les modèles : le test passe par une banque du serveur."
+                    : app.session?.dashboard.llmTestRefusal),
                 "service": ["installed": service.isInstalled, "running": service.job.running, "reachable": service.apiReachable,
                             "busy": service.isBusy || serviceTask != nil, "phase": serviceTask != nil && !service.isBusy ? "starting" : service.phase,
                             "error": wire(service.failure), "message": wire(service.message), "lastExitCode": wire(service.job.lastExitCode),
@@ -982,6 +1063,9 @@ final class DesktopBridge {
 
     func readerSnapshot(_ reader: DocumentReaderViewModel) -> [String: Any] {
         ["document": wire(reader.document), "text": reader.sourceText, "note": wire(reader.sourceNote),
+         "canReprocess": reader.canReprocess, "observations": wire(reader.createsObservations),
+         "scopeEditable": reader.serverIs110, "scope": wire(reader.currentScope),
+         "scopeMode": wire(reader.currentScopeMode),
          "facts": wire(reader.facts.value ?? []), "factsTotal": reader.factsTotal, "factsError": wire(reader.facts.errorMessage),
          "history": wire(reader.history), "error": wire(reader.state.errorMessage),
          "blocks": reader.blocks.map { block -> [String: Any] in

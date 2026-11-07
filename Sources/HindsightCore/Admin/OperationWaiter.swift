@@ -6,13 +6,13 @@ public enum OperationWaiter {
     public struct Failed: Error, CustomStringConvertible {
         public let status: OperationStatusResponse
         public var description: String {
-            "L'opération \(status.operationId) a échoué : \(status.errorMessage ?? status.status)"
+            "L'opération a échoué : \(status.errorMessage ?? status.status)"
         }
     }
 
     public struct TimedOut: Error, CustomStringConvertible {
         public let operationID: String
-        public var description: String { "L'opération \(operationID) n'est pas terminée ; suivez-la dans « Activité › Traitements »." }
+        public var description: String { "L'opération n'est pas encore terminée ; suivez-la dans « Activité › Traitements »." }
     }
 
     public static func wait(

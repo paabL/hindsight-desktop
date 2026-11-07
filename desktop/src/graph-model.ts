@@ -34,7 +34,7 @@ export const relationLabel = (kind: string) =>
     related: t('Relation', 'Relationship'),
     cooccurrence: t('Cooccurrence', 'Co-occurrence'),
     semantic: t('Similarité', 'Similarity'),
-    temporal: t('Chronologie', 'Timeline'),
+    temporal: t('Temporel', 'Temporal'),
     entity: t('Entité partagée', 'Shared entity'),
     causal: t('Causalité', 'Causality'),
     causes: t('Causalité', 'Causality'),

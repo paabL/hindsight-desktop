@@ -15,6 +15,10 @@ public final class DashboardViewModel {
     public private(set) var partialErrors: [String] = []
     public private(set) var isTestingLLM = false
     public private(set) var llmTestMessage: String?
+    /// Dernier test des modèles et son heure, gardés à part du tableau : un rechargement raté ne les efface pas,
+    /// et un test qui échoue ne laisse jamais l'ancien résultat passer pour le nouveau.
+    public private(set) var llmHealth: BankLlmHealthResponse?
+    public private(set) var llmTestedAt: Date?
     public var timeseriesPeriod = "30d"
 
     public init(client: HindsightClient, bank: String) {
@@ -43,16 +47,19 @@ public final class DashboardViewModel {
             async let docsReq = Self.capture { try await client.listDocuments(bank, limit: 5) }
             async let tagsReq = Self.capture { try await client.listTags(bank, limit: 15) }
             async let failuresReq = Self.capture {
-                try await client.listOperations(bank, status: "failed", limit: 5)
+                try await client.listOperations(bank, status: "failed", limit: 5, excludeParents: true)
             }
             async let configReq = Self.capture { try await client.bankConfig(bank) }
-            async let consolidatingReq = Self.capture {
-                try await client.listOperations(bank, status: "processing", type: "consolidation", limit: 1).total
-            }
-            async let queuedConsolidationReq = Self.capture {
-                try await client.listOperations(bank, status: "pending", type: "consolidation", limit: 1).total
-            }
+            async let activeConsolidationsReq = ConsolidationStatus.activeOperations(client, bank)
+            // Mêmes compteurs que Traitements (une ligne lue par statut), pas ceux mis en cache par `/stats`.
+            async let pendingReq = Self.capture { try await client.listOperations(bank, status: "pending", limit: 1, excludeParents: true).total }
+            async let processingReq = Self.capture { try await client.listOperations(bank, status: "processing", limit: 1, excludeParents: true).total }
             async let modeReq = try? client.isConsultationOnly()
+            // Totaux vivants (une ligne lue par requête) : les mêmes que Faits et Documents, quel que soit le cache de `/stats`.
+            async let factTotalReq = Self.capture { try await client.listMemories(bank, MemoryListQuery(limit: 1)).total }
+            async let worldReq = Self.capture { try await client.listMemories(bank, MemoryListQuery(type: "world", limit: 1)).total }
+            async let experienceReq = Self.capture { try await client.listMemories(bank, MemoryListQuery(type: "experience", limit: 1)).total }
+            async let observationReq = Self.capture { try await client.listMemories(bank, MemoryListQuery(type: "observation", limit: 1)).total }
 
             var snap = DashboardSnapshot(stats: try await statsReq)
             snap.consultationOnly = await modeReq ?? false
@@ -68,14 +75,27 @@ public final class DashboardViewModel {
             snap.version = take(await versionReq, "version")
             snap.entityTotal = take(await entitiesReq, "entités")?.total
             snap.timeseries = take(await seriesReq, "série temporelle")
-            snap.recentDocuments = take(await docsReq, "documents")?.items ?? []
+            let documents = take(await docsReq, "documents")
+            snap.recentDocuments = documents?.items ?? []
+            snap.liveDocumentTotal = documents?.total
+            snap.liveFactTotal = try? (await factTotalReq).get()
+            if let world = try? (await worldReq).get(), let experience = try? (await experienceReq).get(),
+               let observation = try? (await observationReq).get() {
+                snap.liveFactTypes = ["world": world, "experience": experience, "observation": observation]
+            }
             snap.topTags = take(await tagsReq, "tags")?.items ?? []
-            snap.recentFailures = take(await failuresReq, "échecs")?.operations ?? []
+            let failures = take(await failuresReq, "échecs")
+            snap.recentFailures = failures?.operations ?? []
             snap.config = take(await configReq, "configuration")
-            let consolidating = (try? (await consolidatingReq).get()) ?? 0
-            let queuedConsolidation = (try? (await queuedConsolidationReq).get()) ?? 0
-            snap.activeConsolidations = consolidating + queuedConsolidation
-            snap.llmHealth = state.value?.llmHealth  // conservé d'un test précédent
+            if let failed = failures?.total, let pending = try? (await pendingReq).get(),
+               let processing = try? (await processingReq).get() {
+                snap.operationCounts = ["pending": pending, "processing": processing, "failed": failed]
+            }
+            let active = await activeConsolidationsReq ?? ActiveConsolidations()
+            snap.activeConsolidations = active.running + active.queued
+            snap.consolidation = ConsolidationStatus(
+                stats: snap.stats, config: snap.config, serverObservations: snap.version?.features.observations, operations: active)
+            snap.llmHealth = llmHealth  // conservé d'un test précédent
             partialErrors = errors
             state = .loaded(snap)
             insights = DashboardInsights.compute(snap)
@@ -85,25 +105,49 @@ public final class DashboardViewModel {
         }
     }
 
+    static let llmTestDisabledMessage = "Le test des LLM est désactivé sur ce serveur. La relance des opérations reste disponible. Pour activer ce diagnostic, ajoutez HINDSIGHT_API_ENABLE_BANK_LLM_HEALTH=true au script de lancement, puis redémarrez le serveur."
+
+    /// Pourquoi le test des modèles ne peut pas partir ; nil quand il le peut (ou que l'état du serveur est inconnu :
+    /// le serveur répondra alors lui-même).
+    public var llmTestRefusal: String? {
+        guard let snap = state.value else { return nil }
+        if snap.consultationOnly { return "Le serveur est en mode consultation : le test des modèles est désactivé." }
+        if snap.version?.features.bankLlmHealth == false { return Self.llmTestDisabledMessage }
+        return nil
+    }
+
     /// Teste la connectivité LLM par rôle (retain / consolidation / reflect). Un petit appel LLM par rôle.
+    /// Ne revient jamais sans rien dire : un test qui ne part pas ou échoue laisse sa raison dans `llmTestMessage`.
     public func testLLM() async {
-        guard var snap = state.value, !isTestingLLM else { return }
-        guard !snap.consultationOnly else { return }
+        guard !isTestingLLM else { return }
+        if let refusal = llmTestRefusal {
+            llmTestMessage = refusal
+            return
+        }
         llmTestMessage = nil
-        snap.llmHealth = nil
-        state = .loaded(snap)
-        insights = DashboardInsights.compute(snap)
+        llmHealth = nil
+        llmTestedAt = nil
+        if var snap = state.value {
+            snap.llmHealth = nil
+            state = .loaded(snap)
+            insights = DashboardInsights.compute(snap)
+        }
         isTestingLLM = true
         defer { isTestingLLM = false }
         do {
-            snap.llmHealth = try await client.llmHealth(bank)
-            state = .loaded(snap)
-            insights = DashboardInsights.compute(snap)
+            let health = try await client.llmHealth(bank)
+            llmHealth = health
+            llmTestedAt = Date()
+            if var snap = state.value {
+                snap.llmHealth = health
+                state = .loaded(snap)
+                insights = DashboardInsights.compute(snap)
+            }
         } catch is CancellationError {
         } catch {
             if case HindsightError.http(404, let detail, _) = error,
                detail?.contains("Bank LLM health check is disabled") == true {
-                llmTestMessage = "Le test des LLM est désactivé sur ce serveur. La relance des opérations reste disponible. Pour activer ce diagnostic, ajoutez HINDSIGHT_API_ENABLE_BANK_LLM_HEALTH=true au script de lancement, puis redémarrez le serveur."
+                llmTestMessage = Self.llmTestDisabledMessage
             } else {
                 llmTestMessage = "Le test des LLM n'a pas abouti : \(error.userMessage)"
             }

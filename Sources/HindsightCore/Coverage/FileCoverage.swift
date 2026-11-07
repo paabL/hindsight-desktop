@@ -95,8 +95,12 @@ public struct CoverageEntry: Identifiable, Sendable {
     public var facts: Int { documents.reduce(0) { $0 + $1.memoryUnitCount } }
     /// Fichier découpé en plusieurs documents par un autre outil (par exemple `campaigns.md` par `sync.py`).
     public var isSplit: Bool { documents.count > 1 }
-    /// Envoyable depuis l'app : pas à jour, et ni découpé ni journal de campagnes (que `sync.py` envoie entrée par entrée).
-    public var canSend: Bool { session == nil && status != .current && !isSplit && FileCoverage.strategy(for: file.path) != "campaign" }
+    /// Envoyable depuis l'app : pas à jour, et ni découpé ni journal de campagnes (que `sync.py` envoie entrée par entrée),
+    /// ni PDF (c'est sa source TeX ou Markdown qu'on envoie) : les comptes « à envoyer » ne contiennent que ce qui part.
+    public var canSend: Bool {
+        session == nil && status != .current && !isSplit && FileCoverage.strategy(for: file.path) != "campaign"
+            && !FileCoverage.needsTextSource(file.path)
+    }
     public var lastSent: Date? { documents.compactMap { HSDate.parse($0.updatedAt) }.max() }
 }
 
@@ -133,6 +137,9 @@ public enum FileCoverage {
     ]
 
     static func ext(_ path: String) -> String { (path as NSString).pathExtension.lowercased() }
+
+    /// PDF : jamais envoyé depuis l'app, sa conversion perd trop ; on envoie sa source TeX ou Markdown.
+    public static func needsTextSource(_ path: String) -> Bool { ext(path) == "pdf" }
     public static func isDocument(_ path: String) -> Bool { extensions.contains(ext(path)) }
     /// Envoyé en texte : son empreinte se compare au `content_hash` du serveur.
     public static func isText(_ path: String) -> Bool { !convertedExtensions.contains(ext(path)) }

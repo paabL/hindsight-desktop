@@ -59,6 +59,9 @@ bank's facts. `#model-settings` opens Models without requiring a bank; `#models`
 The command palette lists every view and searches group and view names without
 requiring accents.
 
+A banner under the top bar says when the server only allows consultation (reads
+only, every write disabled) and when processing is paused, with where to resume it.
+
 The public interface defaults to English. French is an explicit choice in
 Settings → Application → Language. Documents, source text, and content returned
 by the server keep their original language.
@@ -88,7 +91,7 @@ being tracked. Sources never tracks, collects or uploads a folder on navigation.
 A catalog first displays its manifest with unchecked, locked entries, then compares
 the existing files with the bank in the background. Cached navigation keeps the
 list visible on return. Collection also runs in the background with progress and
-output available. **Refresh folder** collects; the top-bar refresh only rechecks
+output available. **Collect sources** collects; the top-bar refresh only rechecks
 the catalog and memory. A reader stays open when inclusion changes, and late text
 responses cannot replace the newly selected source.
 
@@ -110,8 +113,18 @@ selected bank. **More processing options** (⋯) applies the pause to all banks,
 freezes the server queue or clears pending operations. **Retry failed operations**
 and **Reconsolidate** appear only when there is something to retry.
 
+**Consolidation** has one state, computed by the engine and shown the same way
+in the Overview and Processing: turned off, running, *n* facts to consolidate, or
+up to date, with the date of the last consolidation that actually processed facts.
+**Consolidate** appears only when facts are waiting and no consolidation is
+running. A bank that does not create observations cannot consolidate (the server
+would accept the request and finish it without doing anything), so Processing
+says so and opens **Create observations** in Memory behavior instead. The
+Overview's queue counters are the live counts shown in Processing, not the
+server's cached statistics.
+
 Processing keeps its selected status during automatic refreshes and preserves
-opened pages. Large lists render in groups of 100 with **Load more**; this does
+opened pages. Large lists render in groups of 100 with **Show more**; this does
 not impose a total-operation limit. Global status counts are distinguished from
 counts based only on loaded rows. They use current operation-list totals rather
 than the server's cached bank statistics, so retrying failures updates the summary
@@ -121,12 +134,17 @@ explicitly falls back to the loaded operations.
 
 ## Models and accounts
 
-**Models** is the only place for model settings. At the top, its Answer, Remember,
-Pages and Search tabs show colored roles connected by arrows, including the return
+**Models** is the only place for model settings. At the top, its Answers,
+Extraction & consolidation, Knowledge and Search tabs show colored roles connected by arrows, including the return
 path when more evidence is needed. Each role explains itself on hover, focus or
 tap. Model menus and the decision switch prepare changes in a shared draft.
 Embeddings remain read-only in the diagram. Save and server restart are separate
 actions.
+
+**Test models** asks the server to call each LLM role and lists the result with
+the role names of this page: responds, key refused, unreachable or no provider
+configured. The button stays visible but is disabled, with the reason, when the
+server is in consultation mode or does not offer the check.
 
 Under the diagram, on the same page: account connections, then two collapsed
 sections. **All roles and advanced settings** has one card per role for providers,
@@ -142,6 +160,17 @@ local edits.
 otherwise shows how many values are specific to the bank. **Save (n)** counts the
 changes, **Discard changes** drops them, and **Reset to server settings** removes
 every value specific to the bank. The **Expert** tab keeps the raw JSON.
+
+When the server refuses per-bank settings (`HINDSIGHT_API_ENABLE_BANK_CONFIG_API=false`),
+Memory behavior and Memory bank show a read-only notice that names the variable
+to add, and disable saving, resetting and per-bank overrides instead of failing
+on click.
+
+**Memory bank** exports the bank (ZIP archive or JSON configuration template),
+imports an archive and applies a template. Before applying, a template is tried
+without writing, and the page says in one sentence what it would change. The
+danger zone shows how many facts and observations a deletion would remove and
+disables it when there is nothing to delete.
 
 Account indicators show green for an available session or signed-in account,
 red for disconnected/unavailable/failed, amber for checking or connecting, and
@@ -183,7 +212,9 @@ synonym in a new view.
 | mental models | Connaissances: page de connaissance, modèle mental | Knowledge: knowledge page, mental model |
 
 A fact is any memory unit counted by the server's `fact_count`, observations
-included.
+included. A link (« lien ») is an edge of the graph between two entities or facts.
+Counts always agree with their noun: « 0 fait », « 1 fait », « 2 faits » in French;
+"0 facts", "1 fact", "2 facts" in English. Never write « fait(s) » or "fact(s)".
 
 | Action | French | English | Effect |
 | --- | --- | --- | --- |
@@ -224,13 +255,13 @@ Consumers of the old interface must migrate. The internal `HindsightAPI` and
 ## Memory graph
 
 The graph has entity and fact modes. Groups use local weighted modularity
-optimization over loaded connections. Names favor readable, highly connected
+optimization over loaded links. Names favor readable, highly connected
 subjects over technical markers. Colors distinguish groups; node size represents
 degree in the filtered view. Mention count is a separate inspector metric.
 
 One-hop and two-hop neighborhoods, bridge nodes, and accent-insensitive search offer
 several ways into the graph. “Connect to…” finds an undirected path with the fewest
-connections under the active filters. No path in a sample does not establish that
+links under the active filters. No path in a sample does not establish that
 there is no relationship in the full bank. Facts link to their source documents.
 
 Layout is deterministic and stays stable during inspection. Labels avoid collisions
@@ -239,7 +270,7 @@ pointer; dragging the background pans the map; the keyboard pans, zooms, and fit
 the view. Server totals make sampling visible.
 
 Above 80 nodes, the initial view aggregates nodes into circles showing group sizes,
-with at most 70 connections between groups. Clicking a group opens its members;
+with at most 70 links between groups. Clicking a group opens its members;
 zooming expands individual nodes. Detailed rendering uses a budget of 120–1,800
-connections while retaining selected and path connections. Analysis still uses all
-retained connections.
+links while retaining selected and path links. Analysis still uses all
+retained links.

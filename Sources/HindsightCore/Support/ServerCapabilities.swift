@@ -1,8 +1,16 @@
 import Foundation
+import HindsightAPI
 
 /// Ce que permet la version de l'API du serveur (`/version`). Les écrans masquent ce qu'un serveur plus ancien
 /// n'accepterait pas, au lieu d'échouer à l'usage.
 public enum ServerCapabilities {
+    /// Le serveur accepte-t-il les réglages par banque (`PATCH`/`DELETE …/config`) ? Vrai par défaut et quand
+    /// l'information manque : seul `bank_config_api: false` les refuse.
+    public static func bankConfigWritable(_ features: FeaturesInfo?) -> Bool { features?.bankConfigApi != false }
+
+    public static let bankConfigDisabledMessage =
+        "Ce serveur n'accepte pas les réglages par banque. Pour les activer, ajoutez HINDSIGHT_API_ENABLE_BANK_CONFIG_API=true au script de lancement, puis redémarrez le serveur."
+
     /// `api_version` au moins égale à `minimum` (« 1.1.0 ») ; faux si inconnue.
     public static func atLeast(_ version: String?, _ minimum: String) -> Bool {
         guard let version else { return false }

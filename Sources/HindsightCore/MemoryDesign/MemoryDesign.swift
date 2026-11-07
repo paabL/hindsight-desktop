@@ -222,6 +222,37 @@ public struct MemoryDesign: Sendable, Hashable {
         return new.filter { before[$0.key] != $0.value }
     }
 
+    /// Nom de chaque réglage tel que la page « Comportement de la mémoire » l'affiche : la confirmation
+    /// d'enregistrement et les problèmes parlent comme la page, pas avec les clés du serveur.
+    public static let labels: [String: String] = [
+        "retain_mission": "Mission de mémorisation",
+        "retain_extraction_mode": "Style d'extraction",
+        "retain_custom_instructions": "Instructions d'extraction",
+        "retain_chunk_size": "Taille des segments en caractères",
+        "store_document_text": "Conserver le texte des documents",
+        "entities_allow_free_form": "Autoriser les entités libres",
+        "entity_labels": "Étiquettes d'entités",
+        "enable_observations": "Créer des observations",
+        "enable_auto_consolidation": "Consolider automatiquement",
+        "observations_mission": "Mission de consolidation",
+        "max_observations_per_scope": "Maximum d'observations par portée",
+        "default_observation_scopes": "Portée des observations par défaut",
+        "consolidation_use_decision_model": "Trier avec le modèle de décision",
+        "reflect_mission": "Mission de réponse",
+        "disposition_skepticism": "Esprit critique",
+        "disposition_literalism": "Interprétation littérale",
+        "disposition_empathy": "Empathie",
+        "reflect_use_decision_model": "Réponses : trier avec le modèle de décision",
+        "mental_model_refresh_use_decision_model": "Pages de connaissance : régénérer avec le modèle de décision",
+        "mental_model_delta_use_decision_model": "Pages de connaissance : ignorer les faits sans effet",
+        "enable_text_search": "Recherche textuelle",
+        "enable_temporal_retrieval": "Recherche temporelle",
+        "enable_graph_retrieval": "Recherche par relations",
+        "enable_reranking": "Réordonner les résultats",
+        "recall_decision_model_prune": "Écarter les faits inutiles",
+        "recall_decision_model_dedup": "Retirer les doublons",
+    ]
+
     /// Clés de configuration que cette structure relit et enregistre ; une autre clé y serait ignorée.
     public static let editableKeys: Set<String> = Set(MemoryDesign().values()?.keys.map { $0 } ?? [])
 
@@ -230,11 +261,11 @@ public struct MemoryDesign: Sendable, Hashable {
         var p: [String] = []
         if values() == nil { p.append("Un réglage avancé n'est pas du JSON valide.") }
         if extractionMode == "custom" && customInstructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            p.append("Le mode « custom » exige des instructions d'extraction.")
+            p.append("Le style d'extraction « Personnalisé » demande des instructions d'extraction.")
         }
-        if chunkSize < 100 { p.append("Taille des morceaux trop petite (au moins 100 caractères).") }
-        for (name, v) in [("scepticisme", skepticism), ("littéralisme", literalism), ("empathie", empathy)] where !(1...5).contains(v) {
-            p.append("Disposition « \(name) » : 1 à 5.")
+        if chunkSize < 100 { p.append("Taille des segments trop petite (au moins 100 caractères).") }
+        for (name, v) in [("Esprit critique", skepticism), ("Interprétation littérale", literalism), ("Empathie", empathy)] where !(1...5).contains(v) {
+            p.append("\(name) : choisissez une valeur de 1 à 5.")
         }
         var seen = Set<String>()
         for g in entityLabels {

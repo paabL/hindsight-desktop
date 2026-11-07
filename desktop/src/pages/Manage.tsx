@@ -1,4 +1,5 @@
 import { useI18n } from '../i18n';
+import { translate as tr } from '../i18n-core';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowDownToLine,
@@ -43,6 +44,8 @@ import {
   number,
 } from '../ui';
 import { saveExport } from '../transport';
+import { takeMemoryTab } from '../memory-tab';
+import { OBSERVATION_SCOPES } from '../observation-scopes';
 import {
   chooseProvider,
   modelOptions,
@@ -84,7 +87,8 @@ const memoryFields = {
 
 export function MemoryDesign({ data, run, busy, notify }: PageProps) {
   const { t } = useI18n();
-  const [tab, setTab] = useState('retain');
+  // Un autre écran peut demander un onglet précis (Traitements → « Créer des observations »).
+  const [tab, setTab] = useState(() => takeMemoryTab('retain'));
   const [draft, setDraft] = useState<Row>({});
   const [sample, setSample] = useState('');
   const [advanced, setAdvanced] = useState('');
@@ -134,6 +138,9 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
   const overridden = new Set<string>(
     Array.isArray(data.overridden) ? data.overridden : Object.keys(data.config?.overrides || {}),
   );
+  // La pause a coupé la consolidation automatique : ce n'est pas un réglage de la banque.
+  const pauseCut = !!data.pauseCutAutoConsolidation;
+  if (pauseCut) overridden.delete('enable_auto_consolidation');
   const customized = (key: string) =>
     overridden.has(memoryFields[key as keyof typeof memoryFields]);
   const changeCount = pending.size + (advanced.trim() ? 1 : 0);
@@ -176,8 +183,8 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
       />
     </label>
   );
-  const toggle = (key: string, title: string, help: string) => (
-    <label className="setting-toggle">
+  const toggle = (key: string, title: string, help: string, disabled = false) => (
+    <label className={`setting-toggle ${disabled ? 'is-disabled' : ''}`}>
       <div>
         <strong>
           {title}
@@ -189,6 +196,7 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
         type="checkbox"
         role="switch"
         checked={draft[key] ?? false}
+        disabled={disabled}
         onChange={(e) => set(key, e.target.checked)}
       />
     </label>
@@ -241,7 +249,7 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
             <Button
               kind="primary"
               icon={Save}
-              disabled={busy || !changeCount}
+              disabled={busy || !changeCount || data.configWritable === false}
               onClick={() => action('memory.save')}
             >
               {changeCount
@@ -252,6 +260,7 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
         }
       />
       <ErrorNotice message={data.error} />
+      {data.configWritable === false && <ReadOnlyConfigNotice />}
       <Tabs
         value={tab}
         onChange={setTab}
@@ -352,17 +361,29 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
                 'enableObservations',
                 t('Créer des observations', 'Create observations'),
                 t(
-                  'Des connaissances plus générales émergent des faits retenus.',
-                  'Broader knowledge emerges from stored facts.',
+                  'Les faits retenus sont consolidés en observations, des synthèses plus générales. Désactivé, aucune consolidation n’a lieu.',
+                  'Stored facts are consolidated into observations, broader summaries. When off, no consolidation runs.',
                 ),
               )}
+              {/* Sans observations, la consolidation automatique n'aurait rien à faire. */}
               {toggle(
                 'enableAutoConsolidation',
                 t('Consolider automatiquement', 'Consolidate automatically'),
-                t(
-                  'Le serveur peut lancer de nouveaux traitements après les envois.',
-                  'The server can start new processing after documents are sent.',
-                ),
+                pauseCut
+                  ? t(
+                      'Coupée par la pause de cette banque : elle retrouvera son réglage à la reprise.',
+                      'Turned off by this bank’s pause: it returns to its setting when processing resumes.',
+                    )
+                  : draft.enableObservations === false
+                    ? t(
+                        'Sans effet tant que « Créer des observations » est désactivé.',
+                        'Has no effect while “Create observations” is off.',
+                      )
+                    : t(
+                        'Après chaque extraction, le serveur consolide les nouveaux faits (appels LLM). Désactivé, lancez la consolidation depuis Activité › Traitements.',
+                        'After each extraction, the server consolidates new facts (LLM calls). When off, run consolidation from Activity › Processing.',
+                      ),
+                pauseCut || draft.enableObservations === false,
               )}
               {textField(
                 'observationsMission',
@@ -399,21 +420,32 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
                   </label>
                   <label className="setting-compact">
                     <span className="setting-label">
-                      {t('Portée par défaut', 'Default scope')}
+                      {t('Portée des observations par défaut', 'Default observation scope')}
                       {mark('defaultObservationScopes')}
                     </span>
                     <select
                       value={draft.defaultObservationScopes || ''}
                       onChange={(e) => set('defaultObservationScopes', e.target.value)}
                     >
-                      <option value="">{t('Défaut du serveur', 'Server default')}</option>
-                      <option value="shared">{t('Partagée', 'Shared')}</option>
-                      <option value="combined">{t('Combinée', 'Combined')}</option>
+                      <option value="">
+                        {t('Défaut du serveur (combinée)', 'Server default (combined)')}
+                      </option>
+                      {OBSERVATION_SCOPES.map((scope) => (
+                        <option key={scope.value} value={scope.value}>
+                          {t(scope.fr, scope.en)}
+                        </option>
+                      ))}
                     </select>
+                    <small>
+                      {t(
+                        'Pour les documents envoyés sans portée.',
+                        'For documents sent without a scope.',
+                      )}
+                    </small>
                   </label>
                   {toggle(
                     'consolidationUseDecisionModel',
-                    t('Trier avec le modèle de décision', 'Filter with the decision model'),
+                    t('Trier avec le modèle de décision', 'Triage with the decision model'),
                     t(
                       'Les redites et le bavardage sont réglés sans appel LLM, si le serveur a un modèle de décision.',
                       'Repetition and chatter are handled without an LLM call if the server has a decision model.',
@@ -627,7 +659,7 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
         <Button
           kind="ghost"
           icon={RotateCcw}
-          disabled={busy || !customCount}
+          disabled={busy || !customCount || data.configWritable === false}
           onClick={() => void run('memory.reset')}
         >
           {t('Revenir aux réglages du serveur', 'Reset to server settings')}
@@ -846,8 +878,8 @@ export function Admin({
             <CardHeader
               title={t('Sauvegarder et transférer', 'Back up and transfer')}
               subtitle={t(
-                'Conservez une archive ou réutilisez la structure dans une autre banque.',
-                'Keep an archive or reuse the structure in another bank.',
+                'Conservez une archive, ou réutilisez les réglages de la banque ailleurs grâce à son gabarit de configuration.',
+                'Keep an archive, or reuse the bank’s settings elsewhere with its configuration template.',
               )}
             />
             <div className="transfer-grid">
@@ -858,13 +890,13 @@ export function Admin({
               </button>
               <button onClick={() => void exportFile('admin.template')}>
                 <BookOpen size={24} />
-                <strong>{t('Exporter la structure', 'Export structure')}</strong>
-                <span>{t('Modèle de configuration JSON', 'JSON configuration template')}</span>
+                <strong>{t('Exporter le gabarit', 'Export template')}</strong>
+                <span>{t('Gabarit de configuration JSON', 'JSON configuration template')}</span>
               </button>
               <label className="file-upload">
                 <Upload size={24} />
                 <strong>{t('Importer une archive', 'Import archive')}</strong>
-                <span>{t('Archive ZIP ou structure JSON', 'ZIP archive or JSON structure')}</span>
+                <span>{t('Archive ZIP ou gabarit JSON', 'ZIP archive or JSON template')}</span>
                 <input
                   type="file"
                   accept=".zip,.json"
@@ -874,10 +906,14 @@ export function Admin({
             </div>
             {data.templateDryRun && (
               <div className="form-stack">
-                <pre className="json-view">{JSON.stringify(data.templateDryRun, null, 2)}</pre>
+                <p className="form-hint">{templateEffect(data.templateDryRun)}</p>
+                <details>
+                  <summary>{t('Détail', 'Details')}</summary>
+                  <pre className="json-view">{JSON.stringify(data.templateDryRun, null, 2)}</pre>
+                </details>
                 <Button icon={Check} onClick={() => void run('admin.template.apply')}>
                   {' '}
-                  {t('Appliquer ce modèle', 'Apply this template')}
+                  {t('Appliquer ce gabarit', 'Apply this template')}
                 </Button>
               </div>
             )}
@@ -911,18 +947,21 @@ export function Admin({
                   />
                 </label>
               </div>
+              {data.configWritable === false && <ReadOnlyConfigNotice />}
               <Button
                 icon={Save}
-                disabled={busy || !key.trim()}
+                disabled={busy || !key.trim() || data.configWritable === false}
                 onClick={() => void run('admin.override', { key, value })}
               >
                 {' '}
                 {t('Préparer la modification', 'Prepare change')}
               </Button>
-              <Button kind="ghost" onClick={() => void run('admin.reset')}>
-                {' '}
-                {t('Réinitialiser les surcharges', 'Reset overrides')}
-              </Button>
+              <small>
+                {t(
+                  'Pour supprimer tous les réglages propres à la banque : Comportement de la mémoire › Revenir aux réglages du serveur.',
+                  'To remove every bank-specific setting: Memory behavior › Reset to server settings.',
+                )}
+              </small>
             </div>
           </details>
           <details className="card danger-zone">
@@ -930,22 +969,41 @@ export function Admin({
             <p>
               {' '}
               {t(
-                'Ces actions retirent des connaissances. Une confirmation séparée précisera ce qui sera supprimé.',
-                'These actions remove knowledge. A separate confirmation will explain what will be deleted.',
+                'Ces actions effacent des faits, des observations ou toute la banque. Une confirmation séparée précisera ce qui sera supprimé.',
+                'These actions erase facts, observations or the whole memory bank. A separate confirmation will explain what will be deleted.',
               )}
             </p>
             <div className="action-row">
-              <Button kind="danger" onClick={() => void run('admin.clearObservations')}>
+              {/* Rien à effacer : le bouton reste visible mais inactif, avec le compte qui l'explique. */}
+              <Button
+                kind="danger"
+                disabled={busy || data.observationTotal === 0}
+                onClick={() => void run('admin.clearObservations')}
+              >
                 {' '}
-                {t('Effacer les observations', 'Clear observations')}
+                {typeof data.observationTotal === 'number'
+                  ? t(
+                      `Effacer les observations (${number(data.observationTotal)})`,
+                      `Clear observations (${number(data.observationTotal)})`,
+                    )
+                  : t('Effacer les observations', 'Clear observations')}
               </Button>
-              <Button kind="danger" onClick={() => void run('admin.deleteMemories')}>
+              <Button
+                kind="danger"
+                disabled={busy || data.factTotal === 0}
+                onClick={() => void run('admin.deleteMemories')}
+              >
                 {' '}
-                {t('Effacer tous les faits', 'Clear all facts')}
+                {typeof data.factTotal === 'number'
+                  ? t(
+                      `Effacer tous les faits (${number(data.factTotal)})`,
+                      `Clear all facts (${number(data.factTotal)})`,
+                    )
+                  : t('Effacer tous les faits', 'Clear all facts')}
               </Button>
               <Button kind="danger" icon={Trash2} onClick={() => void run('admin.deleteBank')}>
                 {' '}
-                {t('Supprimer la banque', 'Delete bank')}
+                {t('Supprimer la banque', 'Delete memory bank')}
               </Button>
             </div>
           </details>
@@ -1093,7 +1151,7 @@ export function Admin({
             {['create', 'directive'].includes(modal) && (
               <label>
                 {modal === 'create'
-                  ? t('Mission (facultative)', 'Mission (optional)')
+                  ? t('Mission de réponse (facultative)', 'Answer mission (optional)')
                   : t('Consigne', 'Instruction')}
                 <textarea
                   required={modal === 'directive'}
@@ -1184,8 +1242,8 @@ function HindsightModels({ models, run, busy }: Pick<PageProps, 'run' | 'busy'> 
             <p>
               {' '}
               {t(
-                'Tranche les choix de la consolidation, de reflect et des pages de connaissance sans appel LLM : moins de jetons et moins d’attente.',
-                'Makes consolidation, reflect, and knowledge page decisions without LLM calls: fewer tokens and less waiting.',
+                'Tranche les choix de la consolidation, des Réponses et des pages de connaissance sans appel LLM : moins de jetons et moins d’attente.',
+                'Makes consolidation, Answers and knowledge page decisions without LLM calls: fewer tokens and less waiting.',
               )}
               {models.decision === 'other' &&
                 t(
@@ -1335,6 +1393,16 @@ export function ServerSettings({
   const [scriptPath, setScriptPath] = useState('');
   const service = data.service || {};
   const serviceBusy = busy || service.busy;
+  // État unique du moteur (prêt, arrêté, démarrage, arrêt, échec) ; à défaut, déduit des champs.
+  const phase: string =
+    service.phase ||
+    (service.busy
+      ? 'starting'
+      : service.error
+        ? 'failed'
+        : service.reachable
+          ? 'ready'
+          : 'stopped');
   return (
     <>
       <PageHeader
@@ -1353,34 +1421,50 @@ export function ServerSettings({
           </span>
           <div>
             <h2>{t('Service Hindsight', 'Hindsight service')}</h2>
+            {/* Texte et badge lisent le même état du moteur : jamais « fonctionne » à côté de « Hors connexion ». */}
             <p>
-              {service.busy
-                ? t('Démarrage ou arrêt en cours…', 'Starting or stopping…')
-                : service.error
-                  ? t('Le démarrage a échoué', 'Startup failed')
-                  : service.running
-                    ? t('Le serveur fonctionne sur ce Mac', 'The server is running on this Mac')
-                    : service.reachable
-                      ? t('Le serveur est accessible', 'The server is reachable')
-                      : service.installed
-                        ? t(
-                            'Le service est installé et arrêté',
-                            'The service is installed and stopped',
+              {phase === 'starting'
+                ? t('Démarrage en cours…', 'Starting…')
+                : phase === 'stopping'
+                  ? t('Arrêt en cours…', 'Stopping…')
+                  : phase === 'failed'
+                    ? t(
+                        'La dernière action sur le service a échoué',
+                        'The last service action failed',
+                      )
+                    : phase === 'ready'
+                      ? service.running
+                        ? t('Le serveur fonctionne sur ce Mac', 'The server is running on this Mac')
+                        : t(
+                            'Le serveur répond, lancé hors du service de l’app',
+                            'The server responds, started outside the app’s service',
                           )
-                        : t('Le service n’est pas installé', 'The service is not installed')}
+                      : service.running
+                        ? t(
+                            'Le service tourne mais le serveur ne répond pas encore',
+                            'The service is running but the server does not respond yet',
+                          )
+                        : service.installed
+                          ? t(
+                              'Le service est installé et arrêté',
+                              'The service is installed and stopped',
+                            )
+                          : t('Le service n’est pas installé', 'The service is not installed')}
             </p>
           </div>
-          <Badge tone={service.error ? 'rose' : service.reachable ? 'sage' : 'amber'}>
+          <Badge tone={phase === 'failed' ? 'red' : phase === 'ready' ? 'sage' : 'amber'}>
             <span
-              className={`status-dot ${service.error ? 'red' : service.reachable ? 'green' : 'warning'}`}
+              className={`status-dot ${phase === 'failed' ? 'red' : phase === 'ready' ? 'green' : 'warning'}`}
             />
-            {service.busy
-              ? t('En cours…', 'Working…')
-              : service.error
-                ? t('Échec', 'Failed')
-                : service.reachable
-                  ? t('Accessible', 'Reachable')
-                  : t('Hors connexion', 'Offline')}
+            {phase === 'starting'
+              ? t('Démarrage…', 'Starting…')
+              : phase === 'stopping'
+                ? t('Arrêt…', 'Stopping…')
+                : phase === 'failed'
+                  ? t('Échec', 'Failed')
+                  : phase === 'ready'
+                    ? t('Accessible', 'Reachable')
+                    : t('Hors connexion', 'Offline')}
           </Badge>
         </div>
         <div className="service-actions">
@@ -1673,14 +1757,7 @@ export function ModelManagement({
                 'Roles inherit global values until you customize them.',
               )}
             </p>
-            {data.canTestModels === false && (
-              <p className="form-hint">
-                {t(
-                  'Choisissez une banque pour tester les modèles : le test passe par une banque du serveur.',
-                  'Choose a memory bank to test models: the test runs through a server memory bank.',
-                )}
-              </p>
-            )}
+            {data.testModelsBlocked && <p className="form-hint">{data.testModelsBlocked}</p>}
           </div>
           <Button
             disabled={busy || data.canTestModels === false}
@@ -1691,6 +1768,35 @@ export function ModelManagement({
             {t('Tester les modèles', 'Test models')}
           </Button>
         </div>
+        {Array.isArray(data.diagnostic) && (
+          <div className="model-test" data-model-test>
+            <p className="model-test-title">
+              <strong>{t('Dernier test des modèles', 'Last model test')}</strong>
+              {data.diagnosticAt && <span>{date(data.diagnosticAt, true)}</span>}
+            </p>
+            {data.diagnostic.length ? (
+              <ul>
+                {data.diagnostic.map((row: Row) => (
+                  <li key={row.role}>
+                    <Badge tone={row.ok ? 'sage' : 'red'}>{row.status}</Badge>
+                    <span>{row.title}</span>
+                    {typeof row.latencyMs === 'number' && (
+                      <small>{number(Math.round(row.latencyMs))} ms</small>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="form-hint">
+                {t(
+                  'Le serveur n’a renvoyé aucun résultat pour le test des modèles.',
+                  'The server returned no result for the model test.',
+                )}
+              </p>
+            )}
+          </div>
+        )}
+        <ErrorNotice message={data.diagnosticError} />
         <div className="server-roles">
           {(data.roles || []).map((item: Row) => (
             <button
@@ -1750,13 +1856,6 @@ export function ModelManagement({
           </pre>
         </details>
       )}
-      {data.diagnostic && (
-        <details className="card advanced-details">
-          <summary>{t('Résultat du test des modèles', 'Model test result')}</summary>
-          <pre className="json-view">{JSON.stringify(data.diagnostic, null, 2)}</pre>
-        </details>
-      )}
-      <ErrorNotice message={data.diagnosticError} />
       {data.warnings?.map((warning: string) => (
         <div className="notice" key={warning}>
           {warning}
@@ -1905,7 +2004,7 @@ export function ModelManagement({
                               >
                                 <option value="">{t('Défaut du serveur', 'Server default')}</option>
                                 <option value="true">{t('Activé', 'Enabled')}</option>
-                                <option value="false">{t('Désactivé', 'Disabled')}</option>
+                                <option value="false">{t('Désactivé', 'Off')}</option>
                                 {field.value && !['true', 'false'].includes(field.value) && (
                                   <option value={field.value}>{field.value}</option>
                                 )}
@@ -2034,4 +2133,65 @@ export function ModelManagement({
       )}
     </>
   );
+}
+
+/** Serveur qui refuse les réglages par banque (`bank_config_api`) : la page se lit, rien ne s’enregistre. */
+function ReadOnlyConfigNotice() {
+  const { t } = useI18n();
+  return (
+    <div className="notice">
+      {t(
+        'Ce serveur n’accepte pas les réglages par banque : cette page est en lecture seule. Pour les activer, ajoutez HINDSIGHT_API_ENABLE_BANK_CONFIG_API=true au script de lancement, puis redémarrez le serveur.',
+        'This server does not accept per-bank settings, so this page is read-only. To enable them, add HINDSIGHT_API_ENABLE_BANK_CONFIG_API=true to the launch script, then restart the server.',
+      )}
+    </div>
+  );
+}
+
+/** Effet prévu d’un gabarit (essai sans écriture), dit en une phrase plutôt qu’en JSON. */
+function templateEffect(dry: Row) {
+  const names = (value: unknown) => (Array.isArray(value) ? value.length : 0);
+  const parts: string[] = [];
+  if (dry.config_applied) parts.push(tr('la configuration de la banque', 'the bank configuration'));
+  const created = names(dry.mental_models_created);
+  const updated = names(dry.mental_models_updated);
+  const directivesCreated = names(dry.directives_created);
+  const directivesUpdated = names(dry.directives_updated);
+  if (created)
+    parts.push(
+      tr(
+        `${created} modèle${created > 1 ? 's' : ''} ${created > 1 ? 'mentaux créés' : 'mental créé'}`,
+        `${created} mental model${created > 1 ? 's' : ''} created`,
+      ),
+    );
+  if (updated)
+    parts.push(
+      tr(
+        `${updated} modèle${updated > 1 ? 's' : ''} ${updated > 1 ? 'mentaux' : 'mental'} mis à jour`,
+        `${updated} mental model${updated > 1 ? 's' : ''} updated`,
+      ),
+    );
+  if (directivesCreated)
+    parts.push(
+      tr(
+        `${directivesCreated} directive${directivesCreated > 1 ? 's créées' : ' créée'}`,
+        `${directivesCreated} directive${directivesCreated > 1 ? 's' : ''} created`,
+      ),
+    );
+  if (directivesUpdated)
+    parts.push(
+      tr(
+        `${directivesUpdated} directive${directivesUpdated > 1 ? 's mises' : ' mise'} à jour`,
+        `${directivesUpdated} directive${directivesUpdated > 1 ? 's' : ''} updated`,
+      ),
+    );
+  return parts.length
+    ? tr(
+        `Ce gabarit modifiera : ${parts.join(', ')}.`,
+        `This template will change: ${parts.join(', ')}.`,
+      )
+    : tr(
+        'Ce gabarit ne change rien à cette banque.',
+        'This template changes nothing in this memory bank.',
+      );
 }

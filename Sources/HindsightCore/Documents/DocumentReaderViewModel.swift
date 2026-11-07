@@ -18,6 +18,8 @@ public final class DocumentReaderViewModel: Identifiable {
     /// Refus pendant une pause de la banque.
     @ObservationIgnored public var pauseGate: PauseGate?
     public private(set) var document: DocumentResponse?
+    /// « Créer des observations » pour cette banque, lu à l'ouverture (nil si le serveur ne le dit pas).
+    public private(set) var createsObservations: Bool?
     /// Serveur 1.1.0 : historique du document et portée modifiable (réglé à la création).
     public var serverIs110 = false
     /// Ce qui a changé le document et ses faits, du plus récent au plus ancien (nil : non chargé ou serveur 1.0.0).
@@ -82,10 +84,13 @@ public final class DocumentReaderViewModel: Identifiable {
             try Task.checkCancellation()
             async let doc = client.document(bank, id: documentID)
             async let chunkList = Self.loadAllChunks(client: client, bank: bank, documentID: documentID)
+            async let config = try? client.bankConfig(bank)
             let (d, cs) = try await (doc, chunkList)
+            let bankConfig = await config
             try Task.checkCancellation()
             guard loadID == id else { return }
             document = d
+            createsObservations = bankConfig.map { ConsolidationStatus.createsObservations($0, serverObservations: nil) }
             chunks = cs.sorted { $0.chunkIndex < $1.chunkIndex }
             attachments = DocumentTextParser.merge([d.attachments] + chunks.map { $0.attachments })
             buildSource()
@@ -143,7 +148,7 @@ public final class DocumentReaderViewModel: Identifiable {
             sourceNote =
                 ordered.isEmpty
                 ? "Aucun texte disponible pour ce document."
-                : "Texte reconstitué à partir des chunks (le texte original n'est pas stocké sur le serveur)."
+                : "Texte reconstitué à partir des segments : le texte original n'est pas stocké sur le serveur, ce document ne peut donc pas être retraité."
             chunkRanges = ranges
         }
         blocks = DocumentTextParser.parse(text: sourceText, attachments: attachments)
@@ -260,14 +265,17 @@ public final class DocumentReaderViewModel: Identifiable {
         guard clean != current else { return }
         let removed = current.filter { !clean.contains($0) }, added = clean.filter { !current.contains($0) }
         confirmation = ConfirmationRequest(
-            title: "Modifier les tags du document ?",
-            message: "Ajoutés : \(added.isEmpty ? "—" : added.joined(separator: ", "))\nRetirés : \(removed.isEmpty ? "—" : removed.joined(separator: ", "))\n\nLes tags sont propagés à tous ses faits ; les observations concernées sont invalidées et reconsolidées sous les nouveaux tags (appel LLM).",
-            confirmTitle: "Appliquer", severity: removed.isEmpty ? .normal : .destructive
+            title: "Enregistrer les étiquettes du document ?",
+            message: "Ajoutées : \(added.isEmpty ? "—" : added.joined(separator: ", "))\nRetirées : \(removed.isEmpty ? "—" : removed.joined(separator: ", "))\n\n"
+                + (createsObservations == false
+                    ? "Les étiquettes sont propagées à tous ses faits. Cette banque ne crée pas d'observations : rien n'est reconsolidé."
+                    : "Les étiquettes sont propagées à tous ses faits ; les observations concernées sont invalidées et reconsolidées sous les nouvelles étiquettes (appel LLM)."),
+            confirmTitle: "Enregistrer les étiquettes", severity: removed.isEmpty ? .normal : .destructive
         ) { [weak self] in
             guard let self else { return }
             do {
                 _ = try await self.client.updateDocumentTags(self.bank, id: self.documentID, tags: clean)
-                self.actionMessage = "Tags mis à jour."
+                self.actionMessage = "Étiquettes mises à jour."
                 await self.refreshAfterChange()
             } catch {
                 self.actionMessage = "Échec : \(error.userMessage)"
@@ -275,18 +283,39 @@ public final class DocumentReaderViewModel: Identifiable {
         }
     }
 
-    /// Portées proposées dans le lecteur (les listes explicites de tags restent possibles par l'API).
+    /// Portée actuelle du document, en clair (nil si le serveur n'en dit rien).
+    public var currentScope: String? {
+        ObservationScope.label(document?.observationScopes, retainParams: document?.retainParams)
+    }
+
+    /// Portée actuelle quand c'est un mode nommé (« shared »…) ; nil pour une liste d'étiquettes ou si inconnue.
+    public var currentScopeMode: String? {
+        if case .string(let s)? = document?.observationScopes ?? document?.retainParams?["observation_scopes"] { return s }
+        return nil
+    }
+
+    /// Portées proposées dans le lecteur (les listes explicites d'étiquettes restent possibles par l'API).
     public static let scopeModes = ["shared", "combined", "per_tag", "all_combinations"]
 
     /// Serveur 1.1.0 : change la portée des observations du document sans réextraire ses faits.
     public func requestUpdateScope(_ mode: String) {
-        guard serverIs110, case let current = ObservationScope.label(document?.observationScopes, retainParams: document?.retainParams),
-            current != ObservationScope.label(.string(mode))
-        else { return }
+        guard serverIs110 else {
+            actionMessage = "Changer la portée d'un document demande un serveur Hindsight 1.1.0 ou plus récent."
+            return
+        }
+        guard createsObservations != false else {
+            actionMessage = "Cette banque ne crée pas d'observations : changer la portée n'aurait aucun effet."
+            return
+        }
+        let current = currentScope
+        guard current != ObservationScope.label(.string(mode)) else {
+            actionMessage = "Ce document a déjà cette portée."
+            return
+        }
         let target = ObservationScope.label(.string(mode)) ?? mode
         confirmation = ConfirmationRequest(
             title: "Passer la portée en « \(target) » ?",
-            message: "Actuelle : \(current ?? "inconnue"). Les faits ne sont pas réextraits. Ceux dont le compartiment d'observations change perdent leurs observations et repartent en consolidation (appel LLM), avec les faits d'autres documents qui les partageaient. Un changement sans effet sur les compartiments ne relance rien.",
+            message: "Actuelle : \(current ?? "inconnue"). Les faits ne sont pas réextraits. Ceux dont les observations changent de portée les perdent et repartent en consolidation (appel LLM), avec les faits d'autres documents qui les partageaient. Un changement qui laisse chaque fait dans les mêmes observations ne relance rien.",
             confirmTitle: "Changer la portée", severity: .destructive
         ) { [weak self] in
             guard let self else { return }
@@ -300,16 +329,26 @@ public final class DocumentReaderViewModel: Identifiable {
         }
     }
 
-    public func requestReprocess() {
+    /// Le serveur réextrait le texte original stocké : sans lui, rien à retraiter.
+    public var canReprocess: Bool { !(document?.originalText ?? "").isEmpty }
+
+    public func requestReprocess() async {
         if let reason = pauseGate?(bank) {
             actionMessage = reason
             return
         }
+        guard canReprocess else {
+            actionMessage = "Ce document ne peut pas être retraité : son texte original n'est pas stocké sur le serveur."
+            return
+        }
+        // La consolidation n'entre dans l'estimation que si la banque consolide après l'extraction.
+        let consolidates = ConsolidationStatus.consolidatesAfterExtraction(try? await client.bankConfig(bank), serverObservations: nil)
+        let facts = document?.memoryUnitCount ?? 0
         confirmation = ConfirmationRequest(
             title: "Retraiter ce document ?",
-            message: "Ses \(document?.memoryUnitCount ?? 0) fait(s) seront supprimés puis ré-extraits avec la configuration actuelle du serveur (appels LLM et VLM). Les corrections manuelles faites sur ces faits seront perdues."
+            message: "\(facts == 1 ? "Son fait sera supprimé puis ré-extrait" : "Ses \(Format.number(facts)) faits seront supprimés puis ré-extraits") avec la configuration actuelle du serveur (appels LLM et VLM). Les corrections manuelles faites sur ces faits seront perdues."
                 + (document.flatMap { d in
-                    estimate?(.retain(characters: d.originalText?.count ?? 3000, images: d.attachments?.count ?? 0, consolidation: true))
+                    estimate?(.retain(characters: d.originalText?.count ?? 0, images: d.attachments?.count ?? 0, consolidation: consolidates))
                 }.map { "\n\n" + $0.summary } ?? ""),
             confirmTitle: "Retraiter"
         ) { [weak self] in
@@ -321,7 +360,8 @@ public final class DocumentReaderViewModel: Identifiable {
             }
             do {
                 let r = try await self.client.reprocessDocument(self.bank, id: self.documentID)
-                self.actionMessage = "Retraitement lancé (opération \(r.operationId)). Suivez-le dans « Activité › Traitements »."
+                _ = r
+                self.actionMessage = "Retraitement en file : suivez-le dans « Activité › Traitements »."
                 self.onReprocessed?()
                 // La soumission est asynchrone : relire l'état actuel ne prétend pas que l'opération
                 // est terminée, mais évite de conserver indéfiniment les faits de l'ancien snapshot.
@@ -335,13 +375,19 @@ public final class DocumentReaderViewModel: Identifiable {
     public func requestDelete() {
         confirmation = ConfirmationRequest(
             title: "Supprimer définitivement ce document ?",
-            message: "Le document, ses chunks et ses \(document?.memoryUnitCount ?? 0) fait(s) sont supprimés. Irréversible : exportez d'abord si besoin.",
+            message: {
+                let n = document?.memoryUnitCount ?? 0
+                let what = n == 0 ? "Le document et ses segments sont supprimés"
+                    : n == 1 ? "Le document, ses segments et son fait sont supprimés"
+                    : "Le document, ses segments et ses \(Format.number(n)) faits sont supprimés"
+                return what + ". Irréversible : exportez d'abord si besoin."
+            }(),
             confirmTitle: "Supprimer", requiredText: documentID
         ) { [weak self] in
             guard let self else { return }
             do {
                 let r = try await self.client.deleteDocument(self.bank, id: self.documentID)
-                self.actionMessage = "Supprimé (\(r.memoryUnitsDeleted) fait(s))."
+                self.actionMessage = "Document supprimé (\(Format.count(r.memoryUnitsDeleted, "fait")))."
                 self.onDeleted?()
                 await self.refreshListAfterChange?()
             } catch {

@@ -24,7 +24,7 @@ async function nativePage(language = 'en', demo = false) {
         bank: 'example',
         banks: [{ bank_id: 'example', name: 'Example bank', fact_count: 0 }],
         serverURL: 'http://127.0.0.1:8888',
-        paused: [],
+        pause: { all: false, banks: [] },
       },
       section: 'settings',
       data: {},

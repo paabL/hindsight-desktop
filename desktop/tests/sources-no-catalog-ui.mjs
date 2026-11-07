@@ -37,7 +37,7 @@ try {
         banks: [{ bank_id: 'garden', name: 'Garden notes', fact_count: 0 }],
         folder: state.open,
         serverURL: 'http://127.0.0.1:8888',
-        paused: [],
+        pause: { all: false, banks: [] },
       },
       section,
       data:

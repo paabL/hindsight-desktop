@@ -51,6 +51,7 @@ import {
   type MemoryEdge,
   type MemoryNode,
 } from '../graph-model';
+import { takeGraphMode } from '../graph-mode';
 import '../graph.css';
 
 type Camera = { x: number; y: number; zoom: number };
@@ -64,9 +65,14 @@ const colors = [
   'var(--atlas-rose)',
 ];
 
+/** « 1 lien », « 12 liens » : un seul mot pour les liens du graphe, partout. */
+const linkCount = (n: number) =>
+  t(`${number(n)} lien${n > 1 ? 's' : ''}`, `${number(n)} link${n === 1 ? '' : 's'}`);
+
 export default function Graph({ data, run, refresh, busy }: PageProps) {
   useI18n();
-  const [requestedMode, setRequestedMode] = useState('entities');
+  const pendingMode = useRef(takeGraphMode());
+  const [requestedMode, setRequestedMode] = useState(pendingMode.current || 'entities');
   const mode: string = data.mode || requestedMode;
   const [limit, setLimit] = useState(300);
   const [query, setQuery] = useState('');
@@ -240,6 +246,14 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
   useEffect(() => {
     if (data.limit) setLimit(data.limit);
   }, [data.limit]);
+  // Ouvert depuis la carte « Liens » : le graphe des faits est demandé une fois, si la vue arrive avec un
+  // autre mode (le pont garde le dernier mode affiché).
+  useEffect(() => {
+    const wanted = pendingMode.current;
+    if (!wanted || !data.mode) return;
+    pendingMode.current = null;
+    if (wanted !== data.mode) void refresh({ mode: wanted, limit });
+  }, [data.mode]);
   useEffect(() => {
     if (!surface.current) return;
     const observer = new ResizeObserver((entries) => {
@@ -479,8 +493,8 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
         eyebrow={t('EXPLORER · COMPRENDRE · RELIER', 'EXPLORE · UNDERSTAND · CONNECT')}
         title={t('Graphe', 'Graph')}
         description={t(
-          'Repérez les sujets liés, explorez leurs connexions et revenez aux sources.',
-          'Find related topics, explore their connections, and return to the sources.',
+          'Repérez les sujets liés, explorez leurs liens et revenez aux sources.',
+          'Find related topics, explore their links, and return to the sources.',
         )}
         actions={
           <Tabs
@@ -504,7 +518,7 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
         <span>
           <GitBranch size={16} />
           <strong>{number(graph.edges.length)}</strong>
-          {t(' liens', ' links')}
+          {t(' liens affichés', ' links shown')}
         </span>
         <span>
           <Layers3 size={16} />
@@ -564,7 +578,7 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
               onChange={(e) => setRelation(e.target.value)}
               aria-label={t('Nature des liens', 'Link type')}
             >
-              <option value="all">{t('Toutes les relations', 'All relationships')}</option>
+              <option value="all">{t('Tous les liens', 'All links')}</option>
               {kinds.map((k) => (
                 <option value={k} key={k}>
                   {relationLabel(k)}
@@ -712,12 +726,12 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
               <span className="atlas-map-count">
                 {aggregate
                   ? t(
-                      `${graph.communities.length} groupes · cliquer pour déplier`,
-                      `${graph.communities.length} groups · click to expand`,
+                      `${number(graph.communities.length)} groupe${graph.communities.length > 1 ? 's' : ''} · cliquer pour déplier`,
+                      `${number(graph.communities.length)} group${graph.communities.length === 1 ? '' : 's'} · click to expand`,
                     )
                   : t(
-                      `${number(visibleNodes.length)} nœuds`,
-                      `${number(visibleNodes.length)} nodes`,
+                      `${number(visibleNodes.length)} nœud${visibleNodes.length > 1 ? 's' : ''}`,
+                      `${number(visibleNodes.length)} node${visibleNodes.length === 1 ? '' : 's'}`,
                     )}
               </span>
             )}
@@ -729,11 +743,11 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
                 title={
                   busy
                     ? t('La carte se prépare', 'Preparing the map')
-                    : t('Aucune connexion à explorer', 'No connections to explore')
+                    : t('Aucun lien à explorer', 'No links to explore')
                 }
                 description={
                   busy
-                    ? t('Chargement des liens de la banque…', 'Loading bank connections…')
+                    ? t('Chargement des liens de la banque…', 'Loading bank links…')
                     : t(
                         'Les entités et les faits reliés apparaîtront ici après leur extraction.',
                         'Connected entities and facts will appear here after extraction.',
@@ -854,8 +868,8 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
                           role="button"
                           tabIndex={0}
                           aria-label={t(
-                            `Explorer le groupe ${c.label}, ${c.nodes.length} nœuds`,
-                            `Explore group ${c.label}, ${c.nodes.length} nodes`,
+                            `Explorer le groupe ${c.label}, ${number(c.nodes.length)} nœud${c.nodes.length > 1 ? 's' : ''}`,
+                            `Explore group ${c.label}, ${number(c.nodes.length)} node${c.nodes.length === 1 ? '' : 's'}`,
                           )}
                           onClick={() => {
                             setHoveredGroup(null);
@@ -995,10 +1009,7 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
                           transform={`translate(${p.x},${p.y})`}
                           role="button"
                           tabIndex={0}
-                          aria-label={t(
-                            `${n.label}, ${number(graph.degree.get(n.id) || 0)} connexions`,
-                            `${n.label}, ${number(graph.degree.get(n.id) || 0)} connections`,
-                          )}
+                          aria-label={`${n.label}, ${linkCount(graph.degree.get(n.id) || 0)}`}
                           aria-pressed={n.id === selected}
                           onClick={() => void choose(n.id)}
                           onDoubleClick={(e) => e.stopPropagation()}
@@ -1031,8 +1042,8 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
                             </text>
                           )}
                           <title>
-                            {n.label} · {kindLabel(n.kind)} · {graph.degree.get(n.id) || 0}{' '}
-                            {t(' connexions', ' connections')}
+                            {n.label} · {kindLabel(n.kind)} ·{' '}
+                            {linkCount(graph.degree.get(n.id) || 0)}
                           </title>
                         </g>
                       );
@@ -1076,8 +1087,7 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
               >
                 <strong>{hoverNode.label}</strong>
                 <span>
-                  {kindLabel(hoverNode.kind)} · {number(graph.degree.get(hoverNode.id))}
-                  {t(' connexions', ' connections')}
+                  {kindLabel(hoverNode.kind)} · {linkCount(graph.degree.get(hoverNode.id) || 0)}
                 </span>
               </div>
             )}
@@ -1138,10 +1148,13 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
             </span>
             <span>
               {selected
-                ? t(`${neighbors.size} connexions directes`, `${neighbors.size} direct connections`)
+                ? t(
+                    `${number(neighbors.size)} lien${neighbors.size > 1 ? 's' : ''} direct${neighbors.size > 1 ? 's' : ''}`,
+                    `${number(neighbors.size)} direct link${neighbors.size === 1 ? '' : 's'}`,
+                  )
                 : aggregate
                   ? t('Taille et nombre : nœuds du groupe', 'Size and count: nodes in group')
-                  : t('Couleur : groupe · taille : connexions', 'Color: group · size: connections')}
+                  : t('Couleur : groupe · taille : liens', 'Color: group · size: links')}
             </span>
           </footer>
           {aggregate && (
@@ -1184,8 +1197,8 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
                 </h2>
                 <p>
                   {t(
-                    'Choisissez une idée pour en voir les connexions.',
-                    'Choose an idea to see its connections.',
+                    'Choisissez une idée pour en voir les liens.',
+                    'Choose an idea to see its links.',
                   )}
                 </p>
               </div>
@@ -1195,10 +1208,7 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
                     key={n.id}
                     node={n}
                     color={colorFor(n)}
-                    note={t(
-                      `${graph.degree.get(n.id)} connexions`,
-                      `${graph.degree.get(n.id)} connections`,
-                    )}
+                    note={linkCount(graph.degree.get(n.id) || 0)}
                     onClick={() => void choose(n.id, true)}
                   />
                 ))}
@@ -1237,8 +1247,8 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
                 <h2>{current.label}</h2>
                 <div className="atlas-node-stats">
                   <span>
-                    <strong>{neighbors.size}</strong>
-                    {t(' connexions', ' connections')}
+                    <strong>{number(neighbors.size)}</strong>
+                    {neighbors.size > 1 ? t(' liens', ' links') : t(' lien', ' link')}
                   </span>
                   {mode === 'entities' && (
                     <span>
@@ -1293,7 +1303,7 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
                 items={[
                   {
                     id: 'connections',
-                    label: t('Connexions', 'Connections'),
+                    label: t('Liens', 'Links'),
                     count: neighbors.size,
                   },
                   { id: 'facts', label: t('Faits & sources', 'Facts & sources') },
@@ -1316,7 +1326,7 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
                       title={t('Aucun voisin dans cette vue', 'No neighbors in this view')}
                       description={t(
                         'Réduisez les filtres ou agrandissez l’échantillon pour chercher d’autres liens.',
-                        'Reduce filters or increase the sample to find more connections.',
+                        'Reduce filters or increase the sample to find more links.',
                       )}
                     />
                   )}
@@ -1361,7 +1371,7 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
                       title={t('Aucun fait accessible', 'No facts available')}
                       description={t(
                         'Les liens de la carte restent explorables. Aucun fait source n’a été renvoyé pour cette sélection.',
-                        'You can still explore map connections. No source facts were returned for this selection.',
+                        'You can still explore the map’s links. No source facts were returned for this selection.',
                       )}
                     />
                   )}
@@ -1411,8 +1421,8 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
                 <p>
                   {activeCommunity.nodes.length}
                   {t(
-                    ' nœuds dans ce groupe. Choisissez un sujet pour explorer ses connexions et ses sources.',
-                    ' nodes in this group. Choose a topic to explore its connections and sources.',
+                    ' nœuds dans ce groupe. Choisissez un sujet pour explorer ses liens et ses sources.',
+                    ' nodes in this group. Choose a topic to explore its links and sources.',
                   )}
                 </p>
               </div>
@@ -1425,10 +1435,7 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
                     key={n.id}
                     node={n}
                     color={colorFor(n)}
-                    note={t(
-                      `${graph.degree.get(n.id)} connexions dans l’échantillon`,
-                      `${graph.degree.get(n.id)} connections in the sample`,
-                    )}
+                    note={`${linkCount(graph.degree.get(n.id) || 0)} ${t('dans l’échantillon', 'in the sample')}`}
                     onClick={() => void choose(n.id, true)}
                   />
                 ))}
@@ -1437,8 +1444,8 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
                 <Compass size={19} />
                 <p>
                   {t(
-                    'Le groupe met en évidence des liens plus denses. Les connexions vers d’autres groupes restent accessibles dans la fiche de chaque nœud.',
-                    'This group highlights denser connections. Connections to other groups remain available in each node’s details.',
+                    'Le groupe met en évidence des liens plus denses. Les liens vers d’autres groupes restent accessibles dans la fiche de chaque nœud.',
+                    'This group highlights denser links. Links to other groups remain available in each node’s details.',
                   )}
                 </p>
               </div>

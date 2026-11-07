@@ -22,13 +22,30 @@ public final class OperationsViewModel {
     public private(set) var stats: BankStatsResponse?
     /// Live bank-wide totals. `/stats` caches its operation counts alongside expensive memory aggregates.
     public private(set) var operationCounts: [String: Int]?
+    /// Réglages résolus de la banque : rechargés à chaque ouverture de l'écran, gardés pendant les sondages.
+    public private(set) var bankConfig: BankConfigResponse?
+    /// Consolidations en cours et en attente (lu à chaque rechargement, une ligne par statut).
+    public private(set) var activeConsolidations: ActiveConsolidations?
+    /// Drapeau `features.observations` du serveur (réglé par `BankSession`).
+    public var serverObservations: Bool?
+
+    /// Même état que la Vue d'ensemble : désactivée, en cours, faits à consolider ou à jour.
+    public var consolidation: ConsolidationStatus? {
+        stats.map {
+            ConsolidationStatus(
+                stats: $0, config: bankConfig, serverObservations: serverObservations,
+                operations: activeConsolidations ?? ActiveConsolidations())
+        }
+    }
     public private(set) var selectedDetail: LoadState<OperationStatusResponse> = .idle
     public private(set) var selectedID: String?
     public private(set) var isLoadingMore = false
 
     public var statusFilter: StatusFilter = .all { didSet { if oldValue != statusFilter { invalidateList() } } }
     public var typeFilter: String? { didSet { if oldValue != typeFilter { invalidateList() } } }
-    public var excludeParents = false { didSet { if oldValue != excludeParents { invalidateList() } } }
+    /// Lots parents masqués par défaut : leurs opérations filles portent le travail, et « Relancer les échecs »
+    /// ne relance qu'elles. Liste, compteurs et relance comptent ainsi les mêmes opérations.
+    public var excludeParents = true { didSet { if oldValue != excludeParents { invalidateList() } } }
     public private(set) var isRefreshing = false
     @ObservationIgnored private var listRevision = UUID()
     @ObservationIgnored private var moreRevision: UUID?
@@ -60,6 +77,8 @@ public final class OperationsViewModel {
     @ObservationIgnored public var estimate: (@MainActor (EstimateKind) -> CostEstimate?)?
     /// Refus pendant une pause de la banque (relances et consolidations consomment du LLM).
     @ObservationIgnored public var pauseGate: PauseGate?
+    /// Worker du serveur arrêté (file gelée) : rien ne serait « lancé maintenant ».
+    @ObservationIgnored public var workerOff: @MainActor () -> Bool = { false }
     public var confirmation: ConfirmationRequest?
     public private(set) var isBusy = false
     public private(set) var activityMessage: String?
@@ -93,9 +112,15 @@ public final class OperationsViewModel {
             async let list = fetchWindow(requested, visibleCount: visibleCount)
             async let st = try? client.bankStats(bank)
             async let mode = try? client.isConsultationOnly()
+            // Un réglage change dans un autre écran : relu à chaque ouverture, pas à chaque sondage.
+            let readConfig = !silently || bankConfig == nil
+            async let cfg = Self.readConfig(client, bank, when: readConfig)
+            async let consolidating = ConsolidationStatus.activeOperations(client, bank)
             let l = try await list
             let statistics = await st
             let isConsultation = await mode
+            let config = await cfg
+            let active = await consolidating
             try Task.checkCancellation()
             guard revision == listRevision, requested == query else { return }
             consultationOnly = isConsultation ?? consultationOnly
@@ -104,6 +129,8 @@ public final class OperationsViewModel {
             total = l.total
             exhausted = l.exhausted
             stats = statistics
+            if let config { bankConfig = config }
+            activeConsolidations = active
             operationCounts = l.counts
             state = .loaded(())
             if let id = selectedID { await refreshDetail(id, silently: true) }
@@ -134,7 +161,7 @@ public final class OperationsViewModel {
             nextOffset = offset + l.operations.count
             total = l.total
             exhausted = l.operations.isEmpty
-            if requested.type == nil, !requested.excludeParents, requested.status != .all {
+            if requested.type == nil, requested.excludeParents, requested.status != .all {
                 operationCounts?[requested.status.rawValue] = l.total
             }
         } catch is CancellationError {
@@ -162,7 +189,8 @@ public final class OperationsViewModel {
     /// This avoids forcing `/stats` to rescan the bank's memories on every operation poll.
     private func fetchOperationCounts(_ query: Query, first: OperationsListResponse) async throws -> [String: Int] {
         let statuses: [StatusFilter] = [.pending, .processing, .failed]
-        let bankWide = query.type == nil && !query.excludeParents
+        // Compteurs de toute la banque, lots parents exclus (même règle que la liste par défaut et la relance).
+        let bankWide = query.type == nil && query.excludeParents
         var counts = Dictionary(uniqueKeysWithValues: statuses.map { ($0.rawValue, 0) })
         if bankWide, query.status == .all, first.operations.count == first.total {
             for row in first.operations { counts[row.status, default: 0] += 1 }
@@ -173,13 +201,17 @@ public final class OperationsViewModel {
         return try await withThrowingTaskGroup(of: StatusCount.self) { group in
             for status in statuses where !(bankWide && query.status == status) {
                 group.addTask {
-                    let page = try await client.listOperations(bank, status: status.rawValue, limit: 1)
+                    let page = try await client.listOperations(bank, status: status.rawValue, limit: 1, excludeParents: true)
                     return StatusCount(status: status.rawValue, total: page.total)
                 }
             }
             for try await result in group { counts[result.status] = result.total }
             return counts
         }
+    }
+    private static func readConfig(_ client: HindsightClient, _ bank: String, when read: Bool) async -> BankConfigResponse? {
+        guard read else { return nil }
+        return try? await client.bankConfig(bank)
     }
     private func matches(_ row: OperationResponse, _ query: Query) -> Bool {
         query.status == .all || OperationStatusKind(row.status).rawValue == query.status.rawValue
@@ -327,16 +359,16 @@ public final class OperationsViewModel {
 
     /// Opération en attente d'une nouvelle tentative (`next_retry_at` futur) : le serveur 1.1.0 la lance tout de suite.
     public func canRunNow(_ row: OperationRow, now: Date = Date()) -> Bool {
-        serverIs110 && !consultationOnly && row.status == .pending && (row.nextRetryAt.map { $0 > now } ?? false)
+        serverIs110 && !consultationOnly && !workerOff() && row.status == .pending && (row.nextRetryAt.map { $0 > now } ?? false)
     }
 
     public func requestRunNow(_ row: OperationRow) {
         guard canRunNow(row), !blockedByPause() else { return }
         confirmation = ConfirmationRequest(
-            title: "Lancer cette opération maintenant ?",
+            title: "Exécuter cette opération maintenant ?",
             message:
-                "« \(row.title) » attend sa prochaine tentative\(row.nextRetryAt.map { " (\(Format.dateTime($0)))" } ?? ""). Elle sera lancée tout de suite ; selon son type, cela peut consommer des appels LLM.",
-            confirmTitle: "Lancer maintenant", severity: .normal
+                "« \(row.title) » attend sa prochaine tentative\(row.nextRetryAt.map { " (\(Format.dateTime($0)))" } ?? ""). Elle sera exécutée tout de suite ; selon son type, cela peut consommer des appels LLM.",
+            confirmTitle: "Exécuter maintenant", severity: .normal
         ) { [weak self] in
             guard let self, !self.blockedByPause() else { return }
             await self.retry(row.id)
@@ -371,7 +403,7 @@ public final class OperationsViewModel {
                     found.append(row.id)
                 }
                 offset += page.operations.count
-                activityMessage = "Recherche des échecs : \(found.count) trouvé(s)…"
+                activityMessage = "Recherche des échecs : \(Format.count(found.count, "trouvé"))…"
             } while offset < (target ?? 0)
             ids = found
         } catch is CancellationError {
@@ -386,7 +418,7 @@ public final class OperationsViewModel {
             return
         }
         confirmation = ConfirmationRequest(
-            title: "Relancer \(ids.count) opération(s) échouée(s) ?",
+            title: "Relancer \(Format.count(ids.count, "opération échouée", "opérations échouées")) ?",
             message: "Tous les échecs de la banque ont été recherchés, indépendamment des filtres de l'écran. Les sous-opérations seront remises en file ; les lots parents suivront leur progression. Cela peut consommer des appels LLM. Vérifiez d'abord les réglages des modèles : la relance ne corrige pas un quota épuisé ou une erreur de connexion.",
             confirmTitle: "Tout relancer", severity: .normal
         ) { [weak self] in
@@ -396,21 +428,22 @@ public final class OperationsViewModel {
             var ok = 0
             var failures: [String] = []
             for (index, id) in ids.enumerated() {
-                self.activityMessage = "Relance : \(index + 1) sur \(ids.count)…"
+                self.activityMessage = "Relance : \(Format.number(index + 1)) sur \(Format.number(ids.count))…"
                 do {
                     try Task.checkCancellation()
                     let r = try await self.client.retryOperation(self.bank, id: id)
                     if r.success { ok += 1 } else { failures.append(r.message) }
                 } catch is CancellationError {
-                    self.actionMessage = "Relance interrompue : \(ok) opération(s) remise(s) en file."
+                    self.actionMessage = "Relance interrompue : \(Format.count(ok, "opération remise", "opérations remises")) en file."
                     await self.reload(silently: true)
                     return
                 } catch {
                     failures.append(error.userMessage)
                 }
             }
-            self.actionMessage =
-                "\(ok) relancée(s)" + (failures.isEmpty ? "" : ", \(failures.count) refusée(s) : \(failures.first!)")
+            self.actionMessage = failures.isEmpty
+                ? "\(Format.count(ok, "opération relancée", "opérations relancées"))."
+                : "\(Format.count(ok, "opération relancée", "opérations relancées")), \(Format.count(failures.count, "refusée", "refusées")) : \(failures.first!)"
             await self.reload(silently: true)
         }
     }
@@ -420,10 +453,10 @@ public final class OperationsViewModel {
             title: "Annuler cette opération ?",
             message: "« \(row.title) » sera interrompue si elle est en attente ou en cours.", confirmTitle: "Annuler l'opération"
         ) { [weak self] in
-            await self?.run("Opération annulée") { c, b in
+            await self?.run("Opération annulée.") { c, b in
                 let r = try await c.cancelOperation(b, id: row.id)
                 guard r.success else { throw HindsightError.refused(r.message) }
-                return r.message
+                return ""
             }
         }
     }
@@ -434,55 +467,67 @@ public final class OperationsViewModel {
             message: "L'entrée d'historique « \(row.title) » sera supprimée du serveur. Les faits déjà créés ne sont pas touchés.",
             confirmTitle: "Supprimer"
         ) { [weak self] in
-            await self?.run("Entrée supprimée") { c, b in
+            await self?.run("Entrée supprimée.") { c, b in
                 let r = try await c.deleteOperation(b, id: row.id)
                 guard r.success else { throw HindsightError.refused(r.message) }
-                return r.message
+                return ""
             }
         }
     }
 
+    /// Refusée sans confirmation quand elle ne peut rien faire : banque sans observations (le serveur
+    /// terminerait l'opération aussitôt, sans rien traiter), consolidation déjà en cours, rien à consolider.
     public func requestConsolidation() {
-        guard !blockedByPause() else { return }
+        guard !consultationOnly, !blockedByPause() else { return }
+        if let refusal = consolidation?.refusal { actionMessage = refusal; return }
         let pending = stats?.pendingConsolidation ?? 0
         confirmation = ConfirmationRequest(
-            title: "Lancer la consolidation ?",
-            message:
-                "Le serveur va créer/mettre à jour les observations à partir des faits non consolidés (\(pending) en attente). Cela appelle le LLM de consolidation."
-                + " Chaque fait se fond dans les observations de sa portée (celle de son document)."
+            title: "Consolider les faits ?",
+            message: Self.consolidationMessage(pending: pending)
                 + (estimate?(.consolidation(facts: pending)).map { "\n\n" + $0.summary } ?? ""),
-            confirmTitle: "Lancer", severity: .normal
+            confirmTitle: "Consolider", severity: .normal
         ) { [weak self] in
             guard let self, !self.blockedByPause() else { return }
-            await self.run("Consolidation mise en file") { c, b in
+            if let refusal = self.consolidation?.refusal { self.actionMessage = refusal; return }
+            await self.run("Consolidation mise en file.") { c, b in
                 let r = try await c.triggerConsolidation(b)
-                return r.deduplicated ? "Une consolidation était déjà en file (fusionnée)." : "Opération \(r.operationId) créée."
+                return r.deduplicated ? "Une consolidation était déjà en file : cette demande l'a rejointe." : "Consolidation mise en file."
             }
         }
+    }
+
+    static func consolidationMessage(pending: Int) -> String {
+        let facts = pending == 1 ? "du seul fait pas encore consolidé" : "des \(Format.number(pending)) faits pas encore consolidés"
+        return "Le serveur va créer ou mettre à jour les observations à partir \(facts). Cela appelle le LLM de consolidation."
+            + " Chaque fait rejoint les observations de sa portée (celle de son document)."
     }
 
     public func requestRecoverConsolidation() {
-        guard !blockedByPause() else { return }
+        guard !consultationOnly, !blockedByPause() else { return }
+        // Remis en file, ces faits attendraient une consolidation qui ne vient pas.
+        if consolidation?.enabled == false { actionMessage = ConsolidationStatus.disabledMessage; return }
         let failed = stats?.failedConsolidation ?? 0
+        guard failed > 0 else { actionMessage = "Aucun fait en échec de consolidation."; return }
         confirmation = ConfirmationRequest(
-            title: "Réessayer les faits en échec de consolidation ?",
-            message:
-                "\(failed) fait(s) marqués « échec définitif » seront remis dans la file de consolidation (aucune observation supprimée).",
-            confirmTitle: "Remettre en file", severity: .normal
+            title: "Reconsolider les faits en échec ?",
+            message: failed == 1
+                ? "Le fait en échec de consolidation sera remis dans la file. Aucune observation n'est supprimée."
+                : "Les \(Format.number(failed)) faits en échec de consolidation seront remis dans la file. Aucune observation n'est supprimée.",
+            confirmTitle: "Reconsolider", severity: .normal
         ) { [weak self] in
             guard let self, !self.blockedByPause() else { return }
-            await self.run("Faits remis en file") { c, b in
+            await self.run("Faits remis en file.") { c, b in
                 let r = try await c.recoverConsolidation(b)
-                return "\(r.retriedCount) fait(s) remis en file."
+                return "\(Format.count(r.retriedCount, "fait")) remis en file."
             }
         }
     }
 
     private func retry(_ id: String) async {
-        await run("Opération relancée") { c, b in
+        await run("Opération relancée.") { c, b in
             let r = try await c.retryOperation(b, id: id)
             guard r.success else { throw HindsightError.refused(r.message) }
-            return r.message
+            return ""
         }
     }
 
@@ -491,6 +536,7 @@ public final class OperationsViewModel {
         isBusy = true
         defer { isBusy = false }
         do {
+            // Message du moteur, en français et sans identifiant : jamais le texte anglais du serveur.
             let msg = try await work(client, bank)
             actionMessage = msg.isEmpty ? fallback : msg
         } catch {

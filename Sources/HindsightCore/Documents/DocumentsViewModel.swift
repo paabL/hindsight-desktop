@@ -27,6 +27,8 @@ public final class DocumentsViewModel {
     public private(set) var state: LoadState<Void> = .idle
     public private(set) var items: [DocumentListItem] = []
     public private(set) var total: Int = 0
+    /// Recherche arrêtée à son plafond : `total` est un minimum, pas un compte exact.
+    public private(set) var totalIsEstimate = false
 
     public var query: String = ""
     public var selectedTags: [String] = []
@@ -78,6 +80,7 @@ public final class DocumentsViewModel {
             guard loadID == id else { return }
             items = page.items
             total = page.total
+            totalIsEstimate = page.totalIsEstimate
             state = .loaded(())
         } catch {
             guard loadID == id else { return }
@@ -102,6 +105,7 @@ public final class DocumentsViewModel {
             guard loadID == listID, moreID == id else { return }
             items += page.items
             total = page.total
+            totalIsEstimate = page.totalIsEstimate
         } catch {
             guard loadID == listID, moreID == id, !Task.isCancelled, !(error is CancellationError) else { return }
             state = .failed(error.userMessage)

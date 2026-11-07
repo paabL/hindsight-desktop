@@ -13,6 +13,15 @@ final class OperationsViewModelTests: XCTestCase {
         t.requests.filter { $0.method != "GET" }
     }
 
+    /// Aucune consolidation en file ni en cours : les lectures `type=consolidation` renvoient une liste vide.
+    func idleConsolidation(_ t: MockTransport) {
+        let list = Fixture.string("operations_list")
+        t.on("GET", "\(bankPath)/operations") { request in
+            request.queryValue("type") == "consolidation"
+                ? .json(#"{"bank_id":"\#(testBank)","operations":[],"total":0,"limit":1,"offset":0}"#) : .json(list)
+        }
+    }
+
     func testReloadBuildsRowsAndStats() async {
         let t = MockTransport()
         t.installStandardRoutes()
@@ -38,14 +47,16 @@ final class OperationsViewModelTests: XCTestCase {
         vm.typeFilter = "retain"
         vm.excludeParents = true
         await vm.reload()
-        let r = t.requests.first { $0.path.hasSuffix("/operations") }!
+        // La page affichée (100 lignes), pas les compteurs lus à une ligne.
+        let list = { t.requests.first { $0.path.hasSuffix("/operations") && $0.queryValue("limit") == "100" }! }
+        let r = list()
         XCTAssertEqual(r.queryValue("status"), "failed")
         XCTAssertEqual(r.queryValue("type"), "retain")
         XCTAssertEqual(r.queryValue("exclude_parents"), "true")
         vm.statusFilter = .all
         t.reset()
         await vm.reload()
-        XCTAssertNil(t.requests.first { $0.path.hasSuffix("/operations") }!.queryValue("status"))
+        XCTAssertNil(list().queryValue("status"))
     }
 
     func testFailureGroupingMergesSameCauseIgnoringNumbers() async {
@@ -88,7 +99,7 @@ final class OperationsViewModelTests: XCTestCase {
         XCTAssertTrue(writes(t).isEmpty, "rien n'est envoyé avant confirmation")
         await c.perform()
         XCTAssertEqual(writes(t).map(\.path), ["\(bankPath)/operations/op-f1/retry"])
-        XCTAssertEqual(vm.actionMessage, "Opération relancée")
+        XCTAssertEqual(vm.actionMessage, "Opération relancée.", "le message du serveur (anglais, avec l'identifiant) n'est jamais repris")
     }
 
     func testDeleteAndCancelAreDestructiveConfirmations() async throws {
@@ -112,6 +123,7 @@ final class OperationsViewModelTests: XCTestCase {
     func testDecliningConfirmationSendsNothing() async {
         let t = MockTransport()
         t.installStandardRoutes()
+        idleConsolidation(t)
         let vm = make(t)
         await vm.reload()
         vm.requestConsolidation()
@@ -123,18 +135,23 @@ final class OperationsViewModelTests: XCTestCase {
     func testConsolidationAndRecoverMessages() async throws {
         let t = MockTransport()
         t.installStandardRoutes()
+        idleConsolidation(t)
         t.on("POST", "\(bankPath)/consolidate", json: #"{"operation_id":"op-new","deduplicated":false}"#)
         t.on("POST", "\(bankPath)/consolidation/recover", json: #"{"retried_count":7}"#)
         let vm = make(t)
         await vm.reload()
         vm.requestConsolidation()
-        XCTAssertTrue(vm.confirmation!.message.contains("250"))
+        XCTAssertEqual(vm.confirmation?.title, "Consolider les faits ?")
+        XCTAssertEqual(vm.confirmation?.confirmTitle, "Consolider")
+        XCTAssertTrue(vm.confirmation!.message.hasPrefix(
+            "Le serveur va créer ou mettre à jour les observations à partir des \(Format.number(250)) faits pas encore consolidés."))
         await vm.confirmation!.perform()
-        XCTAssertEqual(vm.actionMessage, "Opération op-new créée.")
+        XCTAssertEqual(vm.actionMessage, "Consolidation mise en file.")
         vm.requestRecoverConsolidation()
-        XCTAssertTrue(vm.confirmation!.message.contains("7"))
+        XCTAssertEqual(vm.confirmation?.confirmTitle, "Reconsolider")
+        XCTAssertTrue(vm.confirmation!.message.contains("faits en échec de consolidation seront remis dans la file"))
         await vm.confirmation!.perform()
-        XCTAssertEqual(vm.actionMessage, "7 fait(s) remis en file.")
+        XCTAssertEqual(vm.actionMessage, "7 faits remis en file.")
         // La liste a été rechargée après chaque action.
         XCTAssertGreaterThanOrEqual(t.requests.filter { $0.method == "GET" && $0.path.hasSuffix("/operations") }.count, 3)
     }
@@ -151,12 +168,13 @@ final class OperationsViewModelTests: XCTestCase {
         XCTAssertTrue(vm.confirmation!.title.contains("3"))
         await vm.confirmation!.perform()
         XCTAssertEqual(writes(t).count, 3)
-        XCTAssertTrue(vm.actionMessage!.hasPrefix("1 relancée(s), 2 refusée(s)"), vm.actionMessage ?? "")
+        XCTAssertTrue(vm.actionMessage!.hasPrefix("1 opération relancée, 2 refusées"), vm.actionMessage ?? "")
     }
 
     func testActionFailureIsSurfaced() async throws {
         let t = MockTransport()
         t.installStandardRoutes()
+        idleConsolidation(t)
         t.on("POST", "\(bankPath)/consolidate", json: #"{"detail":"worker indisponible"}"#, status: 503)
         let vm = make(t)
         await vm.reload()
@@ -190,7 +208,7 @@ final class OperationsViewModelTests: XCTestCase {
         await vm.confirmation!.perform()
         XCTAssertEqual(writes(t).count, 205)
         XCTAssertEqual(Set(writes(t).map(\.path)).count, 205)
-        XCTAssertEqual(vm.actionMessage, "205 relancée(s)")
+        XCTAssertEqual(vm.actionMessage, "205 opérations relancées.")
         XCTAssertFalse(vm.isBusy)
         XCTAssertNil(vm.activityMessage)
     }
@@ -262,6 +280,78 @@ final class OperationsViewModelTests: XCTestCase {
         vm.stopAutoRefresh()
         XCTAssertEqual(t.requests.filter { $0.path.hasSuffix("/operations") }.count, 0)
     }
+    /// Sans observations, le serveur termine une consolidation sans rien traiter : rien n'est proposé.
+    func testDisabledConsolidationIsRefusedWithoutConfirmationOrWrite() async {
+        let t = MockTransport()
+        t.installStandardRoutes()
+        idleConsolidation(t)
+        t.on("GET", "\(bankPath)/config", json: #"{"bank_id":"\#(testBank)","config":{"enable_observations":false,"enable_auto_consolidation":true},"overrides":{"enable_observations":false}}"#)
+        let vm = make(t)
+        vm.serverObservations = true  // le réglage de la banque l'emporte sur celui du serveur
+        await vm.reload()
+        XCTAssertEqual(vm.consolidation?.phase, .disabled)
+        XCTAssertEqual(vm.consolidation?.automatic, false)  // sans observations, rien d'automatique non plus
+        vm.requestConsolidation()
+        XCTAssertNil(vm.confirmation)
+        XCTAssertEqual(vm.actionMessage, ConsolidationStatus.disabledMessage)
+        vm.actionMessage = nil
+        vm.requestRecoverConsolidation()
+        XCTAssertNil(vm.confirmation)
+        XCTAssertEqual(vm.actionMessage, ConsolidationStatus.disabledMessage)
+        XCTAssertTrue(writes(t).isEmpty)
+    }
+
+    func testRunningOrFinishedConsolidationIsNotOfferedAgain() async {
+        let t = MockTransport()
+        t.installStandardRoutes()  // la file contient une consolidation en cours
+        let vm = make(t)
+        await vm.reload()
+        XCTAssertEqual(vm.consolidation?.phase, .running)
+        vm.requestConsolidation()
+        XCTAssertNil(vm.confirmation)
+        XCTAssertEqual(vm.actionMessage, "Une consolidation est déjà en cours pour cette banque.")
+
+        let idle = MockTransport()
+        idle.installStandardRoutes()
+        idleConsolidation(idle)
+        idle.on("GET", "\(bankPath)/stats") { _ in
+            .json(#"{"bank_id":"\#(testBank)","total_nodes":10,"total_links":0,"total_documents":1,"nodes_by_fact_type":{},"links_by_link_type":{},"links_by_fact_type":{},"links_breakdown":{},"pending_operations":0,"failed_operations":0,"pending_consolidation":0,"failed_consolidation":0}"#)
+        }
+        let upToDate = make(idle)
+        await upToDate.reload()
+        XCTAssertEqual(upToDate.consolidation?.phase, .upToDate)
+        upToDate.requestConsolidation()
+        XCTAssertNil(upToDate.confirmation)
+        XCTAssertEqual(upToDate.actionMessage, "Rien à consolider : tous les faits de cette banque sont déjà consolidés.")
+        upToDate.requestRecoverConsolidation()
+        XCTAssertEqual(upToDate.actionMessage, "Aucun fait en échec de consolidation.")
+        XCTAssertTrue(writes(idle).isEmpty)
+    }
+
+    func testConsolidationStatusUsesTheBankSettingThenTheServerFlag() throws {
+        let stats = BankStatsResponse(
+            bankId: testBank, totalNodes: 5, totalLinks: 0, totalDocuments: 1, nodesByFactType: [:], linksByLinkType: [:],
+            linksByFactType: [:], linksBreakdown: [:], pendingOperations: 0, failedOperations: 0,
+            lastConsolidatedAt: "2026-10-23T11:29:00Z", pendingConsolidation: 4)
+        let off = BankConfigResponse(bankId: testBank, config: ["enable_observations": .bool(false)], overrides: [:])
+        XCTAssertEqual(ConsolidationStatus(stats: stats, config: off, serverObservations: true, operations: ActiveConsolidations()).phase, .disabled)
+        XCTAssertEqual(ConsolidationStatus(stats: stats, config: nil, serverObservations: false, operations: ActiveConsolidations()).phase, .disabled)
+        let fallback = ConsolidationStatus(stats: stats, config: nil, serverObservations: nil, operations: ActiveConsolidations())
+        XCTAssertEqual(fallback.phase, .pending)
+        XCTAssertEqual(fallback.pendingFacts, 4)
+        XCTAssertEqual(fallback.lastConsolidatedAt, "2026-10-23T11:29:00Z")
+        XCTAssertEqual(ConsolidationStatus(stats: stats, config: nil, serverObservations: nil, operations: ActiveConsolidations(running: 1, queued: 1)).phase, .running)
+        // Une consolidation qui attend son tour est « en attente », comme sa ligne dans Traitements.
+        XCTAssertEqual(ConsolidationStatus(stats: stats, config: nil, serverObservations: nil, operations: ActiveConsolidations(queued: 1)).phase, .queued)
+        // Réglages inconnus : la consolidation automatique est supposée active (estimation prudente).
+        XCTAssertTrue(fallback.automatic)
+        let manual = BankConfigResponse(bankId: testBank, config: ["enable_auto_consolidation": .bool(false)], overrides: [:])
+        XCTAssertFalse(ConsolidationStatus.consolidatesAfterExtraction(manual, serverObservations: true))
+        XCTAssertFalse(ConsolidationStatus.consolidatesAfterExtraction(off, serverObservations: true))
+        XCTAssertNil(fallback.refusal)
+        XCTAssertEqual(OperationsViewModel.consolidationMessage(pending: 1).contains("du seul fait pas encore consolidé"), true)
+    }
+
 }
 
 

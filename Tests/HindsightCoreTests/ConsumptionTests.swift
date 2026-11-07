@@ -277,23 +277,67 @@ final class ConsumptionTests: XCTestCase {
         let c = PauseController(settings: InMemorySettingsStore(), client: { makeClient(t) }, banks: { banks.value }, service: { nil }, server: { "http://s1" })
         // Lancée serveur injoignable : aucune banque connue.
         await c.pause(bank: nil, reason: nil)
-        XCTAssertTrue(c.message?.contains("dès que le serveur répondra") == true)
+        XCTAssertTrue(c.message?.contains("le bandeau propose de réessayer") == true, c.message ?? "")
         XCTAssertTrue(t.requests.isEmpty)
-        // Le serveur répond, les banques se chargent : la consolidation est coupée.
-        up.value = true
+        // Les banques se chargent : la banque reste « à couper » tant que personne ne réessaie.
         banks.value = [testBank]
-        await c.reconcile()
+        XCTAssertEqual(c.uncutBanks, [testBank])
+        // Écriture refusée : la banque n'est pas comptée comme coupée.
+        up.value = false
+        await c.retryReconcile()
+        XCTAssertTrue(c.heldBanks.isEmpty, "rien n'a été coupé")
+        XCTAssertTrue(c.message?.hasPrefix("Toujours en échec") == true, c.message ?? "")
+        // Le serveur répond : « Réessayer » coupe la consolidation.
+        up.value = true
+        await c.retryReconcile()
         XCTAssertEqual(c.heldBanks, [testBank])
+        XCTAssertTrue(c.uncutBanks.isEmpty)
+        XCTAssertEqual(c.message, "Consolidation automatique mise en accord avec la pause.")
         // Reprise pendant une panne : rien n'est perdu, la remise en état attend.
         up.value = false
         await c.resume(bank: nil)
         XCTAssertFalse(c.anyPause)
         XCTAssertTrue(c.message?.contains("À rétablir") == true)
         XCTAssertEqual(c.heldBanks, [testBank])
+        XCTAssertEqual(c.unreleasedBanks, [testBank])
         up.value = true
-        await c.reconcile()
+        await c.retryReconcile()
         XCTAssertTrue(c.heldBanks.isEmpty)
         XCTAssertEqual(t.requests.last { $0.method == "PATCH" }?.bodyJSON?["updates"]?["enable_auto_consolidation"], .null)
+    }
+
+    func testNoOpPauseActionsAreRefusedWithTheRealState() async {
+        let (c, t, _) = pauseFixture()
+        await c.resume(bank: testBank)
+        XCTAssertEqual(c.message, "« \(testBank) » n'est pas en pause.")
+        await c.resume(bank: nil)
+        XCTAssertEqual(c.message, "Aucune banque n'est en pause.")
+        await c.pause(bank: nil, reason: nil)
+        await c.pause(bank: nil, reason: nil)
+        XCTAssertEqual(c.message, "Toutes les banques sont déjà en pause.")
+        await c.resume(bank: testBank)
+        XCTAssertEqual(c.message, "« \(testBank) » n'est en pause qu'avec toutes les banques : reprenez toutes les banques.")
+        XCTAssertTrue(c.isPaused(testBank))
+        XCTAssertEqual(c.blockReason(testBank), "Pause en cours sur toutes les banques : rien n'est envoyé. Reprenez depuis « Activité › Traitements ».")
+        await c.resume(bank: nil)
+        XCTAssertFalse(c.isPaused(testBank))
+        c.requestUnfreeze()
+        XCTAssertNil(c.confirmation)
+        XCTAssertEqual(c.message, "La file du serveur n'est pas gelée.")
+        XCTAssertEqual(t.requests.filter { $0.method == "PATCH" }.count, 2, "une coupure, un rétablissement")
+    }
+
+    func testResetToServerSettingsKeepsThePauseCut() async {
+        let (c, t, _) = pauseFixture()
+        await c.pause(bank: testBank, reason: nil)
+        XCTAssertTrue(c.cutAutoConsolidation(testBank))
+        await c.bankConfigWasReset(testBank)
+        let patches = t.requests.filter { $0.method == "PATCH" }
+        XCTAssertEqual(patches.count, 2, "coupée à la pause, recoupée après le retour aux réglages du serveur")
+        XCTAssertEqual(patches.last?.bodyJSON?["updates"]?["enable_auto_consolidation"], .bool(false))
+        await c.resume(bank: testBank)
+        XCTAssertEqual(t.requests.last { $0.method == "PATCH" }?.bodyJSON?["updates"]?["enable_auto_consolidation"], .null,
+                       "après la reprise, la banque hérite du serveur comme le reste de ses réglages")
     }
 
     func testHeldBanksBelongToTheirServer() async {
@@ -332,7 +376,7 @@ final class ConsumptionTests: XCTestCase {
         t.on("DELETE", "\(bankPath)/operations/*", json: #"{"success":true,"message":"ok","operation_id":"x"}"#)
         await c.requestDrain(bank: nil)
         let confirmation = try XCTUnwrap(c.confirmation)
-        XCTAssertEqual(confirmation.requiredText, "vider", "au-delà de dix opérations, il faut retaper")
+        XCTAssertEqual(confirmation.requiredText, "12", "au-delà de dix opérations, on retape leur nombre (toutes les banques)")
         XCTAssertEqual(t.requests.first { $0.path.hasSuffix("/operations") }?.queryValue("status"), "pending")
         XCTAssertFalse(t.requests.contains { $0.method == "DELETE" })
         await confirmation.perform()

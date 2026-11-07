@@ -102,7 +102,7 @@ public final class PauseController {
 
     /// Refus d'un envoi depuis l'app pendant une pause.
     public func blockReason(_ bank: String) -> String? {
-        if globalPause { return "Pause en cours sur toutes les banques : rien n'est envoyé. Reprenez depuis « Consommation »." }
+        if globalPause { return "Pause en cours sur toutes les banques : rien n'est envoyé. Reprenez depuis « Activité › Traitements »." }
         if pausedBanks.contains(bank) { return "La banque « \(bank) » est en pause : rien n'y est envoyé. Reprenez-la pour continuer." }
         return nil
     }
@@ -128,10 +128,56 @@ public final class PauseController {
         return held.filter { $0.hasPrefix(prefix) }.map { String($0.dropFirst(prefix.count)) }
     }
 
+    /// La pause a elle-même coupé la consolidation automatique de cette banque (elle était activée avant) :
+    /// le réglage affiché n'est pas celui de la banque, et la reprise le rétablira.
+    public func cutAutoConsolidation(_ bank: String) -> Bool {
+        heldBanks.contains(bank) && ["1", "inherit"].contains(settings.string(forKey: Keys.previous(entry(bank))) ?? "")
+    }
+
+    /// Les réglages propres à la banque viennent d'être supprimés (retour aux valeurs du serveur) : la coupure de
+    /// la pause est partie avec eux. Après la reprise, la banque héritera du serveur ; pendant la pause, on recoupe.
+    public func bankConfigWasReset(_ bank: String) async {
+        guard cutAutoConsolidation(bank) else { return }
+        settings.set("inherit", forKey: Keys.previous(entry(bank)))
+        do {
+            _ = try await clientProvider().updateBankConfig(bank, updates: ["enable_auto_consolidation": .bool(false)])
+        } catch {
+            // Plus coupée : la banque redevient « à couper », signalée et rattrapée au prochain chargement.
+            held = held.filter { $0 != entry(bank) }
+            message = "Consolidation automatique pas encore coupée pour \(bank) (\(error.userMessage))."
+        }
+    }
+
+    /// Banques en pause dont la consolidation automatique n'a pas encore pu être coupée (serveur injoignable,
+    /// écriture refusée) : la pause bloque les envois, mais le serveur peut encore consolider.
+    public var uncutBanks: [String] {
+        let held = Set(heldBanks)
+        return banksProvider().filter { isPaused($0) && !held.contains($0) }
+    }
+
+    /// Banques reprises dont la consolidation automatique n'a pas encore pu être rétablie.
+    public var unreleasedBanks: [String] { heldBanks.filter { !isPaused($0) } }
+
+    /// « Réessayer » du bandeau : coupe ou rétablit ce qui n'a pas pu l'être, sur demande.
+    public func retryReconcile() async {
+        let failures = await reconcile()
+        message = failures.isEmpty
+            ? "Consolidation automatique mise en accord avec la pause."
+            : "Toujours en échec : " + failures.joined(separator: " ; ") + "."
+    }
+
     // MARK: Pause et reprise (immédiates, réversibles)
 
     /// Met en pause une banque, ou toutes (`bank` nil). `reason` : déclenchement automatique (plafond).
     public func pause(bank: String?, reason: String?) async {
+        if let bank, pausedBanks.contains(bank) {
+            message = "« \(bank) » est déjà en pause."
+            return
+        }
+        if bank == nil, globalPause {
+            message = "Toutes les banques sont déjà en pause."
+            return
+        }
         if let bank { pausedBanks.insert(bank) } else { globalPause = true }
         if since == nil { since = Date() }
         if let reason { autoReason = reason }
@@ -141,10 +187,10 @@ public final class PauseController {
         let cancelled = await sweepRefreshes()
         let scope = bank.map { "« \($0) » est en pause." } ?? "Toutes les banques sont en pause."
         if bank == nil, banksProvider().isEmpty {
-            message = scope + " Rien n'est envoyé ; la consolidation automatique et les régénérations de connaissances seront coupées dès que le serveur répondra."
+            message = scope + " Rien n'est envoyé. Serveur injoignable : la consolidation automatique n'est pas encore coupée (le bandeau propose de réessayer)."
         } else {
             message = scope + (cancelled > 0 ? " \(Format.count(cancelled, "régénération de connaissance annulée", "régénérations de connaissances annulées"))." : "")
-                + (failures.isEmpty ? "" : " Consolidation automatique pas encore coupée pour " + failures.joined(separator: " ; ") + " (nouvel essai à la reconnexion).")
+                + (failures.isEmpty ? "" : " Consolidation automatique pas encore coupée pour " + failures.joined(separator: " ; ") + " (le bandeau propose de réessayer).")
         }
     }
 
@@ -266,6 +312,18 @@ public final class PauseController {
     /// Lève la pause d'une banque, ou la pause de toutes les banques (`bank` nil) ; les banques mises en
     /// pause une à une le restent.
     public func resume(bank: String?) async {
+        if let bank, !pausedBanks.contains(bank) {
+            message = globalPause
+                ? "« \(bank) » n'est en pause qu'avec toutes les banques : reprenez toutes les banques."
+                : "« \(bank) » n'est pas en pause."
+            return
+        }
+        if bank == nil, !globalPause {
+            message = pausedBanks.isEmpty
+                ? "Aucune banque n'est en pause."
+                : "Aucune pause sur toutes les banques. En pause une à une : " + pausedBanks.sorted().joined(separator: ", ") + "."
+            return
+        }
         if let bank { pausedBanks.remove(bank) } else { globalPause = false }
         clearIfIdle()
         stopSweepingIfIdle()
@@ -273,9 +331,7 @@ public final class PauseController {
         let failures = await reconcile()
         var text: String
         if let bank {
-            text = globalPause
-                ? "« \(bank) » n'est plus en pause à part, mais la pause de toutes les banques s'applique encore."
-                : "« \(bank) » reprend : sa consolidation automatique retrouve son réglage d'avant la pause."
+            text = "« \(bank) » reprend : sa consolidation automatique retrouve son réglage d'avant la pause."
         } else {
             text = "Toutes les banques reprennent : la consolidation automatique retrouve son réglage d'avant la pause."
             if !pausedBanks.isEmpty { text += " Restent en pause : " + pausedBanks.sorted().joined(separator: ", ") + "." }
@@ -347,8 +403,8 @@ public final class PauseController {
                 if case .bool? = config.overrides["enable_auto_consolidation"] { explicit = true } else { explicit = false }
                 settings.set(!enabled ? "untouched" : (explicit ? "1" : "inherit"), forKey: key)
             }
-            held = held + [entry(bank)]
             if enabled { _ = try await clientProvider().updateBankConfig(bank, updates: ["enable_auto_consolidation": .bool(false)]) }
+            held = held + [entry(bank)]
             return nil
         } catch {
             return error.userMessage
@@ -383,6 +439,10 @@ public final class PauseController {
     // MARK: Geler la file (confirmé)
 
     public func requestFreeze() {
+        if queueFrozen {
+            message = "La file du serveur est déjà gelée."
+            return
+        }
         guard let service = serviceProvider(), service.isInstalled else {
             message = "Le serveur n'est pas lancé par le service de l'app : ajoutez HINDSIGHT_API_WORKER_ENABLED=false à son environnement et redémarrez-le, ou mettez les banques en pause."
             return
@@ -404,13 +464,19 @@ public final class PauseController {
     }
 
     public func requestUnfreeze() {
+        guard queueFrozen else {
+            message = serverWorkerOff
+                ? "Le worker du serveur est arrêté par sa propre configuration (HINDSIGHT_API_WORKER_ENABLED dans son script) : l'app ne l'a pas gelé et ne peut pas le relancer."
+                : "La file du serveur n'est pas gelée."
+            return
+        }
         let running = serviceProvider()?.job.running ?? false
         confirmation = ConfirmationRequest(
-            title: "Reprendre la file du serveur ?",
+            title: "Dégeler la file du serveur ?",
             message: running
                 ? "Le serveur va redémarrer avec son worker : les opérations en attente seront traitées (consommation LLM)."
                 : "Le serveur est arrêté : il traitera sa file à son prochain démarrage. Il n'est pas démarré pour autant.",
-            confirmTitle: "Reprendre la file", severity: .normal
+            confirmTitle: "Dégeler la file", severity: .normal
         ) { [weak self] in
             await self?.setFrozen(false)
         }
@@ -444,6 +510,8 @@ public final class PauseController {
         await refreshServerInfo?()
         if frozen, workerEnabled?() == true {
             message = "Le serveur a redémarré mais son worker tourne toujours : votre script fixe probablement HINDSIGHT_API_WORKER_ENABLED."
+        } else if !frozen, workerEnabled?() == false {
+            message = "Le serveur a redémarré mais son worker reste arrêté : votre script fixe probablement HINDSIGHT_API_WORKER_ENABLED=false."
         } else {
             message = frozen ? "File gelée : le serveur répond mais ne traite plus d'opérations." : "File reprise : le serveur traite à nouveau ses opérations."
         }
@@ -482,11 +550,12 @@ public final class PauseController {
         confirmation = ConfirmationRequest(
             title: "Annuler \(Format.count(ops.count, "opération")) en attente ?",
             message: [
-                "\(Format.count(ops.count, "opération")) en attente dans \(Format.count(banks.count, "banque")) \(one ? "sera annulée" : "seront annulées") : \(one ? "son" : "leur") contenu ne sera pas extrait.",
-                "C'est définitif : pour l'ajouter plus tard, il faudra le renvoyer (depuis Documents ou Importer).",
+                "\(Format.count(ops.count, "opération")) en attente dans \(Format.count(banks.count, "banque")) \(one ? "sera annulée" : "seront annulées") : extractions, consolidations, régénérations.",
+                "C'est définitif : un document dont l'extraction est annulée devra être renvoyé depuis « Sources ».",
                 "Une opération déjà commencée quand vous confirmez est interrompue à sa prochaine étape ; les faits déjà extraits ne sont pas touchés.",
             ].joined(separator: "\n"),
-            confirmTitle: "Vider la file", severity: .destructive, requiredText: ops.count > 10 ? "vider" : nil
+            // Au-delà de dix, on fait retaper la banque (ou le nombre d'opérations pour toutes) : rien de propre à une langue.
+            confirmTitle: "Vider la file", severity: .destructive, requiredText: ops.count > 10 ? (bank ?? String(ops.count)) : nil
         ) { [weak self] in
             await self?.cancel(ops)
         }
@@ -511,7 +580,7 @@ public final class PauseController {
                 failures.append(error.userMessage)
             }
         }
-        message = "\(Format.count(done, "opération annulée", "opérations annulées"))" + (failures.isEmpty ? "." : ", \(failures.count) non annulée(s) : \(failures[0])")
+        message = "\(Format.count(done, "opération annulée", "opérations annulées"))" + (failures.isEmpty ? "." : ", \(Format.count(failures.count, "non annulée", "non annulées")) : \(failures[0])")
     }
 
     // MARK: Automatique

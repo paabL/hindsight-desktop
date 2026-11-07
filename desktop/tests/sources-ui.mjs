@@ -50,7 +50,7 @@ try {
       banks: [{ bank_id: 'fixture', name: 'Fixture' }],
       folder: '/Fixture',
       serverURL: 'http://127.0.0.1:8888',
-      paused: [],
+      pause: { all: false, banks: [] },
     };
     const testState = (window.__sourceTest = { slow: 0, requests: [] });
     function snapshot(args = {}) {

@@ -110,6 +110,16 @@ public final class SearchViewModel {
         }
     }
 
+    /// Relance la dernière recherche après une action confirmée (suppression, modification), pour ne pas montrer
+    /// des faits qui n'existent plus. Une réponse rédigée n'est jamais relancée : elle coûterait des jetons.
+    public func rerunAfterChange() async {
+        guard let last = lastRun, last.0 != .reflect, state.value != nil else { return }
+        mode = last.0
+        query = last.1
+        filter = last.2
+        await run()
+    }
+
     private func apply(page: ListMemoryUnitsResponse, replacing: Bool) {
         let all = page.items.map(FactHit.init)
         let kept = filter.needsLocalTypeFilter ? all.filter { filter.matchesLocally($0) } : all

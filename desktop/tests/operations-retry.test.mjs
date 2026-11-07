@@ -77,11 +77,15 @@ async function withRetryFixture(t, run) {
         failed_consolidation: 0,
         total_observations: 0,
       };
+    } else if (request.method === 'GET' && url.pathname === `${bankPath}/config`) {
+      data = { bank_id: 'fixture', config: { enable_observations: true }, overrides: {} };
     } else if (request.method === 'GET' && url.pathname === `${bankPath}/operations`) {
       const limit = Number(url.searchParams.get('limit'));
       const offset = Number(url.searchParams.get('offset') || 0);
       const status = url.searchParams.get('status');
-      const matching = !status || status === state.status;
+      // The only operation is a fact extraction: consolidation counters read none.
+      const type = url.searchParams.get('type');
+      const matching = (!status || status === state.status) && (!type || type === 'retain');
       data = {
         bank_id: 'fixture',
         total: matching ? 1 : 0,
@@ -249,7 +253,11 @@ for (const mode of ['bulk', 'individual']) {
           assert.ok(['pending', 'processing', 'failed'].includes(call.query.status));
           if (call.query.status !== 'failed' || call.query.limit === '1') {
             assert.equal(call.query.limit, '1', 'global count probes fetch only one operation');
-            assert.notEqual(call.query.exclude_parents, 'true', 'counts include parent operations');
+            // Mêmes lignes que la liste : les lots parents ne sont pas comptés en plus de leurs opérations.
+            // (L'état de la consolidation lit seulement son type, qui n'a jamais de parent.)
+            if (!call.query.type)
+              assert.equal(call.query.exclude_parents, 'true', 'counts exclude parent operations');
+            else assert.equal(call.query.type, 'consolidation');
           } else {
             assert.equal(call.query.limit, '100', 'only display/discovery reads fetch a full page');
           }

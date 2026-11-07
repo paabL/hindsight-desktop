@@ -49,7 +49,7 @@ extension DashboardSnapshot {
         out.append(
             KPI(
                 id: "failures", title: "Échecs", value: Format.number(failures),
-                subtitle: failures > 0 ? "\(st.failedOperations) opération(s) · \(st.failedConsolidation) consolidation(s)" : "aucun",
+                subtitle: failures > 0 ? "\(Format.count(st.failedOperations, "opération")) · \(Format.count(st.failedConsolidation, "consolidation"))" : "aucun",
                 tone: failures > 0 ? .critical : .good))
         out.append(
             KPI(

@@ -1,6 +1,7 @@
 import type { Row, Section, Snapshot } from './types';
 import { translate as t } from './i18n-core.ts';
 import { changeModelWorkflowDemo, modelWorkflowDemo } from './model-workflow-demo';
+import { exampleText, localizeExample } from './demo-en';
 
 // Données entièrement fictives, accessibles uniquement par une activation explicite du mode exemple.
 const timestamp = '2026-10-29T18:30:00Z';
@@ -201,7 +202,8 @@ const operations = ['completed', 'processing', 'pending', 'completed', 'failed',
     status,
     task_type: i % 2 ? 'consolidation' : 'retain',
     operation_type: i % 2 ? 'consolidation' : 'retain',
-    document_id: titles[i],
+    // Une consolidation porte sur toute la banque, pas sur un document.
+    document_id: i % 2 ? null : titles[i],
     created_at: timestamp,
     updated_at: timestamp,
     error_message:
@@ -215,7 +217,36 @@ const operations = ['completed', 'processing', 'pending', 'completed', 'failed',
   }),
 );
 // Volume de la banque fictive : seuls quelques faits sont chargés, mais les totaux restent ceux de la banque.
-const bankFacts: Record<string, number> = { world: 1546, experience: 916, observation: 186 };
+// Répartition par banque : la somme vaut le `fact_count` de la barre latérale (2 648 et 382).
+const factsByBank: Record<string, Record<string, number>> = {
+  horizon: { world: 1546, experience: 916, observation: 186 },
+  atelier: { world: 223, experience: 132, observation: 27 },
+};
+let bankFacts: Record<string, number> = factsByBank.horizon;
+const totalFacts = () => bankFacts.world + bankFacts.experience + bankFacts.observation;
+const pendingConsolidation = 18;
+const countOperations = (status: string) =>
+  operations.filter((operation) => operation.status === status).length;
+// Consolidation de l’exemple : même état dans la Vue d’ensemble et dans Traitements.
+function consolidationData(): Row {
+  const consolidations = (status: string) =>
+    operations.filter(
+      (operation) => operation.operation_type === 'consolidation' && operation.status === status,
+    ).length;
+  const running = consolidations('processing');
+  const queued = consolidations('pending');
+  return {
+    enabled: true,
+    automatic: false,
+    pendingFacts: pendingConsolidation,
+    failedFacts: 0,
+    lastConsolidatedAt: timestamp,
+    running,
+    queued,
+    active: running + queued,
+    phase: running ? 'running' : queued ? 'queued' : pendingConsolidation ? 'pending' : 'upToDate',
+  };
+}
 const data: Partial<Record<Section, Row>> = {
   sources: {
     folder: '/Exemple/horizon-memory',
@@ -257,21 +288,29 @@ const data: Partial<Record<Section, Row>> = {
   documents: { items: documents, total: documents.length },
   search: { hits: [], total: 0, serverIs120: true },
   facts: { facts, total: facts.length, truncated: false, query: '' },
-  timeline: { facts, total: facts.length },
+  timeline: { facts, total: 2648 },
   graph: graphData(),
   operations: { items: operations, total: operations.length },
   dashboard: {
     snapshot: {
       stats: {
-        total_nodes: bankFacts.world + bankFacts.experience + bankFacts.observation,
+        total_nodes: totalFacts(),
         total_documents: documents.length,
         total_observations: bankFacts.observation,
         total_links: 4820,
         // Mêmes comptes que la file de l’exemple (Activité › Traitements).
-        pending_operations: operations.filter((operation) => operation.status === 'pending').length,
-        failed_operations: operations.filter((operation) => operation.status === 'failed').length,
+        pending_operations: countOperations('pending'),
+        failed_operations: countOperations('failed'),
+        pending_consolidation: pendingConsolidation,
+        last_consolidated_at: timestamp,
         nodes_by_fact_type: bankFacts,
       },
+      operationCounts: {
+        pending: countOperations('pending'),
+        processing: countOperations('processing'),
+        failed: countOperations('failed'),
+      },
+      consolidation: consolidationData(),
       recentDocuments: documents.slice(0, 5),
       topTags: [
         { tag: 'projet:horizon', count: 28 },
@@ -503,13 +542,13 @@ function factsData() {
   const matching = facts.filter(
     (fact) =>
       (factType === 'all' || fact.type === factType) &&
-      fact.text.toLocaleLowerCase().includes(factQuery.toLocaleLowerCase()),
+      exampleText(fact.text).toLocaleLowerCase().includes(factQuery.toLocaleLowerCase()),
   );
   // Comme le serveur : le total compte toute la banque (ou le type demandé), pas seulement les faits chargés.
   const total = factQuery
     ? matching.length
     : factType === 'all'
-      ? bankFacts.world + bankFacts.experience + bankFacts.observation
+      ? totalFacts()
       : bankFacts[factType];
   return {
     facts: matching,
@@ -527,37 +566,69 @@ function operationsData() {
   const counts: Row = {};
   for (const operation of operations)
     counts[operation.status] = (counts[operation.status] || 0) + 1;
-  return { items: matching, total: matching.length, statusFilter: operationStatus, counts };
+  return {
+    items: matching,
+    total: matching.length,
+    statusFilter: operationStatus,
+    counts,
+    consolidation: consolidationData(),
+  };
+}
+// Vue d'ensemble et chronologie suivent la banque choisie, comme la barre latérale.
+function bankSectionData(section: Section): Row {
+  const base = structuredClone(data[section] || {});
+  if (section === 'dashboard' && base.snapshot)
+    base.snapshot.stats = {
+      ...base.snapshot.stats,
+      total_nodes: totalFacts(),
+      total_observations: bankFacts.observation,
+      nodes_by_fact_type: { ...bankFacts },
+    };
+  if (section === 'timeline') base.total = totalFacts();
+  return base;
+}
+// Serveur de l’exemple : ses libellés passent par la traduction des messages du moteur ; seuls ses
+// journaux fictifs sont traduits ici.
+function serverData(): Row {
+  const server = structuredClone(data.server || {});
+  if (server.service) server.service.log = exampleText(server.service.log);
+  if (server.hindsightModels?.local)
+    server.hindsightModels.local.log = exampleText(server.hindsightModels.local.log);
+  return server;
 }
 export function exampleSnapshot(section: Section): Snapshot {
+  bankFacts = factsByBank[selectedBank] || factsByBank.horizon;
   return {
     app: {
       connected: true,
       serverURL: 'http://127.0.0.1:8888',
       bank: selectedBank,
       banks: [
-        { bank_id: 'horizon', name: 'Projet Horizon', fact_count: 2648 },
-        { bank_id: 'atelier', name: 'Atelier', fact_count: 382 },
+        { bank_id: 'horizon', name: exampleText('Projet Horizon'), fact_count: 2648 },
+        { bank_id: 'atelier', name: exampleText('Atelier'), fact_count: 382 },
       ],
       folder: (exampleFolders[selectedBank] || []).find(
         (folder) => folder.path === openFolder && folder.kind === 'catalog',
       )?.path,
-      paused: [],
+      pause: { all: false, banks: [] },
     },
     section,
-    data: structuredClone(
-      section === 'graph'
-        ? graphData()
-        : section === 'operations'
-          ? operationsData()
-          : section === 'facts'
-            ? factsData()
-            : section === 'model-settings'
-              ? data.server || {}
-              : section === 'sources'
-                ? sourcesData()
-                : data[section] || {},
-    ),
+    data:
+      section === 'server' || section === 'model-settings'
+        ? serverData()
+        : localizeExample(
+            structuredClone(
+              section === 'graph'
+                ? graphData()
+                : section === 'operations'
+                  ? operationsData()
+                  : section === 'facts'
+                    ? factsData()
+                    : section === 'sources'
+                      ? sourcesData()
+                      : bankSectionData(section),
+            ),
+          ),
     messages: [],
     confirmations: [],
   };
@@ -601,29 +672,36 @@ export async function exampleRequest(command: string, args: Row, section: Sectio
     operationStatus = 'all';
   }
   const snapshot = exampleSnapshot((command === 'section' ? args.section : section) as Section);
-  if (command === 'model.open') return { model: models.find((m) => m.id === args.id) || models[0] };
-  if (command === 'folder.read') return { text: sourceText, path: args.path };
+  if (command === 'model.open')
+    return localizeExample({ model: models.find((m) => m.id === args.id) || models[0] });
+  if (command === 'folder.read') return { text: exampleText(sourceText), path: args.path };
   if (command === 'document.open')
-    return {
+    return localizeExample({
       text: sourceText,
       document: documents.find((d) => d.id === args.id),
       facts: facts.slice(0, 3),
+      // Le document compte plus de faits que les trois montrés : le lecteur dit « 3 sur N ».
+      factsTotal: documents.find((d) => d.id === args.id)?.memory_unit_count ?? 3,
       history: [],
-    };
-  if (command === 'operation.open') return operations.find((o) => o.id === args.id);
+    });
+  if (command === 'operation.open')
+    return localizeExample(operations.find((o) => o.id === args.id));
   // Le lecteur sonde son état après une suppression : en exemple, rien n’est supprimé.
   if (command === 'document.status') return { open: true, confirming: false };
   if (command === 'search' || command === 'search.more') {
-    snapshot.data.hits = facts;
+    snapshot.data.hits = localizeExample(facts);
     snapshot.data.total = facts.length;
     if (args.mode === 'reflect')
       snapshot.data.answer = {
-        text: 'Le projet privilégie une **architecture simple**, une navigation claire et une provenance consultable pour chaque connaissance. Les sources sont rassemblées avant leur traitement, ce qui permet de garder une archive lisible et durable.\n\nLes prochaines étapes consistent à vérifier le parcours de bout en bout et à évaluer la qualité des résultats sur des cas représentatifs.',
+        text: exampleText(
+          'Le projet privilégie une **architecture simple**, une navigation claire et une provenance consultable pour chaque connaissance. Les sources sont rassemblées avant leur traitement, ce qui permet de garder une archive lisible et durable.\n\nLes prochaines étapes consistent à vérifier le parcours de bout en bout et à évaluer la qualité des résultats sur des cas représentatifs.',
+        ),
       };
   } else if (command === 'graph.select') {
     snapshot.data.selectedNodeID = args.id;
-    snapshot.data.nodeFacts =
-      graphMode === 'facts' ? facts.filter((f) => f.id === args.id) : facts.slice(0, 3);
+    snapshot.data.nodeFacts = localizeExample(
+      graphMode === 'facts' ? facts.filter((f) => f.id === args.id) : facts.slice(0, 3),
+    );
   } else if (command === 'confirm') {
     snapshot.messages = [
       t('Exemple : aucune donnée réelle n’a été modifiée.', 'Example: no real data was changed.'),

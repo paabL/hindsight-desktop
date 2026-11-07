@@ -111,7 +111,7 @@ try {
   await expect(page.locator('.operation-row')).toHaveCount(100);
   const firstPaintMs = Math.round(performance.now() - start);
   await expect(page.locator('.operations-list')).toContainText('20,000');
-  await page.getByRole('button', { name: 'Load more', exact: true }).click();
+  await page.getByRole('button', { name: 'Show more', exact: true }).click();
   await expect(page.locator('.operation-row')).toHaveCount(200);
 
   // Every request captures its own result, then the network delivers replies in reverse order.

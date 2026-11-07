@@ -167,8 +167,9 @@ public struct LibraryItem: Identifiable, Sendable {
 
     public var sourceModified: Date? { entry.map { $0.file.modified } }
     public var isConversation: Bool { entry?.session != nil }
-    /// Envoyable d'ici ; les conversations sont collectées dans le dossier commun.
-    public var canSend: Bool { entry?.canSend ?? false }
+    /// Envoyable d'ici ; les conversations sont collectées dans le dossier commun. Un fichier déjà en file
+    /// d'extraction ne l'est plus : le renvoyer relancerait une extraction payante.
+    public var canSend: Bool { state != .queued && (entry?.canSend ?? false) }
     /// Fichier sur ce Mac ; les conversations consultables sont des fichiers JSONL.
     public var sourceURL: URL? {
         guard let e = entry, e.session == nil || e.file.url.pathExtension == "jsonl" else { return nil }

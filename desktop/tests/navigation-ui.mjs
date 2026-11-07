@@ -151,12 +151,13 @@ try {
   await page.getByRole('combobox', { name: 'Fact type', exact: true }).selectOption('observation');
   await expect(page.locator('.fact-row')).toHaveCount(4);
   const factSearch = page.getByRole('searchbox', { name: 'Search facts', exact: true });
-  await factSearch.fill('Une décision');
+  // L'exemple ouvert en anglais l'est en entier, contenu fictif compris.
+  await factSearch.fill('A decision');
   await factSearch.press('Enter');
   await expect(page.locator('.fact-row')).toHaveCount(1);
   await page.getByRole('button', { name: 'View source document', exact: true }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
-  await expect(page.locator('.modal .markdown')).toContainText('Ceci est un document fictif');
+  await expect(page.locator('.modal .markdown')).toContainText('This is a fictional document');
   await page.getByRole('button', { name: 'Close', exact: true }).click();
 
   // Hash history must change the rendered view, selected tab and active group together.
@@ -256,7 +257,7 @@ try {
             bank: 'fictional-bank',
             banks: [{ bank_id: 'fictional-bank', name: 'Fictional bank', fact_count: 45 }],
             serverURL: 'http://127.0.0.1:8888',
-            paused: [],
+            pause: { all: false, banks: [] },
           },
           section: 'facts',
           data: {

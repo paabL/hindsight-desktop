@@ -37,14 +37,60 @@ const exact: Record<string, string> = {
   Réinitialiser: 'Reset',
   Effacer: 'Clear',
   'Effacer les observations': 'Clear observations',
+  'Effacer les faits': 'Clear facts',
+  'Aucune observation à effacer.': 'No observations to clear.',
+  'Opération annulée.': 'Operation cancelled.',
+  'Entrée supprimée.': 'Entry deleted.',
+  'Opération relancée.': 'Operation retried.',
+  "Ce serveur n'accepte pas les réglages par banque. Pour les activer, ajoutez HINDSIGHT_API_ENABLE_BANK_CONFIG_API=true au script de lancement, puis redémarrez le serveur.":
+    'This server does not accept per-bank settings. To enable them, add HINDSIGHT_API_ENABLE_BANK_CONFIG_API=true to the launch script, then restart the server.',
+  "Ce serveur n'accepte pas les réglages par banque : activez le journal côté serveur en ajoutant `HINDSIGHT_API_AUDIT_LOG_ENABLED=true` au script de lancement, puis redémarrez-le.":
+    'This server does not accept per-bank settings: turn the log on server-side by adding `HINDSIGHT_API_AUDIT_LOG_ENABLED=true` to the launch script, then restart it.',
+  "État du journal d'accès inconnu : actualisez la page avant de le modifier.":
+    'Access log state unknown: refresh the page before changing it.',
+  'Aucun fait à effacer.': 'No facts to clear.',
   Rétablir: 'Restore',
   Invalider: 'Invalidate',
   Retraiter: 'Reprocess',
   Régénérer: 'Regenerate',
   Cloner: 'Clone',
   Fusionner: 'Merge',
+  'Appliquer le gabarit': 'Apply template',
+  'Dégeler la file': 'Unfreeze queue',
+  'Exécuter maintenant': 'Run now',
+  'Enregistrer les étiquettes': 'Save tags',
+  'Mettre toutes les banques en pause': 'Pause all memory banks',
+  'Gabarit appliqué.': 'Template applied.',
+  'Documents sélectionnés :': 'Selected documents:',
+  '1 document existant sera REMPLACÉ : ses faits sont supprimés puis réextraits.':
+    '1 existing document will be REPLACED: its facts are deleted and extracted again.',
+  "Les images intégrées aux HTML sont retirées. L'extraction se fait en tâche de fond ; suivez-la dans « Activité › Traitements ».":
+    'Images embedded in HTML are removed. Extraction runs in the background. Follow it in Activity › Processing.',
+  "Ils s'appliquent aux PROCHAINES extractions, consolidations et réponses : les faits déjà extraits ne changent pas (retraitez un document pour lui appliquer la nouvelle extraction).":
+    'They apply to FUTURE extractions, consolidations and answers. Facts already extracted do not change (reprocess a document to apply the new extraction to it).',
+  "Conseil : testez d'abord l'extraction avec l'essai à blanc.":
+    'Tip: try the extraction with a dry run first.',
+  "Sans observations, plus de consolidation : la recherche et les réponses ne s'appuient plus que sur les faits.":
+    'Without observations there is no consolidation: search and answers rely on facts only.',
+  'Sans texte des documents, le lecteur ne pourra plus afficher les nouveaux documents, et le retraitement sera impossible pour eux.':
+    'Without document text, the reader cannot show new documents, and they cannot be reprocessed.',
+  "Le serveur va redémarrer (quelques secondes) sans traiter sa file : HINDSIGHT_API_WORKER_ENABLED=false est ajouté à l'environnement du service, pas à votre script.":
+    'The server will restart (a few seconds) without processing its queue: HINDSIGHT_API_WORKER_ENABLED=false is added to the service environment, not to your script.',
+  "Le serveur est arrêté : il ne traitera pas sa file à son prochain démarrage (HINDSIGHT_API_WORKER_ENABLED=false dans l'environnement du service, pas dans votre script). Il n'est pas démarré pour autant.":
+    'The server is stopped: it will not process its queue at its next start (HINDSIGHT_API_WORKER_ENABLED=false in the service environment, not in your script). This action does not start it.',
+  "L'API, la recherche et les lectures restent disponibles ; les opérations attendent. Celles en cours sont interrompues et reprendront au dégel.":
+    'The API, search and reads stay available; operations wait. Running ones are interrupted and resume when the queue is unfrozen.',
+  "Attention : votre script fixe lui-même HINDSIGHT_API_WORKER_ENABLED ; sa valeur l'emportera.":
+    'Warning: your script sets HINDSIGHT_API_WORKER_ENABLED itself, and its value wins.',
+  "Une copie de l'état actuel sera faite à côté du fichier avant l'écriture. Rien ne change pour le serveur tant qu'il n'est pas redémarré.":
+    'A copy of the current file is saved next to it before writing. Nothing changes for the server until it restarts.',
+  'Le fichier change (voir le diff).': 'The file changes (see the diff).',
+  "Le style d'extraction « Personnalisé » demande des instructions d'extraction.":
+    'The “Custom” extraction style needs extraction instructions.',
+  'Taille des segments trop petite (au moins 100 caractères).':
+    'Chunk size too small (at least 100 characters).',
   Restaurer: 'Restore',
-  Envoyer: 'Send',
+  Envoyer: 'Upload',
   Importer: 'Import',
   Ajouter: 'Add',
   Collecter: 'Collect',
@@ -52,7 +98,6 @@ const exact: Record<string, string> = {
   "Changer l'identifiant": 'Change identifier',
   'Changer la portée': 'Change scope',
   Lancer: 'Start',
-  'Lancer maintenant': 'Run now',
   Relancer: 'Retry',
   'Tout relancer': 'Retry all',
   "Annuler l'opération": 'Cancel operation',
@@ -60,7 +105,6 @@ const exact: Record<string, string> = {
   'Mettre en pause': 'Pause',
   Reprendre: 'Resume',
   'Geler la file': 'Freeze queue',
-  'Reprendre la file': 'Resume queue',
   'Vider la file': 'Clear queue',
   'Annuler les doublons': 'Cancel duplicates',
   Installer: 'Install',
@@ -77,16 +121,16 @@ const exact: Record<string, string> = {
   'Mettre à jour': 'Update',
   Recompiler: 'Rebuild',
   'Mettre de côté et mettre à jour': 'Set aside and update',
-  'Générer la réponse': 'Generate answer',
+  'Obtenir la réponse': 'Get the answer',
   'Tester les modèles': 'Test models',
   'Vérifier / reprendre': 'Check / resume',
-  "Lancer l'essai": 'Run preview',
-  'Interroger la mémoire ?': 'Ask memory?',
-  'Envoyer les sources à Hindsight ?': 'Send sources to Hindsight?',
+  "Lancer l'essai": 'Start the dry run',
+  'Obtenir une réponse ?': 'Get an answer?',
+  'Envoyer les sources à Hindsight ?': 'Upload sources to Hindsight?',
   'Vérifier ou reprendre l’envoi initial ?': 'Check or resume the original upload?',
   'Retirer de la mémoire ?': 'Remove from memory?',
   'Collecter les sources ?': 'Collect sources?',
-  'Modifier les tags du document ?': 'Change document tags?',
+  'Enregistrer les étiquettes du document ?': 'Save document tags?',
   'Retraiter ce document ?': 'Reprocess this document?',
   'Supprimer définitivement ce document ?': 'Permanently delete this document?',
   'Corriger ce fait ?': 'Edit this fact?',
@@ -94,21 +138,57 @@ const exact: Record<string, string> = {
   'Rétablir ce fait ?': 'Restore this fact?',
   'Effacer les observations issues de ce fait ?': 'Clear observations derived from this fact?',
   "Restaurer l'archive dans une nouvelle banque ?": 'Restore the archive into a new memory bank?',
-  'Enregistrer la structure de la mémoire ?': 'Save memory structure?',
-  'Revenir à la configuration du serveur ?': 'Reset to the server configuration?',
-  "Essai à blanc de l'extraction ?": 'Preview extraction?',
+  'Enregistrer le comportement de la mémoire ?': 'Save memory behavior?',
+  'Revenir aux réglages du serveur ?': 'Reset to server settings?',
+  'Revenir aux réglages du serveur': 'Reset to server settings',
+  "Cette banque n'a aucun réglage propre : elle suit déjà le serveur.":
+    'This memory bank has no bank-specific settings: it already follows the server.',
+  "Essai à blanc de l'extraction ?": 'Dry-run the extraction?',
   'Relancer cette opération ?': 'Retry this operation?',
-  'Lancer cette opération maintenant ?': 'Run this operation now?',
+  'Exécuter cette opération maintenant ?': 'Run this operation now?',
   'Annuler cette opération ?': 'Cancel this operation?',
   'Supprimer cette entrée ?': 'Delete this history entry?',
-  'Lancer la consolidation ?': 'Start consolidation?',
-  'Réessayer les faits en échec de consolidation ?': 'Retry facts that failed consolidation?',
-  'Mettre les traitements en pause ?': 'Pause processing?',
-  'Reprendre les traitements ?': 'Resume processing?',
+  'Consolider les faits ?': 'Consolidate facts?',
+  Consolider: 'Consolidate',
+  'Reconsolider les faits en échec ?': 'Reconsolidate failed facts?',
+  Reconsolider: 'Reconsolidate',
+  "La consolidation est désactivée pour cette banque : le serveur ne crée pas d'observations. Activez « Créer des observations » dans « Réglages › Comportement de la mémoire › Consolidation ».":
+    'Consolidation is turned off for this memory bank: the server does not create observations. Turn on “Create observations” in Settings › Memory behavior › Consolidation.',
+  'Une consolidation est déjà en cours pour cette banque.':
+    'A consolidation is already running for this memory bank.',
+  'Rien à consolider : tous les faits de cette banque sont déjà consolidés.':
+    'Nothing to consolidate: every fact in this memory bank is already consolidated.',
+  'Consolidation mise en file.': 'Consolidation queued.',
+  "Une consolidation était déjà en file : cette demande l'a rejointe.":
+    'A consolidation was already queued: this request joined it.',
+  'Aucun fait en échec de consolidation.': 'No facts failed consolidation.',
+  'Faits remis en file.': 'Facts requeued.',
+  "Ce document ne peut pas être retraité : son texte original n'est pas stocké sur le serveur.":
+    'This document cannot be reprocessed: its original text is not stored on the server.',
+  'Une consolidation est déjà en attente pour cette banque.':
+    'A consolidation is already queued for this memory bank.',
+  'Mettre toutes les banques en pause ?': 'Pause all memory banks?',
+  'Reprendre toutes les banques ?': 'Resume all memory banks?',
+  'Toutes les banques sont déjà en pause.': 'All memory banks are already paused.',
+  'Modèle mental créé ; sa génération est en file : suivi dans « Activité › Traitements ».':
+    'Mental model created. Its generation is queued: follow it in Activity › Processing.',
+  'Retraitement en file : suivez-le dans « Activité › Traitements ».':
+    'Reprocessing queued: follow it in Activity › Processing.',
+  "L'opération n'est pas encore terminée ; suivez-la dans « Activité › Traitements ».":
+    'The operation has not finished yet. Follow it in Activity › Processing.',
+  'Consolidation automatique mise en accord avec la pause.':
+    'Automatic consolidation now matches the pause.',
+  "Aucune banque n'est en pause.": 'No memory bank is paused.',
+  'La file du serveur est déjà gelée.': 'The server queue is already frozen.',
+  "La file du serveur n'est pas gelée.": 'The server queue is not frozen.',
+  "Le worker du serveur est arrêté par sa propre configuration (HINDSIGHT_API_WORKER_ENABLED dans son script) : l'app ne l'a pas gelé et ne peut pas le relancer.":
+    'The server worker is turned off by its own configuration (HINDSIGHT_API_WORKER_ENABLED in its script). The app did not freeze it and cannot restart it.',
+  'Le serveur a redémarré mais son worker reste arrêté : votre script fixe probablement HINDSIGHT_API_WORKER_ENABLED=false.':
+    'The server restarted but its worker is still off. Your script probably sets HINDSIGHT_API_WORKER_ENABLED=false.',
   'Enregistrer les plafonds ?': 'Save limits?',
   'Modifier la grille tarifaire ?': 'Change the price list?',
   'Geler la file du serveur ?': 'Freeze the server queue?',
-  'Reprendre la file du serveur ?': 'Resume the server queue?',
+  'Dégeler la file du serveur ?': 'Unfreeze the server queue?',
   'Tester les modèles du serveur ?': 'Test server models?',
   'Enregistrer le script de lancement ?': 'Save the launch script?',
   'Installer le service Hindsight ?': 'Install the Hindsight service?',
@@ -205,7 +285,6 @@ const exact: Record<string, string> = {
   'Banque supprimée.': 'Memory bank deleted.',
   'Modèle mental supprimé.': 'Mental model deleted.',
   'Import terminé.': 'Import complete.',
-  'Modèle appliqué.': 'Template applied.',
   'Serveur arrêté.': 'Server stopped.',
   'Aucun appel LLM prévu.': 'No LLM calls expected.',
   'Cette action consomme des jetons ; estimation indisponible.':
@@ -224,20 +303,27 @@ const exact: Record<string, string> = {
   'Le clone doit porter un nouvel identifiant.': 'The clone needs a new ID.',
   "L'export est terminé mais le serveur n'indique pas où télécharger l'archive.":
     'The export finished, but the server did not say where to download the archive.',
-  'Configuration réinitialisée.': 'Settings reset.',
+  'Réglages du serveur rétablis.': 'Server settings restored.',
   'Directive créée.': 'Directive created.',
   'Directive mise à jour.': 'Directive updated.',
   'Directive supprimée.': 'Directive deleted.',
   'Page de connaissance supprimée.': 'Knowledge page deleted.',
   'Le service est déjà en cours de modification.': 'The service is already being changed.',
   'Ce document n’est plus ouvert.': 'This document is no longer open.',
-  'Test des modèles terminé. Consultez le résultat dans Modèles.':
-    'Model test complete. See the result in Models.',
+  'Le serveur est en mode consultation : le test des modèles est désactivé.':
+    'The server is in read-only mode: the model test is turned off.',
+  'Choisissez une banque pour tester les modèles : le test passe par une banque du serveur.':
+    'Choose a memory bank to test models: the test runs through a server memory bank.',
+  "Le serveur n'a renvoyé aucun résultat pour le test des modèles.":
+    'The server returned no result for the model test.',
+  'Le test des modèles n’a pas abouti.': 'The model test did not complete.',
+  "Le test des modèles n'a pas abouti.": 'The model test did not complete.',
+  'Le rôle LLM testé répond.': 'The tested LLM role responds.',
   "Filtre d'opérations inconnu.": 'Unknown operations filter.',
   'Le test des LLM est désactivé sur ce serveur. La relance des opérations reste disponible. Pour activer ce diagnostic, ajoutez HINDSIGHT_API_ENABLE_BANK_LLM_HEALTH=true au script de lancement, puis redémarrez le serveur.':
     'LLM testing is disabled on this server. Retrying operations is still available. To enable this check, add HINDSIGHT_API_ENABLE_BANK_LLM_HEALTH=true to the launch script, then restart the server.',
-  "Pause en cours sur toutes les banques : rien n'est envoyé. Reprenez depuis « Consommation ».":
-    'All memory banks are paused: nothing is sent. Resume from Activity › Usage.',
+  "Pause en cours sur toutes les banques : rien n'est envoyé. Reprenez depuis « Activité › Traitements ».":
+    'All memory banks are paused: nothing is sent. Resume from Activity › Processing.',
   'Toutes les banques sont en pause.': 'All memory banks are paused.',
   "Le serveur n'est pas lancé par le service de l'app : ajoutez HINDSIGHT_API_WORKER_ENABLED=false à son environnement et redémarrez-le, ou mettez les banques en pause.":
     'The server is not started by the app’s service: add HINDSIGHT_API_WORKER_ENABLED=false to its environment and restart it, or pause the memory banks.',
@@ -284,15 +370,77 @@ const exact: Record<string, string> = {
     'Review and approve the service script before restarting.',
   "Le serveur n'est pas lancé par le service de l'app : sa file ne peut pas être gelée d'ici.":
     'The server is not started by the app’s service: its queue cannot be frozen from here.',
+  "Le script ou l'adresse du serveur a changé pendant l'opération. Vérifiez les réglages et réessayez.":
+    'The script or the server address changed during the operation. Check the settings and try again.',
+  "Le script a changé pendant l'installation : vérifiez-le à nouveau.":
+    'The script changed during installation. Review it again.',
+  'Vérifiez et approuvez le script du service avant de démarrer.':
+    'Review and approve the service script before starting.',
+  "Le service est arrêté, mais l'API répond encore : un autre serveur tourne à cette adresse (lancé hors de l'app).":
+    'The service is stopped, but the API still responds: another server is running at this address (started outside the app).',
+  'Le service utilise un autre script. Réinstallez-le avec le script sélectionné avant de modifier sa file.':
+    'The service uses another script. Reinstall it with the selected script before changing its queue.',
+  "L'ancienne API répond encore après l'arrêt du service.":
+    'The old API still responds after the service stopped.',
+  "Le script ou l'adresse du serveur a changé pendant le démarrage. Actualisez son état.":
+    'The script or the server address changed during startup. Refresh its status.',
+  // Modèle de décision local : états et étapes d'installation.
+  'État inconnu': 'Unknown state',
+  'Non installé': 'Not installed',
+  'Installé, arrêté': 'Installed, stopped',
+  'Démarrage…': 'Starting…',
+  'En marche sur ce Mac': 'Running on this Mac',
+  "Création de l'environnement Python…": 'Creating the Python environment…',
+  'Installation de PyTorch et de ses dépendances (environ 700 Mo)…':
+    'Installing PyTorch and its dependencies (about 700 MB)…',
+  'Installation du rendu officiel du modèle…': 'Installing the model’s official renderer…',
+  "Vérification sur l'exemple du modèle…": 'Checking with the model’s example…',
+  Vérification: 'Check',
+  "La collecte est incomplète. Consultez l'état des sources dans le catalogue.":
+    'Collection is incomplete. Check the sources’ status in the catalog.',
+  "uv est requis pour créer l'environnement Python : https://docs.astral.sh/uv/":
+    'uv is required to create the Python environment: https://docs.astral.sh/uv/',
+  "Le service du modèle local ne s'est pas arrêté. Ses fichiers sont conservés.":
+    'The local model service did not stop. Its files are kept.',
+  // Fichiers locaux (script de lancement, contrôles de sécurité).
+  "Le fichier a été modifié sur le disque depuis son ouverture : rechargez-le avant d'enregistrer.":
+    'The file changed on disk since it was opened. Reload it before saving.',
+  // Mise à jour depuis une copie locale du dépôt.
+  'L’URL du dépôt ne doit pas contenir d’identifiants.':
+    'The repository URL must not contain credentials.',
+  "Indiquez le dossier du dépôt hindsight-mac (le clone git d'où l'app a été construite).":
+    'Choose the hindsight-mac repository folder (the git clone the app was built from).',
+  'Ce dossier ne contient pas Hindsight Desktop Tauri.':
+    'This folder does not contain Hindsight Desktop Tauri.',
+  "Le dépôt n'est sur aucune branche (HEAD détachée).":
+    'The repository is not on any branch (detached HEAD).',
+  'La compilation a dépassé le délai.': 'The build timed out.',
+  'Recherche des opérations en échec…': 'Looking for failed operations…',
+  'La politique du dossier mémoire est invalide ; aucun envoi autorisé.':
+    'The memory folder policy is invalid; no upload is allowed.',
+  'La politique du dossier mémoire est inaccessible ; aucun envoi autorisé.':
+    'The memory folder policy cannot be read; no upload is allowed.',
+  "Un réglage avancé n'est pas du JSON valide.": 'An advanced setting is not valid JSON.',
+  'Adresse de pièce jointe refusée : utilisez HTTPS sans identifiants, ou le serveur configuré.':
+    'Attachment address refused: use HTTPS without credentials, or the configured server.',
   "Le script de lancement a changé depuis votre dernière approbation : redémarrez d'abord le serveur depuis Réglages › Serveur.":
     'The launch script changed since your last approval. Restart the server from Settings › Server first.',
   'Démarrage annulé.': 'Start cancelled.',
-  'Tags mis à jour.': 'Tags updated.',
+  'Étiquettes mises à jour.': 'Tags updated.',
+  "Changer la portée d'un document demande un serveur Hindsight 1.1.0 ou plus récent.":
+    'Changing the scope of a document requires Hindsight server 1.1.0 or later.',
+  "Cette banque ne crée pas d'observations : changer la portée n'aurait aucun effet.":
+    'This memory bank does not create observations, so changing the scope would have no effect.',
+  'Ce document a déjà cette portée.': 'This document already has this scope.',
+  partagée: 'shared',
+  combinée: 'combined',
+  'par étiquette': 'per tag',
+  'toutes les combinaisons': 'all combinations',
   'Portée mise à jour.': 'Scope updated.',
-  "Journal d'audit activé pour cette banque.": 'Audit log enabled for this memory bank.',
-  "Journal d'audit désactivé.": 'Audit log disabled.',
-  "Texte reconstitué à partir des chunks (le texte original n'est pas stocké sur le serveur).":
-    'Text rebuilt from chunks (the original text is not stored on the server).',
+  "Journal d'accès activé pour cette banque.": 'Access log enabled for this memory bank.',
+  "Journal d'accès désactivé.": 'Access log disabled.',
+  "Texte reconstitué à partir des segments : le texte original n'est pas stocké sur le serveur, ce document ne peut donc pas être retraité.":
+    'Text rebuilt from chunks: the original text is not stored on the server, so this document cannot be reprocessed.',
   'Aucun texte disponible pour ce document.': 'No text is available for this document.',
   "Choisissez d'abord le script de synchronisation du projet.":
     'Choose the project sync script first.',
@@ -395,11 +543,11 @@ const exact: Record<string, string> = {
   'Le lot a changé depuis l’aperçu.': 'The batch changed since the preview.',
   'La sélection ou la politique a changé ; préparez un nouvel aperçu.':
     'The selection or policy changed. Prepare a new preview.',
-  'La sélection ou la politique a changé ; rechargez la vue.':
-    'The selection or policy changed. Reload the view.',
-  'La politique a changé ; rechargez la vue.': 'The policy changed. Reload the view.',
-  'La version mémorisée a changé ; rechargez la vue.':
-    'The stored version changed. Reload the view.',
+  'La sélection ou la politique a changé ; actualisez la vue.':
+    'The selection or policy changed. Refresh the view.',
+  'La politique a changé ; actualisez la vue.': 'The policy changed. Refresh the view.',
+  'La version mémorisée a changé ; actualisez la vue.':
+    'The stored version changed. Refresh the view.',
   'Le serveur n’a pas confirmé le retrait. La source reste exclue des futurs envois.':
     'The server did not confirm the removal. The source stays excluded from future uploads.',
   'Source hors du dossier suivi.': 'Source outside the tracked folder.',
@@ -417,7 +565,34 @@ type Rule = [RegExp, (...groups: string[]) => string];
 
 // Nombre déjà formaté par le moteur (séparateurs de la langue du Mac) : seul « 1 » est au singulier.
 const count = (n: string, singular: string, plural = `${singular}s`) =>
-  `${n} ${n.replace(/\D/g, '') === '1' ? singular : plural}`;
+  `${n.trim()} ${n.replace(/\D/g, '') === '1' ? singular : plural}`;
+// Compteurs d'une fusion (« 3 documents ajoutés, 1 document ignoré »), dans l'ordre du moteur.
+const mergeCountNames: Record<string, [string, string]> = {
+  'document ajouté': ['document added', 'documents added'],
+  'documents ajoutés': ['document added', 'documents added'],
+  fait: ['fact', 'facts'],
+  faits: ['fact', 'facts'],
+  observation: ['observation', 'observations'],
+  observations: ['observation', 'observations'],
+  'modèle mental': ['mental model', 'mental models'],
+  'modèles mentaux': ['mental model', 'mental models'],
+  'page de connaissance': ['knowledge page', 'knowledge pages'],
+  'pages de connaissance': ['knowledge page', 'knowledge pages'],
+  'document ignoré': ['skipped document', 'skipped documents'],
+  'documents ignorés': ['skipped document', 'skipped documents'],
+  'observation ignorée': ['skipped observation', 'skipped observations'],
+  'observations ignorées': ['skipped observation', 'skipped observations'],
+};
+function mergeCounts(counts: string): string {
+  return counts
+    .split(', ')
+    .map((part) => {
+      const match = /^([\d\s\u00a0\u202f,.]+) (.+)$/.exec(part);
+      const names = match && mergeCountNames[match[2]];
+      return names ? count(match[1], names[0], names[1]) : part;
+    })
+    .join(', ');
+}
 const toRestore = (banks?: string) => (banks ? ` To restore as soon as possible: ${banks}.` : '');
 const dashboardParts: Record<string, string> = {
   version: 'version',
@@ -437,11 +612,208 @@ const serverActions: Record<string, string> = {
 
 // Messages d’état composés par le moteur. Les noms, identifiants, chemins et erreurs du serveur
 // capturés sont réinsérés tels quels. Avant les règles générales (« Échec : … »).
+/** États du test des modèles, tels que le moteur les écrit (« injoignable », « clé refusée »…). */
+const llmStatus: Record<string, string> = {
+  répond: 'responds',
+  injoignable: 'unreachable',
+  'clé refusée': 'key rejected',
+  'aucun fournisseur configuré': 'no provider configured',
+};
+/** « Extraction des faits (injoignable), Réponses (clé refusée) » : rôles et états traduits un à un. */
+function llmFailures(list: string) {
+  return list
+    .split(/(?<=\)), /)
+    .map((item) => {
+      const match = /^(.*) \(([^()]*)\)$/.exec(item);
+      return match ? `${nativeCatalogText(match[1])} (${llmStatus[match[2]] ?? match[2]})` : item;
+    })
+    .join(', ');
+}
+
+/** Usages du modèle de décision, tels que la page Modèles les nomme. */
+const decisionUsage: Record<string, string> = {
+  'de la recherche': 'search',
+  'des réponses': 'answers',
+  'de la consolidation': 'consolidation',
+};
+/** Noms des réglages de « Comportement de la mémoire », tels que la page les affiche dans chaque langue. */
+const memoryLabels: Record<string, string> = {
+  'Mission de mémorisation': 'Memory mission',
+  "Style d'extraction": 'Extraction style',
+  "Instructions d'extraction": 'Extraction instructions',
+  'Taille des segments en caractères': 'Chunk size in characters',
+  'Conserver le texte des documents': 'Store document text',
+  'Autoriser les entités libres': 'Allow free-form entities',
+  "Étiquettes d'entités": 'Entity labels',
+  'Créer des observations': 'Create observations',
+  'Consolider automatiquement': 'Consolidate automatically',
+  'Mission de consolidation': 'Consolidation mission',
+  "Maximum d'observations par portée": 'Maximum observations per scope',
+  'Portée des observations par défaut': 'Default observation scope',
+  'Trier avec le modèle de décision': 'Filter with the decision model',
+  'Mission de réponse': 'Answer mission',
+  'Esprit critique': 'Critical thinking',
+  'Interprétation littérale': 'Literal interpretation',
+  Empathie: 'Empathy',
+  'Réponses : trier avec le modèle de décision': 'Answers: filter with the decision model',
+  'Pages de connaissance : régénérer avec le modèle de décision':
+    'Knowledge pages: regenerate with the decision model',
+  'Pages de connaissance : ignorer les faits sans effet':
+    'Knowledge pages: skip facts that make no difference',
+  'Recherche textuelle': 'Text search',
+  'Recherche temporelle': 'Temporal search',
+  'Recherche par relations': 'Relationship search',
+  'Réordonner les résultats': 'Rerank results',
+  'Écarter les faits inutiles': 'Remove irrelevant facts',
+  'Retirer les doublons': 'Remove duplicates',
+};
+/** Ce qui est retiré, dit en tête du dialogue de retrait (« 3 éléments choisis », « Documents sans fichier »). */
+function removalTarget(what: string) {
+  if (what === 'Documents sans fichier') return 'Documents without a file';
+  const chosen = /^([\d\s,.]+) éléments? choisis?$/.exec(what);
+  return chosen ? `${count(chosen[1], 'selected item')}` : what;
+}
+/** Raisons d’un fichier non envoyé, entre parenthèses après son nom. */
+function unreadableReasons(list: string) {
+  return list
+    .replaceAll(
+      '(PDF : fournir la source TeX ou Markdown)',
+      '(PDF: upload its TeX or Markdown source)',
+    )
+    .replaceAll('(pas du texte UTF-8)', '(not UTF-8 text)');
+}
+/** Corps fait de lignes connues, traduites une à une ; les listes (« • ») et les valeurs restent intactes. */
+function lineBody(message: string) {
+  return message
+    .split('\n')
+    .map((line) =>
+      !line || line.startsWith('• ')
+        ? line
+        : line.startsWith('Estimation : ')
+          ? costSummary(line)
+          : nativeSystemMessage(line),
+    )
+    .join('\n');
+}
+/** Enregistrement de « Comportement de la mémoire » : « Réglage → valeur », puis les notes. */
+function memorySaveBody(message: string) {
+  const [changes, ...notes] = message.split('\n\n');
+  const value = (shown: string) =>
+    shown === '(valeur du serveur)'
+      ? '(server value)'
+      : shown === 'activé'
+        ? 'on'
+        : shown === 'désactivé'
+          ? 'off'
+          : shown;
+  const lines = changes.split('\n').map((line) => {
+    const match = /^(.+?) → ([\s\S]*)$/.exec(line);
+    return match ? `${memoryLabels[match[1]] ?? match[1]} → ${value(match[2])}` : line;
+  });
+  return [lines.join('\n'), ...notes.map(lineBody)].join('\n\n');
+}
+/** Enregistrement du script de lancement : « Rôle › Champ : « avant » → « après » », puis la note. */
+function scriptSaveBody(message: string) {
+  const [changes, ...notes] = message.split('\n\n');
+  const value = (shown: string) => (shown === '(non défini)' ? '(not set)' : shown);
+  const lines = changes.split('\n').map((line) => {
+    if (line === 'Le fichier change (voir le diff).') return exact[line];
+    const match = /^(.+?) : (« [\s\S]*? »|\(non défini\)) → (« [\s\S]* »|\(non défini\))$/.exec(
+      line,
+    );
+    if (!match) return line;
+    const label = match[1]
+      .split(' › ')
+      .map((part) => nativeCatalogText(part))
+      .join(' › ');
+    return `${label}: ${value(match[2])} → ${value(match[3])}`;
+  });
+  return [lines.join('\n'), ...notes.map(lineBody)].join('\n\n');
+}
+/** Modification d’une directive : seuls les libellés sont traduits, jamais le nom ni le texte saisis. */
+function directiveBody(message: string) {
+  let rest = message;
+  const tail: string[] = [];
+  const activation = /(?:^|\n)(Elle sera réactivée\.|Elle sera désactivée \(conservée\)\.)$/.exec(
+    rest,
+  );
+  if (activation) {
+    tail.unshift(
+      activation[1] === 'Elle sera réactivée.'
+        ? 'It will be turned back on.'
+        : 'It will be turned off (kept).',
+    );
+    rest = rest.slice(0, activation.index);
+  }
+  const priority = /(?:^|\n)Priorité : (-?\d+)$/.exec(rest);
+  if (priority) {
+    tail.unshift(`Priority: ${priority[1]}`);
+    rest = rest.slice(0, priority.index);
+  }
+  const head: string[] = [];
+  const name = /^Nom : ([^\n]*)(?:\n|$)/.exec(rest);
+  if (name) {
+    head.push(`Name: ${name[1]}`);
+    rest = rest.slice(name[0].length);
+  }
+  if (rest.startsWith('Contenu : ')) {
+    head.push(`Content: ${rest.slice('Contenu : '.length)}`);
+    rest = '';
+  }
+  return rest ? message : [...head, ...tail].join('\n');
+}
+/** Réglage propre à la banque : la valeur saisie reste telle quelle. */
+function overrideBody(message: string) {
+  const match =
+    /^Nouvelle valeur : ([\s\S]*)\nLe serveur refuse les réglages non surchargeables \(ex\. modèles LLM : voir « Modèles »\)\.$/.exec(
+      message,
+    );
+  return match
+    ? `New value: ${match[1]}\nThe server refuses settings that cannot be set per memory bank (for example LLM models: see Models).`
+    : message;
+}
+
+// Détail d'une erreur composée : souvent un autre message du moteur, traduit à son tour.
+const inner = (detail: string) => nativeSystemMessage(detail);
+// « banque : erreur ; banque (type) : erreur » : chaque erreur du moteur traduite à part.
+function perBankErrors(list: string) {
+  return list
+    .split(' ; ')
+    .map((part) => {
+      const at = part.indexOf(' : ');
+      return at < 0 ? part : `${part.slice(0, at)}: ${inner(part.slice(at + 3))}`;
+    })
+    .join('; ');
+}
+// Réponse du serveur qui ne correspond pas au modèle attendu (champ manquant, type inattendu…).
+function decodingProblem(detail: string) {
+  let m = /^champ manquant « (.*) » à (.*)$/.exec(detail);
+  if (m) return `missing field “${m[1]}” at ${m[2]}`;
+  m = /^type inattendu \((.*?)\) à (.*?) : ([\s\S]*)$/.exec(detail);
+  if (m) return `unexpected type (${m[1]}) at ${m[2]}: ${m[3]}`;
+  m = /^valeur nulle \((.*?)\) à (.*)$/.exec(detail);
+  if (m) return `null value (${m[1]}) at ${m[2]}`;
+  m = /^JSON invalide à (.*?) : ([\s\S]*)$/.exec(detail);
+  if (m) return `invalid JSON at ${m[1]}: ${m[2]}`;
+  return detail;
+}
+const builtAppProblems: Record<string, string> = {
+  'exécutable absent': 'executable missing',
+  'le dossier de l’app ou son contenu n’est pas un répertoire ordinaire':
+    'the app folder or its contents is not a regular directory',
+};
+function builtAppProblem(detail: string) {
+  const identifier = /^identifiant « (.*) » au lieu de « (.*) »$/.exec(detail);
+  if (identifier) return `identifier “${identifier[1]}” instead of “${identifier[2]}”`;
+  return builtAppProblems[detail] ?? detail;
+}
+
 const engineRules: Rule[] = [
   [
     /^Impossible de lister les banques : ([\s\S]*)$/,
     (detail) => `Unable to list memory banks: ${detail}`,
   ],
+  [/^([\d\s  .,]+) faits? remis en file\.$/, (n) => `${count(n, 'fact')} requeued.`],
   [/^La banque « (.*) » existe déjà\.$/, (id) => `Memory bank “${id}” already exists.`],
   [/^Création impossible : ([\s\S]*)$/, (detail) => `Could not create the memory bank: ${detail}`],
   [
@@ -466,14 +838,14 @@ const engineRules: Rule[] = [
     (detail) => `Failed: ${detail}. Check both memory banks before trying again.`,
   ],
   [
-    /^Fusion terminée( \([^)]*\))?(?: ; « (.*?) » (?:mène désormais à « (.*?) »|supprimée))?\. Lancez la consolidation de « (.*) » pour intégrer les nouveaux faits aux observations\.$/,
-    (counts, source, aliasTarget, target) =>
-      `Merge complete${counts || ''}${source ? (aliasTarget ? `; “${source}” now leads to “${aliasTarget}”` : `; “${source}” deleted`) : ''}. Run consolidation on “${target}” to add the new facts to its observations.`,
+    /^Fusion terminée(?: \(([^)]*)\))?(?: ; « (.*?) » (?:mène désormais à « (.*?) »|supprimée))?\.(?: ([\d\s,.]+) faits? (?:attend|attendent) la consolidation de « (.*) » : lancez-la depuis « Activité › Traitements »\.)?$/,
+    (counts, source, aliasTarget, waiting, target) =>
+      `Merge complete${counts ? ` (${mergeCounts(counts)})` : ''}${source ? (aliasTarget ? `; “${source}” now leads to “${aliasTarget}”` : `; “${source}” deleted`) : ''}.${waiting ? ` ${count(waiting, 'fact')} ${waiting.replace(/\D/g, '') === '1' ? 'is' : 'are'} waiting for consolidation in “${target}”. Run it from Activity › Processing.` : ''}`,
   ],
   [
-    /^Fusion terminée( \([^)]*\))?\. « (.*) » est CONSERVÉE : ([\d\s,.]+) document\(s\) ignoré\(s\) n'existent que dans la source\. Vérifiez, puis supprimez-la depuis « Réglages › Banque »\.$/,
-    (counts, source, n) =>
-      `Merge complete${counts || ''}. “${source}” was KEPT: ${count(n, 'skipped document')} ${n.replace(/\D/g, '') === '1' ? 'exists' : 'exist'} only in the source. Check, then delete it from Settings › Memory bank.`,
+    /^Fusion terminée(?: \(([^)]*)\))?\. « (.*) » est CONSERVÉE : (?:([\d\s,.]+) documents ignorés n'existent|(1) document ignoré n'existe) que dans la source\. Vérifiez, puis supprimez-la depuis « Réglages › Banque »\.$/,
+    (counts, source, many, one) =>
+      `Merge complete${counts ? ` (${mergeCounts(counts)})` : ''}. “${source}” was KEPT: ${count(many || one, 'skipped document')} ${one ? 'exists' : 'exist'} only in the source. Check, then delete it from Settings › Memory bank.`,
   ],
   [
     /^Fusion faite et « (.*) » supprimée, mais l'alias n'a pas pu être créé : ([\s\S]*)\. Recréez-le depuis « Renommer… »\.$/,
@@ -486,50 +858,69 @@ const engineRules: Rule[] = [
   ],
   [/^« (.*) » mis à jour\.$/, (key) => `“${key}” updated.`],
   [/^Refusé par le serveur : ([\s\S]*)$/, (detail) => `Rejected by the server: ${detail}`],
-  [
-    /^Modèle mental créé ; génération lancée \((.*)\)\.$/,
-    (id) => `Mental model created; generation started (${id}).`,
-  ],
-  [/^Régénération lancée \((.*)\)\.$/, (id) => `Regeneration started (${id}).`],
   [/^Archive prête \((.*)\)\.$/, (size) => `Archive ready (${size}).`],
   [/^Échec de l'export : ([\s\S]*)$/, (detail) => `Export failed: ${detail}`],
   [/^Échec du clonage : ([\s\S]*)$/, (detail) => `Clone failed: ${detail}`],
   [/^Échec de l'import : ([\s\S]*)$/, (detail) => `Import failed: ${detail}`],
   [/^Fichier de modèle invalide : ([\s\S]*)$/, (detail) => `Invalid template file: ${detail}`],
   [/^Échec de la validation : ([\s\S]*)$/, (detail) => `Validation failed: ${detail}`],
-  [/^([\d\s,.]+) observation\(s\) effacée\(s\)\.$/, (n) => `${count(n, 'observation')} cleared.`],
-  [/^([\d\s,.]+) observation\(s\) supprimée\(s\)\.$/, (n) => `${count(n, 'observation')} deleted.`],
-  [/^([\d\s,.]+) fait\(s\) supprimé\(s\)\.$/, (n) => `${count(n, 'fact')} deleted.`],
   [
-    /^L'opération (.*) n'est pas terminée ; suivez-la dans « Activité › Traitements »\.$/,
-    (id) => `Operation ${id} is not finished yet. Follow it in Activity › Processing.`,
+    /^([\d\s\u00a0\u202f,.]+) observations? effacées?\.$/,
+    (n) => `${count(n, 'observation')} cleared.`,
+  ],
+  [/^([\d\s\u00a0\u202f,.]+) faits? effacés?\.$/, (n) => `${count(n, 'fact')} cleared.`],
+  [
+    /^L'opération a échoué : ([\s\S]*)$/,
+    (detail) => `The operation failed: ${nativeSystemMessage(detail)}`,
   ],
   [
     /^La banque « (.*) » est en pause : rien n'y est envoyé\. Reprenez-la pour continuer\.$/,
     (bank) => `Memory bank “${bank}” is paused: nothing is sent to it. Resume it to continue.`,
   ],
   [
-    /^(?:« (.*?) » est en pause|Toutes les banques sont en pause)\.( Rien n'est envoyé ; la consolidation automatique et les régénérations de connaissances seront coupées dès que le serveur répondra\.)?(?: ([\d\s,.]+) régénérations? de connaissances? annulées?\.)?(?: Consolidation automatique pas encore coupée pour (.*) \(nouvel essai à la reconnexion\)\.)?$/,
-    (bank, nothing, cancelled, failures) =>
+    /^(?:« (.*?) » est en pause|Toutes les banques sont en pause)\.( Rien n'est envoyé\. Serveur injoignable : la consolidation automatique n'est pas encore coupée \(le bandeau propose de réessayer\)\.)?(?: ([\d\s,.]+) régénérations? de connaissances? annulées?\.)?(?: Consolidation automatique pas encore coupée pour (.*) \(le bandeau propose de réessayer\)\.)?$/,
+    (bank, unreachable, cancelled, failures) =>
       (bank ? `“${bank}” is paused.` : 'All memory banks are paused.') +
-      (nothing
-        ? ' Nothing is sent. Automatic consolidation and knowledge regenerations will be turned off as soon as the server responds.'
+      (unreachable
+        ? ' Nothing is sent. The server is unreachable, so automatic consolidation is not turned off yet (the banner offers to try again).'
         : '') +
       (cancelled ? ` ${count(cancelled, 'knowledge regeneration')} cancelled.` : '') +
       (failures
-        ? ` Automatic consolidation is not turned off yet for ${failures} (it will be retried on reconnect).`
+        ? ` Automatic consolidation is not turned off yet for ${failures} (the banner offers to try again).`
         : ''),
   ],
+  [/^Toujours en échec : (.*)\.$/, (failures) => `Still failing: ${failures}.`],
   [/^Impossible de lister la file : ([\s\S]*)$/, (detail) => `Unable to list the queue: ${detail}`],
   [
     /^Aucune régénération de connaissance en double(?: dans « (.*) »)?\.$/,
     (bank) => `No duplicate knowledge regenerations${bank ? ` in “${bank}”` : ''}.`,
   ],
+  [/^« (.*) » est déjà en pause\.$/, (bank) => `“${bank}” is already paused.`],
+  [/^« (.*) » n'est pas en pause\.$/, (bank) => `“${bank}” is not paused.`],
   [
-    /^« (.*?) » n'est plus en pause à part, mais la pause de toutes les banques s'applique encore\.(?: À rétablir dès que possible : (.*)\.)?$/,
-    (bank, restore) =>
-      `“${bank}” is no longer paused on its own, but the pause on all memory banks still applies.${toRestore(restore)}`,
+    /^« (.*) » n'est en pause qu'avec toutes les banques : reprenez toutes les banques\.$/,
+    (bank) =>
+      `“${bank}” is paused only through the pause on all memory banks. Resume all memory banks.`,
   ],
+  [
+    /^Aucune pause sur toutes les banques\. En pause une à une : (.*)\.$/,
+    (banks) => `There is no pause on all memory banks. Paused one by one: ${banks}.`,
+  ],
+  [/^Mettre « (.*) » en pause \?$/, (bank) => `Pause “${bank}”?`],
+  [
+    /^Une régénération de « (.*) » est déjà en cours ou en file\.$/,
+    (name) => `A regeneration of “${name}” is already running or queued.`,
+  ],
+  [
+    /^Régénération de « (.*) » mise en file : suivi dans « Activité › Traitements »\.$/,
+    (name) => `Regeneration of “${name}” queued. Follow it in Activity › Processing.`,
+  ],
+  [
+    /^Consolidation automatique pas encore coupée pour (.*) \((.*)\)\.$/,
+    (bank, detail) =>
+      `Automatic consolidation is not turned off yet for ${bank} (${nativeSystemMessage(detail)}).`,
+  ],
+  [/^Reprendre « (.*) » \?$/, (bank) => `Resume “${bank}”?`],
   [
     /^« (.*?) » reprend : sa consolidation automatique retrouve son réglage d'avant la pause\.(?: À rétablir dès que possible : (.*)\.)?$/,
     (bank, restore) =>
@@ -549,20 +940,20 @@ const engineRules: Rule[] = [
     (bank) => `No pending operations in “${bank}”.`,
   ],
   [
-    /^([\d\s,.]+) opérations? annulées?(?:\.|, ([\d\s,.]+) non annulée\(s\) : ([\s\S]*))$/,
+    /^([\d\s,.]+) opérations? annulées?(?:\.|, ([\d\s,.]+) non annulées? : ([\s\S]*))$/,
     (n, failed, detail) =>
-      `${count(n, 'operation')} cancelled${failed ? `, ${failed} not cancelled: ${detail}` : '.'}`,
+      `${count(n, 'operation')} cancelled${failed ? `, ${failed.trim()} not cancelled: ${detail}` : '.'}`,
   ],
   [/^Le test des LLM n'a pas abouti : ([\s\S]*)$/, (detail) => `The LLM test failed: ${detail}`],
   [
-    /^Décision (recall|reflect|consolidation) : l'URL Cloud hériterait de la clé du modèle local\. Choisissez l'URL locale ou une clé propre à cette opération avant d'enregistrer\.$/,
-    (operation) =>
-      `Decision model for ${operation}: the Cloud URL would inherit the local model’s key. Choose the local URL or a key specific to this operation before saving.`,
+    /^Modèle de décision (de la recherche|des réponses|de la consolidation) : l'URL Cloud hériterait de la clé du modèle local\. Choisissez l'URL locale ou une clé propre à cet usage avant d'enregistrer\.$/,
+    (usage) =>
+      `Decision model for ${decisionUsage[usage]}: the Cloud URL would inherit the local model’s key. Choose the local URL or a key specific to this use before saving.`,
   ],
   [
-    /^Décision (recall|reflect|consolidation) sur Hindsight Cloud : connectez le compte ou configurez (\S+)\. Pour un modèle local, choisissez l'URL de ce Mac\.$/,
-    (operation, key) =>
-      `Decision model for ${operation} on Hindsight Cloud: connect the account or configure ${key}. For a local model, choose this Mac’s URL.`,
+    /^Modèle de décision (de la recherche|des réponses|de la consolidation) sur Hindsight Cloud : connectez le compte ou configurez (\S+)\. Pour un modèle local, choisissez l'URL de ce Mac\.$/,
+    (usage, key) =>
+      `Decision model for ${decisionUsage[usage]} on Hindsight Cloud: connect the account or configure ${key}. For a local model, choose this Mac’s URL.`,
   ],
   [
     /^Redémarrage refusé : ([\s\S]*)$/,
@@ -596,7 +987,7 @@ const engineRules: Rule[] = [
     (action) => `${serverActions[action]}: the API is responding.`,
   ],
   [
-    /^Structure enregistrée \(([\d\s,.]+) réglage\(s\)\)\.$/,
+    /^Comportement enregistré \(([\d\s,.]+) réglages?\)\.$/,
     (n) => `Memory structure saved (${count(n, 'setting')}).`,
   ],
   [
@@ -604,14 +995,23 @@ const engineRules: Rule[] = [
     (detail) => `Unable to prepare the retry: ${detail}`,
   ],
   [
-    /^Relance interrompue : ([\d\s,.]+) opération\(s\) remise\(s\) en file\.$/,
+    /^Relance interrompue : ([\d\s,.]+) opérations? remises? en file\.$/,
     (n) => `Retry interrupted: ${count(n, 'operation')} requeued.`,
   ],
+  [/^([\d\s,.]+) opérations? relancées?\.$/, (n) => `${count(n, 'operation')} retried.`],
   [
-    /^Retraitement lancé \(opération (.*)\)\. Suivez-le dans « Activité › Traitements »\.$/,
-    (id) => `Reprocessing started (operation ${id}). Follow it in Activity › Processing.`,
+    /^([\d\s,.]+) opérations? relancées?, ([\d\s,.]+) refusées? : ([\s\S]*)$/,
+    (n, refused, detail) =>
+      `${count(n, 'operation')} retried, ${refused.trim()} refused: ${detail}`,
   ],
-  [/^Supprimé \(([\d\s,.]+) fait\(s\)\)\.$/, (n) => `Deleted (${count(n, 'fact')}).`],
+  [
+    /^Document supprimé \(([\d\s,.]+) faits?\)\.$/,
+    (n) => `Document deleted (${count(n, 'fact')}).`,
+  ],
+  [
+    /^Recherche des échecs : ([\d\s,.]+) trouvés?…$/,
+    (n) => `Looking for failures: ${n.trim()} found…`,
+  ],
   [/^Script illisible : ([\s\S]*)$/, (path) => `The script could not be read: ${path}`],
   [
     /^Ce script n'écrit pas dans la banque « (.*) » : rien n'est lancé\.$/,
@@ -645,12 +1045,21 @@ const engineRules: Rule[] = [
   [/^Catalogue illisible : ([\s\S]*)$/, (detail) => `The catalog could not be read: ${detail}`],
   [/^Fichier inaccessible : ([\s\S]*)$/, (detail) => `File unavailable: ${detail}`],
   [
-    /^([\d\s,.]+) document\(s\) ajouté\(s\) ou mis à jour, ([\d\s,.]+) déjà à jour\. Aucun traitement Hindsight\.$/,
+    /^([\d\s,.]+) documents? ajoutés? ou mis à jour, ([\d\s,.]+) déjà à jour\. Aucun traitement Hindsight\.$/,
     (added, unchanged) =>
       `${count(added, 'document')} added or updated, ${unchanged} already up to date. Nothing was processed by Hindsight.`,
   ],
   [/^Collecte impossible : ([\s\S]*)$/, (detail) => `Collection failed: ${detail}`],
-  [/^Serveur redémarré, mais : ([\s\S]*)$/, (detail) => `Server restarted, but: ${detail}`],
+  [
+    /^Serveur redémarré, mais : ([\s\S]*)$/,
+    (detail) => `Server restarted, but: ${llmFailures(detail)}`,
+  ],
+  [/^Les (\d+) rôles LLM testés répondent\.$/, (n) => `All ${n} tested LLM roles respond.`],
+  [
+    /^Rôles? LLM en échec : ([\s\S]*)\.$/,
+    (list) =>
+      `${list.includes('), ') ? 'Failing LLM roles' : 'Failing LLM role'}: ${llmFailures(list)}.`,
+  ],
   [
     /^Source remplacée ou non ordinaire : ([\s\S]*)$/,
     (path) => `Source replaced or not a regular file: ${path}`,
@@ -669,24 +1078,47 @@ const engineRules: Rule[] = [
     (path) => `The file changed while it was being read: ${path}`,
   ],
   [
-    /^([\d\s,.]+) sources envoyées ; traitement à suivre dans cette liste\.$/,
+    /^([\d\s,.]+) sources? envoyées? ; traitement à suivre dans cette liste\.$/,
     (n) => `${count(n, 'source')} uploaded. Follow processing in this list.`,
   ],
   [/^Relecture impossible : ([\s\S]*)$/, (detail) => `Reload failed: ${detail}`],
   [
     /^Aucun fichier lisible parmi la sélection : ([\s\S]*)$/,
-    (files) => `No readable files in the selection: ${files}`,
+    (files) => `No readable files in the selection: ${unreadableReasons(files)}`,
+  ],
+  [
+    /^([\d\s,.]+) fichiers? → banque « (.*) » : ([\d\s,.]+) en texte, ([\d\s,.]+) à convertir par le serveur \(HTML, Office\)\.$/,
+    (n, bank, text, converted) =>
+      `${count(n, 'file')} → memory bank “${bank}”: ${text.trim()} as text, ${converted.trim()} to be converted by the server (HTML, Office).`,
+  ],
+  [
+    /^≈ ([\d\s,.]+) jetons envoyés au LLM d'extraction \(estimation grossière pour les fichiers convertis\)\.$/,
+    (n) => `≈ ${n.trim()} tokens sent to the extraction LLM (rough estimate for converted files).`,
+  ],
+  [
+    /^([\d\s,.]+) documents existants seront REMPLACÉS : leurs faits sont supprimés puis réextraits\.$/,
+    (n) =>
+      `${n.trim()} existing documents will be REPLACED: their facts are deleted and extracted again.`,
+  ],
+  [/^Non envoyés : ([\s\S]*)$/, (files) => `Not uploaded: ${unreadableReasons(files)}`],
+  [
+    /^([\d\s,.]+) fichiers? sur ([\d\s,.]+) mis en file d'extraction dans « (.*?) » \(([\d\s,.]+) opérations?\)\.(?: Refusés : ([\s\S]*))?$/,
+    (sent, total, bank, operations, rejected) =>
+      `${sent.trim()} of ${count(total, 'file')} queued for extraction in “${bank}” (${count(operations, 'operation')}).${rejected ? ` Rejected: ${rejected}` : ''}`,
+  ],
+  [
+    /^Ces réglages deviennent propres à la banque « (.*) »\.$/,
+    (bank) => `These settings become specific to memory bank “${bank}”.`,
+  ],
+  [
+    /^(Esprit critique|Interprétation littérale|Empathie) : choisissez une valeur de 1 à 5\.$/,
+    (label) => `${memoryLabels[label]}: choose a value from 1 to 5.`,
   ],
   [/^Vérification impossible : ([\s\S]*)$/, (detail) => `Check failed: ${detail}`],
   [
-    /^(\d+)\/(\d+) document\(s\) retiré\(s\) de « (.*?) »\.(?: Échecs : ([\s\S]*))?$/,
+    /^([\d\s,.]+) documents? retirés? sur ([\d\s,.]+) de « (.*?) »\.(?: Échecs : ([\s\S]*))?$/,
     (removed, total, bank, failures) =>
-      `${removed}/${total} document(s) removed from “${bank}”.${failures ? ` Failures: ${failures}` : ''}`,
-  ],
-  [
-    /^(\d+)\/(\d+) fichier\(s\) mis en file d'extraction dans « (.*?) » \((\d+) opération\(s\)\)\.(?: Refusés : ([\s\S]*))?$/,
-    (sent, total, bank, operations, rejected) =>
-      `${sent}/${total} file(s) queued for extraction in “${bank}” (${operations} operation(s)).${rejected ? ` Rejected: ${rejected}` : ''}`,
+      `${count(removed, 'document')} of ${total.trim()} removed from “${bank}”.${failures ? ` Failures: ${failures}` : ''}`,
   ],
   [
     /^(version|entités|série temporelle|documents|tags|échecs|configuration) : ([\s\S]*)$/,
@@ -700,13 +1132,177 @@ const rules: Rule[] = [
     (key) =>
       `Hindsight Cloud: connect your account or configure ${key}. For a local model, choose “On this Mac”.`,
   ],
-  [/^Démarrage impossible : ([\s\S]*)$/, (detail) => `Startup failed: ${detail}`],
+  [/^Démarrage impossible : ([\s\S]*)$/, (detail) => `Startup failed: ${inner(detail)}`],
+  [/^Installation impossible : ([\s\S]*)$/, (detail) => `Installation failed: ${inner(detail)}`],
+  [
+    /^Désinstallation impossible : ([\s\S]*)$/,
+    (detail) => `Uninstallation failed: ${inner(detail)}`,
+  ],
+  [/^Arrêt impossible : ([\s\S]*)$/, (detail) => `Stop failed: ${inner(detail)}`],
+  [
+    /^Gel de la file impossible : ([\s\S]*)$/,
+    (detail) => `Could not freeze the queue: ${inner(detail)}`,
+  ],
+  [
+    /^Reprise de la file impossible : ([\s\S]*)$/,
+    (detail) => `Could not resume the queue: ${inner(detail)}`,
+  ],
+  [
+    /^Le service ne s'est pas arrêté dans les ([\d\s,.]+) s\.$/,
+    (n) => `The service did not stop within ${n.trim()} s.`,
+  ],
+  [
+    /^L'API répond, mais le nouveau processus du service n'est pas prêt(?: \(code de sortie (-?\d+)\))?\. Consultez le journal ci-dessous\.$/,
+    (code) =>
+      `The API responds, but the service’s new process is not ready${code ? ` (exit code ${code})` : ''}. See the log below.`,
+  ],
+  [
+    /^Le service a été lancé mais l'API ne répond pas(?: \(code de sortie (-?\d+)\))?\. Consultez le journal ci-dessous\.$/,
+    (code) =>
+      `The service was started but the API does not respond${code ? ` (exit code ${code})` : ''}. See the log below.`,
+  ],
+  [
+    /^launchctl (\S+) a échoué(?: : ([\s\S]*)|\.)$/,
+    (verb, detail) => `launchctl ${verb} failed${detail ? `: ${detail}` : '.'}`,
+  ],
+  [/^Impossible de créer le journal (.*)$/, (path) => `Could not create the log ${path}`],
+  [
+    /^Écriture de (.*) impossible : ([\s\S]*)$/,
+    (path, detail) => `Could not write ${path}: ${detail}`,
+  ],
+  [/^Écriture de (.*) impossible\.$/, (path) => `Could not write ${path}.`],
+  [
+    /^Lecture du service local impossible : ([\s\S]*)$/,
+    (detail) => `Could not read the local service: ${detail}`,
+  ],
+  [
+    /^Arrêt du modèle local impossible : ([\s\S]*)$/,
+    (detail) => `Could not stop the local model: ${detail}`,
+  ],
+  [
+    /^Téléchargement du modèle (\S+) \(([\d,.]+) Go\)…$/,
+    (model, size) => `Downloading the ${model} model (${size.replace(',', '.')} GB)…`,
+  ],
+  [/^([\s\S]+?) : délai dépassé\.$/, (step) => `${inner(step)}: timed out.`],
+  [
+    /^([\s\S]+?) : échec \(code (-?\d+)\)\. Voir le journal\.$/,
+    (step, code) => `${inner(step)}: failed (code ${code}). See the log.`,
+  ],
+  [
+    /^Le serveur local ne répond pas : voir (.*)\.$/,
+    (path) => `The local server does not respond. See ${path}.`,
+  ],
+  [/^Fichier introuvable : (.*)$/, (path) => `File not found: ${path}`],
+  [/^Erreur d'écriture : ([\s\S]*)$/, (detail) => `Write error: ${detail}`],
+  [/^(.*) n'est pas un fichier ordinaire\.$/, (path) => `${path} is not a regular file.`],
+  [/^(.*) appartient à un autre utilisateur\.$/, (path) => `${path} belongs to another user.`],
+  [
+    /^(.*) est modifiable par d'autres comptes \(corrigez avec chmod go-w\)\.$/,
+    (path) => `${path} is writable by other accounts (fix with chmod go-w).`,
+  ],
+  [
+    /^Le dossier (.*) est modifiable par d'autres comptes : le script pourrait y être remplacé\.$/,
+    (path) =>
+      `The folder ${path} is writable by other accounts: the script could be replaced there.`,
+  ],
+  [
+    /^(.*) n'est pas exécutable \(chmod u\+x\)\.$/,
+    (path) => `${path} is not executable (chmod u+x).`,
+  ],
+  [
+    /^Le dépôt distant \((.*)\) utilise un transport non chiffré : passez en https:\/\/ ou ssh\.$/,
+    (url) =>
+      `The remote repository (${url}) uses an unencrypted transport. Switch to https:// or ssh.`,
+  ],
+  [
+    /^Transport du dépôt distant non pris en charge pour les mises à jour : (.*)$/,
+    (url) => `Remote repository transport not supported for updates: ${url}`,
+  ],
+  [/^(.*) n'est pas un dépôt git\.$/, (path) => `${path} is not a git repository.`],
+  [
+    /^(.*) ne contient pas le projet hindsight-mac\.$/,
+    (path) => `${path} does not contain the hindsight-mac project.`,
+  ],
+  [
+    /^git (\S+) a échoué(?: : ([\s\S]*)|\.)$/,
+    (verb, detail) => `git ${verb} failed${detail ? `: ${detail}` : '.'}`,
+  ],
+  [/^Nom de branche inattendu : (.*)$/, (name) => `Unexpected branch name: ${name}`],
+  [/^Nom de dépôt distant inattendu : (.*)$/, (name) => `Unexpected remote name: ${name}`],
+  [
+    /^La compilation a échoué \(code (-?\d+)\) : voir le journal\.$/,
+    (code) => `The build failed (code ${code}). See the log.`,
+  ],
+  [
+    /^Application construite invalide : ([\s\S]*)$/,
+    (detail) => `Invalid built app: ${builtAppProblem(detail)}`,
+  ],
+  [
+    /^Copie impossible dans (.*) : ([\s\S]*)$/,
+    (path, detail) => `Could not copy into ${path}: ${detail}`,
+  ],
+  [
+    /^Impossible de remplacer le contenu de l’app : ([\s\S]*)$/,
+    (detail) => `Could not replace the app’s contents: ${detail}`,
+  ],
+  [
+    /^Impossible de sauvegarder l’ancienne version : ([\s\S]*)$/,
+    (detail) => `Could not back up the previous version: ${detail}`,
+  ],
+  [
+    /^Installation interrompue\. Ancienne version conservée dans (.*) : ([\s\S]*)$/,
+    (path, detail) => `Installation interrupted. Previous version kept in ${path}: ${detail}`,
+  ],
+  [
+    /^Impossible d[’']installer la nouvelle version : ([\s\S]*)$/,
+    (detail) => `Could not install the new version: ${detail}`,
+  ],
+  [
+    /^Impossible de déplacer l'ancienne version : ([\s\S]*)$/,
+    (detail) => `Could not move the previous version: ${detail}`,
+  ],
+  [/^Traces illisibles pour ([\s\S]*)$/, (list) => `Unreadable traces for ${perBankErrors(list)}`],
+  [
+    /^Relevé des services incomplet : ([\s\S]*)$/,
+    (list) => `Incomplete service usage: ${perBankErrors(list)}`,
+  ],
+  [
+    /^Ajout incomplet : Consultez l’état des documents dans le catalogue\.$/,
+    () => 'Incomplete import. Check the documents’ status in the catalog.',
+  ],
+  [/^Ajout incomplet : ([\s\S]*)$/, (detail) => `Incomplete import: ${detail}`],
+  [/^Relance : ([\d\s,.]+) sur ([\d\s,.]+)…$/, (i, n) => `Retrying: ${i.trim()} of ${n.trim()}…`],
+  [
+    /^Sélection refusée : source archivée ou en attente de revue\.\n([\s\S]*)$/,
+    (list) => `Selection refused: source archived or pending review.\n${list}`,
+  ],
+  [/^(.*?) : (git \S+ a échoué[\s\S]*)$/, (repo, detail) => `${repo}: ${inner(detail)}`],
+  [
+    /^Clé d'étiquette invalide « (.*) » \(non vide, sans espace\)\.$/,
+    (key) => `Invalid label key “${key}” (must not be empty or contain spaces).`,
+  ],
+  [/^Clé d'étiquette en double : (.*)\.$/, (key) => `Duplicate label key: ${key}.`],
+  [
+    /^L'étiquette « (.*) » de type (\S+) n'a aucune valeur permise\.$/,
+    (key, type) => `Label “${key}” of type ${type} has no allowed values.`,
+  ],
+  [
+    /^Le serveur renvoie une adresse de téléchargement hors de (\S+) : (.*)$/,
+    (base, url) => `The server returned a download address outside ${base}: ${url}`,
+  ],
+  // Colonne « Lecteur » du journal d'accès (transport · identité).
+  [
+    /^(\S+) · client non identifié \(profil (.*)\)$/,
+    (transport, profile) => `${transport} · unidentified client (profile ${profile})`,
+  ],
+  [/^(\S+) · appelant non identifié$/, (transport) => `${transport} · unidentified caller`],
+  [/^(\S+) · \(sans (.*)\)$/, (transport, key) => `${transport} · (no ${key})`],
   [
     /^Ce dossier est rattaché à la banque « (.*) »\. Sélectionnez-la pour envoyer ou retirer ses sources\.$/,
     (bank) =>
       `This folder belongs to the “${bank}” memory bank. Select it to upload or remove its sources.`,
   ],
-  [/^Redémarrage impossible : ([\s\S]*)$/, (detail) => `Restart failed: ${detail}`],
+  [/^Redémarrage impossible : ([\s\S]*)$/, (detail) => `Restart failed: ${inner(detail)}`],
   [/^Créer la banque « (.*) » \?$/, (id) => `Create memory bank “${id}”?`],
   [/^Renommer « (.*) » en « (.*) » \?$/, (id, name) => `Rename “${id}” to “${name}”?`],
   [/^Afficher « (.*) » sous le nom « (.*) » \?$/, (id, name) => `Display “${id}” as “${name}”?`],
@@ -723,20 +1319,16 @@ const rules: Rule[] = [
     /^Supprimer définitivement la banque « (.*) » \?$/,
     (id) => `Permanently delete memory bank “${id}”?`,
   ],
-  [/^Supprimer TOUS les faits de « (.*) » \?$/, (id) => `Delete ALL facts from “${id}”?`],
+  [/^Effacer TOUS les faits de « (.*) » \?$/, (id) => `Clear ALL facts from “${id}”?`],
   [
-    /^Supprimer tous les faits « (.*) » de « (.*) » \?$/,
-    (type, id) => `Delete all “${type}” facts from “${id}”?`,
+    /^Effacer tous les faits « (.*) » de « (.*) » \?$/,
+    (type, id) => `Clear all “${type}” facts from “${id}”?`,
   ],
   [
     /^Effacer toutes les observations de « (.*) » \?$/,
     (id) => `Clear all observations from “${id}”?`,
   ],
   [/^Modifier « (.*) » pour cette banque \?$/, (key) => `Change “${key}” for this memory bank?`],
-  [
-    /^Supprimer les (\d+) override\(s\) de la banque \?$/,
-    (n) => `Remove the memory bank's ${n} setting overrides?`,
-  ],
   [/^Créer la directive « (.*) » \?$/, (name) => `Create directive “${name}”?`],
   [/^Modifier la directive « (.*) » \?$/, (name) => `Edit directive “${name}”?`],
   [/^Supprimer la directive « (.*) » \?$/, (name) => `Delete directive “${name}”?`],
@@ -745,25 +1337,32 @@ const rules: Rule[] = [
   [/^Supprimer le modèle mental « (.*) » \?$/, (name) => `Delete mental model “${name}”?`],
   [/^Supprimer la page de connaissance « (.*) » \?$/, (name) => `Delete knowledge page “${name}”?`],
   [/^Cloner « (.*) » vers « (.*) » \?$/, (source, target) => `Clone “${source}” into “${target}”?`],
-  [/^Fusionner l'archive dans « (.*) » \?$/, (id) => `Merge the archive into “${id}”?`],
-  [/^Appliquer le modèle à « (.*) » \?$/, (id) => `Apply the template to “${id}”?`],
-  [/^Envoyer à « (.*) » \?$/, (id) => `Send to “${id}”?`],
+  [/^Importer l'archive dans « (.*) » \?$/, (id) => `Import the archive into “${id}”?`],
+  [/^Appliquer le gabarit à « (.*) » \?$/, (id) => `Apply the template to “${id}”?`],
+  [/^Envoyer à « (.*) » \?$/, (id) => `Upload to “${id}”?`],
   [
-    /^Retirer (\d+) document\(s\) de « (.*) » \?$/,
-    (n, id) => `Remove ${n} document(s) from “${id}”?`,
+    /^Retirer ([\d\s,.]+) documents? de « (.*) » \?$/,
+    (n, id) => `Remove ${count(n, 'document')} from “${id}”?`,
   ],
-  [/^Ajouter (\d+) document\(s\) \?$/, (n) => `Add ${n} document(s)?`],
-  [/^Passer la portée en « (.*) » \?$/, (scope) => `Change scope to “${scope}”?`],
-  [/^Relancer (\d+) opération\(s\) échouée\(s\) \?$/, (n) => `Retry ${n} failed operation(s)?`],
-  [/^Annuler ([\d\s]+) opérations? en attente \?$/, (n) => `Cancel ${n} pending operation(s)?`],
+  [/^Ajouter ([\d\s,.]+) documents? \?$/, (n) => `Add ${count(n, 'document')}?`],
+  [/^Passer la portée en « (.*) » \?$/, (scope) => `Change scope to “${scopeLabel(scope)}”?`],
+  [/^étiquettes : (.*)$/, (sets) => `tags: ${sets}`],
   [
-    /^Annuler ([\d\s]+) régénérations? en double \?$/,
-    (n) => `Cancel ${n} duplicate regeneration(s)?`,
+    /^Relancer ([\d\s,.]+) opérations? échouées? \?$/,
+    (n) => `Retry ${count(n, 'failed operation')}?`,
   ],
-  [/^Activer le journal d'audit pour « (.*) » \?$/, (id) => `Enable the audit log for “${id}”?`],
   [
-    /^Désactiver le journal d'audit pour « (.*) » \?$/,
-    (id) => `Disable the audit log for “${id}”?`,
+    /^Annuler ([\d\s,.]+) opérations? en attente \?$/,
+    (n) => `Cancel ${count(n, 'pending operation')}?`,
+  ],
+  [
+    /^Annuler ([\d\s,.]+) régénérations? en double \?$/,
+    (n) => `Cancel ${count(n, 'duplicate regeneration')}?`,
+  ],
+  [/^Activer le journal d'accès pour « (.*) » \?$/, (id) => `Enable the access log for “${id}”?`],
+  [
+    /^Désactiver le journal d'accès pour « (.*) » \?$/,
+    (id) => `Disable the access log for “${id}”?`,
   ],
   [/^Connecter (.*) \?$/, (name) => `Connect ${name}?`],
   [/^Se déconnecter de (.*) \?$/, (name) => `Disconnect from ${name}?`],
@@ -771,11 +1370,19 @@ const rules: Rule[] = [
   [/^Serveur injoignable : ([\s\S]*)$/, (detail) => `Server unreachable: ${detail}`],
   [/^URL invalide : ([\s\S]*)$/, (detail) => `Invalid URL: ${detail}`],
   [/^HTTP (\d+) sur ([\s\S]*)$/, (status, detail) => `HTTP ${status} at ${detail}`],
+  [
+    /^Réponse inattendue pour (.*?) : ([\s\S]*)$/,
+    (path, detail) => `Unexpected response for ${path}: ${decodingProblem(detail)}`,
+  ],
   [/^Réponse inattendue pour ([\s\S]*)$/, (detail) => `Unexpected response for ${detail}`],
   [/^Échec : ([\s\S]*)$/, (detail) => `Failed: ${nativeSystemMessage(detail)}`],
   [/^Action inconnue : (.*)$/, (action) => `Unknown action: ${action}`],
   [/^Application construite : (.*)$/, (path) => `Application built: ${path}`],
   [/^Banque « (.*) » créée\.$/, (id) => `Memory bank “${id}” created.`],
+  [
+    /^Banque « (.*) » créée, mais sa mission n'a pas été enregistrée : ([\s\S]*)$/,
+    (id, detail) => `Memory bank “${id}” created, but its mission was not saved: ${detail}`,
+  ],
   [
     /^Clés non prises en charge ici : (.*)\. Modifiez-les dans Réglages › Banque › Configuration avancée de la banque\.$/,
     (keys) =>
@@ -787,6 +1394,12 @@ const rules: Rule[] = [
       `The server refused (${nativeSystemMessage(detail)}). To enable it on the server, add \`${name}=true\` to the Hindsight process environment, then restart it.`,
   ],
 ];
+
+// Libellé de portée venu du moteur (« partagée », « étiquettes : a + b », « inconnue »).
+function scopeLabel(label: string): string {
+  if (label === 'inconnue') return 'unknown';
+  return nativeSystemMessage(label);
+}
 
 export function nativeSystemMessage(message: string): string {
   if (getLanguage() !== 'en') return message;
@@ -806,7 +1419,8 @@ const sourceReasons: Record<string, string> = {
   'Retrait validé': 'Removal approved',
   'Source contenant des documents retirés ou en attente de revue':
     'Source containing removed documents or documents pending review',
-  'Source à relier au catalogue': 'Not linked to the catalog yet',
+  "Document de la banque qu'aucune source du catalogue ne décrit":
+    'Memory bank document that no catalog source describes',
   'Commit déjà classé hors mémoire': 'Commit already classified as outside memory',
 };
 
@@ -828,20 +1442,29 @@ const bodies: Record<string, string> = {
     'The new text will be reindexed. Derived observations and links will be deleted and consolidated again (consolidation LLM call).\n\nThe previous version remains in the server’s curation archive.',
   "Le serveur exige le texte avec toute correction : il sera ré-indexé tel quel, et les observations qui en dérivent reconsolidées.\n\nL'ancienne version reste dans l'archive de curation du serveur.":
     'The server requires text with every edit: it will be reindexed as-is and its derived observations will be consolidated again.\n\nThe previous version remains in the server’s curation archive.',
+  "Le nouveau texte sera ré-indexé ; les observations et liens qui en dérivent sont supprimés. Cette banque ne crée pas d'observations : elles ne seront pas recréées.\n\nL'ancienne version reste dans l'archive de curation du serveur.":
+    'The new text will be reindexed. Derived observations and links will be deleted. This memory bank does not create observations, so they will not be recreated.\n\nThe previous version remains in the server’s curation archive.',
+  "Le serveur exige le texte avec toute correction : il sera ré-indexé tel quel.\n\nL'ancienne version reste dans l'archive de curation du serveur.":
+    'The server requires text with every edit: it will be reindexed as-is.\n\nThe previous version remains in the server’s curation archive.',
   'Les faits sont conservés ; les observations seront recréées par une nouvelle consolidation (appels LLM).':
     'Facts are kept. Observations will be recreated through a new consolidation (LLM calls).',
+  "Les faits sont conservés. Cette banque ne crée pas d'observations : elles ne seront pas recréées tant que « Créer des observations » reste désactivé.":
+    'Facts are kept. This memory bank does not create observations, so they will not be recreated while Create observations stays turned off.',
   "Irréversible. Les documents restent, mais leurs faits disparaissent. Exportez la banque d'abord.":
     'Irreversible. Documents remain, but their facts are deleted. Export the memory bank first.',
   "Faits, documents, entités, observations, configuration : tout est supprimé, sans retour possible. Exportez-la d'abord.":
     'Facts, documents, entities, observations and settings will all be permanently deleted. Export the memory bank first.',
   "La banque revient aux valeurs globales du serveur (missions, disposition, réglages d'extraction et de recherche…).":
     'The memory bank returns to the server’s global settings (missions, disposition, extraction and search settings…).',
-  "Il sera exclu du recall et de la consolidation ; ses liens et observations dérivées sont retirés. C'est réversible (« Rétablir »).":
-    'It will be excluded from recall and consolidation. Its derived links and observations will be removed. You can reverse this with Restore.',
-  'Il redevient visible du recall et sera reconsolidé.':
-    'It will be included in recall again and reconsolidated.',
+  "Il sera exclu de la recherche et de la consolidation ; ses liens et observations dérivées sont retirés. C'est réversible (« Rétablir »).":
+    'It will be excluded from search and consolidation. Its derived links and observations will be removed. You can reverse this with Restore.',
+  'Il redevient visible de la recherche et sera reconsolidé.':
+    'It will appear in search again and be consolidated again.',
+  'Il redevient visible de la recherche.': 'It will appear in search again.',
   'Les observations qui en dérivent sont supprimées ; elles pourront être recréées par la prochaine consolidation.':
     'Derived observations will be deleted. The next consolidation can recreate them.',
+  "Les observations qui en dérivent sont supprimées. Cette banque ne crée pas d'observations : elles ne seront pas recréées.":
+    'Derived observations will be deleted. This memory bank does not create observations, so they will not be recreated.',
   'Toutes les banques sont concernées.': 'All memory banks are affected.',
   'Les estimations de coût utiliseront cette grille dans Hindsight Desktop.':
     'Hindsight Desktop will use this price list for cost estimates.',
@@ -888,10 +1511,64 @@ function costSummary(message: string): string {
       'calibrated on $1 recent LLM calls from this memory bank',
     )
     .replace('valeurs par défaut (aucune trace récente)', 'default values (no recent traces)')
-    .replace("mesurée sur l'essai à blanc", 'measured from the preview');
+    .replace("mesurée sur l'essai à blanc", 'measured from the dry run');
 }
 
 const messageRules: Array<[RegExp, Rule]> = [
+  [/^Envoyer à « .* » \?$/, [/^([\s\S]*)$/, (body) => lineBody(body)]],
+  [
+    /^Enregistrer le comportement de la mémoire \?$/,
+    [/^([\s\S]*)$/, (body) => memorySaveBody(body)],
+  ],
+  [/^Enregistrer le script de lancement \?$/, [/^([\s\S]*)$/, (body) => scriptSaveBody(body)]],
+  [/^(Geler|Dégeler) la file du serveur \?$/, [/^([\s\S]*)$/, (body) => lineBody(body)]],
+  [
+    /^Essai à blanc de l'extraction \?$/,
+    [
+      /^Le LLM d'extraction lit ([\d\s  .,]+) caractères avec les réglages du brouillon\. Rien n'est enregistré dans la banque\.(?:\n\n([^\n]*))?$/,
+      (n, cost) =>
+        `The extraction LLM reads ${n.trim()} characters with the draft settings. Nothing is saved to the memory bank.${cost ? '\n\n' + costSummary(cost) : ''}`,
+    ],
+  ],
+  [
+    /^Enregistrer les plafonds \?$/,
+    [
+      /^Budget quotidien : (.*)\nAu dépassement : (.*)\.$/,
+      (limit, action) =>
+        `Daily budget: ${limit === 'sans plafond' ? 'no limit' : limit}\nWhen exceeded: ${
+          {
+            'Alerter seulement': 'alert only',
+            'Mettre toutes les banques en pause': 'pause all memory banks',
+            'Geler la file': 'freeze the queue',
+          }[action] ?? action
+        }.`,
+    ],
+  ],
+  [
+    /^Appliquer le gabarit à « .* » \?$/,
+    [
+      /^Effet prévu : ([\s\S]*)\.$/,
+      (parts) =>
+        `Expected effect: ${parts
+          .replace('aucun changement', 'no change')
+          .replace(
+            /([\d\s,.]+) modèles? mentaux? créés?|([\d\s,.]+) modèle mental créé/g,
+            (m) => `${count(m.match(/[\d\s,.]+/)![0], 'mental model')} created`,
+          )
+          .replace(
+            /([\d\s,.]+) modèles? mentaux? mis à jour|([\d\s,.]+) modèle mental mis à jour/g,
+            (m) => `${count(m.match(/[\d\s,.]+/)![0], 'mental model')} updated`,
+          )
+          .replace(
+            /([\d\s,.]+) directives? créées?/g,
+            (m) => `${count(m.match(/[\d\s,.]+/)![0], 'directive')} created`,
+          )
+          .replace(
+            /([\d\s,.]+) directives? mises? à jour/g,
+            (m) => `${count(m.match(/[\d\s,.]+/)![0], 'directive')} updated`,
+          )}.`,
+    ],
+  ],
   [
     /^Retirer l'alias « .* » \?$/,
     [
@@ -901,35 +1578,38 @@ const messageRules: Array<[RegExp, Rule]> = [
     ],
   ],
   [
-    /^Retirer \d+ document\(s\) de « .* » \?$/,
+    /^Retirer [\d\s,.]+ documents? de « .* » \?$/,
     [
-      /^([\s\S]*) : ([\d\s]+) documents? et ([\d\s]+) faits? supprimés définitivement de la banque\. Les fichiers ne sont pas touchés ; les renvoyer coûtera une nouvelle extraction\.$/,
+      /^([\s\S]*) : ([\d\s,.]+) documents? et ([\d\s,.]+) faits? supprimés définitivement de la banque\. Les fichiers ne sont pas touchés ; les renvoyer coûtera une nouvelle extraction\.$/,
       (what, docs, facts) =>
-        `${what}: ${docs} document(s) and ${facts} fact(s) will be permanently deleted from the memory bank. Files are kept. Sending them again will require a new extraction and its cost.`,
+        `${removalTarget(what)}: ${count(docs, 'document')} and ${count(facts, 'fact')} will be permanently deleted from the memory bank. Files are kept. Uploading them again will require a new extraction and its cost.`,
     ],
   ],
   [
-    /^Modifier les tags du document \?$/,
+    /^Enregistrer les étiquettes du document \?$/,
     [
-      /^Ajoutés : ([\s\S]*)\nRetirés : ([\s\S]*)\n\nLes tags sont propagés à tous ses faits ; les observations concernées sont invalidées et reconsolidées sous les nouveaux tags \(appel LLM\)\.$/,
-      (added, removed) =>
-        `Added: ${added}\nRemoved: ${removed}\n\nTags are applied to all document facts. Affected observations are invalidated and consolidated again under the new tags (LLM call).`,
+      /^Ajoutées : ([\s\S]*)\nRetirées : ([\s\S]*)\n\nLes étiquettes sont propagées à tous ses faits(?: ; les observations concernées sont invalidées et reconsolidées sous les nouvelles étiquettes \(appel LLM\)|(\. Cette banque ne crée pas d'observations : rien n'est reconsolidé))\.$/,
+      (added, removed, noObservations) =>
+        `Added: ${added}\nRemoved: ${removed}\n\n` +
+        (noObservations
+          ? 'Tags are applied to all document facts. This memory bank does not create observations, so nothing is consolidated again.'
+          : 'Tags are applied to all document facts. Affected observations are invalidated and consolidated again under the new tags (LLM call).'),
     ],
   ],
   [
     /^Passer la portée en « .* » \?$/,
     [
-      /^Actuelle : ([\s\S]*)\. Les faits ne sont pas réextraits\. Ceux dont le compartiment d'observations change perdent leurs observations et repartent en consolidation \(appel LLM\), avec les faits d'autres documents qui les partageaient\. Un changement sans effet sur les compartiments ne relance rien\.$/,
+      /^Actuelle : ([\s\S]*)\. Les faits ne sont pas réextraits\. Ceux dont les observations changent de portée les perdent et repartent en consolidation \(appel LLM\), avec les faits d'autres documents qui les partageaient\. Un changement qui laisse chaque fait dans les mêmes observations ne relance rien\.$/,
       (current) =>
-        `Current: ${current}. Facts are not extracted again. Facts whose observation scope changes lose their observations and are consolidated again (LLM call), along with facts from other documents that shared those observations. If scopes are unaffected, nothing is rerun.`,
+        `Current: ${scopeLabel(current)}. Facts are not extracted again. Facts whose observation scope changes lose their observations and are consolidated again (LLM call), along with facts from other documents that shared those observations. A change that keeps every fact in the same observations reruns nothing.`,
     ],
   ],
   [
-    /^Annuler [\d\s]+ opérations? en attente \?$/,
+    /^Annuler [\d\s,.]+ opérations? en attente \?$/,
     [
-      /^([\d\s]+) opérations? en attente dans ([\d\s]+) banques? (?:sera annulée|seront annulées) : (?:son|leur) contenu ne sera pas extrait\.\nC'est définitif : pour l'ajouter plus tard, il faudra le renvoyer \(depuis Documents ou Importer\)\.\nUne opération déjà commencée quand vous confirmez est interrompue à sa prochaine étape ; les faits déjà extraits ne sont pas touchés\.$/,
+      /^([\d\s,.]+) opérations? en attente dans ([\d\s,.]+) banques? (?:sera annulée|seront annulées) : extractions, consolidations, régénérations\.\nC'est définitif : un document dont l'extraction est annulée devra être renvoyé depuis « Sources »\.\nUne opération déjà commencée quand vous confirmez est interrompue à sa prochaine étape ; les faits déjà extraits ne sont pas touchés\.$/,
       (n, banks) =>
-        `${n} pending operation(s) in ${banks} memory bank(s) will be cancelled. Their content will not be extracted.\nThis is final: to add it later, send it again from Documents or Import.\nAn operation that has already started when you confirm will be interrupted at its next stage. Previously extracted facts are kept.`,
+        `${count(n, 'pending operation')} in ${count(banks, 'memory bank')} will be cancelled: extractions, consolidations, regenerations.\nThis is final: a document whose extraction is cancelled must be uploaded again from Sources.\nAn operation that has already started when you confirm will be interrupted at its next stage. Previously extracted facts are kept.`,
     ],
   ],
   [
@@ -959,25 +1639,37 @@ const messageRules: Array<[RegExp, Rule]> = [
   [
     /^Supprimer définitivement ce document \?$/,
     [
-      /^Le document, ses chunks et ses (\d+) fait\(s\) sont supprimés\. Irréversible : exportez d'abord si besoin\.$/,
-      (n) =>
-        `The document, its chunks and its ${n} fact(s) will be deleted. This is irreversible: export first if needed.`,
+      /^Le document(?:, ses segments et (?:(son fait)|ses ([\d\s  .,]+) faits)| et ses segments) sont supprimés\. Irréversible : exportez d'abord si besoin\.$/,
+      (one, n) =>
+        `${one ? 'The document, its chunks and its fact' : n ? `The document, its chunks and its ${n.trim()} facts` : 'The document and its chunks'} will be deleted. This is irreversible: export first if needed.`,
     ],
   ],
   [
     /^Retraiter ce document \?$/,
     [
-      /^Ses (\d+) fait\(s\) seront supprimés puis ré-extraits avec la configuration actuelle du serveur \(appels LLM et VLM\)\. Les corrections manuelles faites sur ces faits seront perdues\.(?:\n\n([^\n]+))?$/,
+      /^(?:Son fait sera supprimé puis ré-extrait|Ses ([\d\s\u00a0\u202f.,]+) faits seront supprimés puis ré-extraits) avec la configuration actuelle du serveur \(appels LLM et VLM\)\. Les corrections manuelles faites sur ces faits seront perdues\.(?:\n\n([^\n]+))?$/,
       (n, cost) =>
-        `Its ${n} fact(s) will be deleted and extracted again using the current server configuration (LLM and VLM calls). Manual corrections to these facts will be lost.${cost ? '\n\n' + costSummary(cost) : ''}`,
+        `${n ? `Its ${n} facts` : 'Its fact'} will be deleted and extracted again using the current server configuration (LLM and VLM calls). Manual corrections to these facts will be lost.${cost ? '\n\n' + costSummary(cost) : ''}`,
     ],
   ],
   [
-    /^Mettre les traitements en pause \?$|^Reprendre les traitements \?$/,
-    [/^Banque : (.*)\.$/, (id) => `Memory bank: ${id}.`],
+    /^Mettre (?:« .* »|toutes les banques) en pause \?$/,
+    [
+      /^(?:« (.*) »|Toutes les banques) : plus aucun envoi depuis cette app, consolidation automatique coupée, régénérations de connaissances annulées\. Les opérations déjà en file continuent ; pour les arrêter aussi, gelez la file\.$/,
+      (bank) =>
+        `${bank ? `“${bank}”` : 'All memory banks'}: no more uploads from this app, automatic consolidation turned off, knowledge regenerations cancelled. Operations already queued keep running. To stop them too, freeze the queue.`,
+    ],
   ],
   [
-    /^Interroger la mémoire \?$/,
+    /^Reprendre (?:« .* »|toutes les banques) \?$/,
+    [
+      /^(?:« (.*) »|Toutes les banques) : les envois reprennent et la consolidation automatique retrouve son réglage d'avant la pause\.$/,
+      (bank) =>
+        `${bank ? `“${bank}”` : 'All memory banks'}: uploads resume and automatic consolidation returns to its setting from before the pause.`,
+    ],
+  ],
+  [
+    /^Obtenir une réponse \?$/,
     [
       /^Le modèle rédigera une réponse à partir des faits de cette banque\.\n\n([^\n]+)\n\n([\s\S]*)$/,
       (cost, query) =>
@@ -1011,31 +1703,31 @@ const messageRules: Array<[RegExp, Rule]> = [
   [
     /^Envoyer les sources à Hindsight \?$/,
     [
-      /^(\d+) sources complètes vers « (.*) », environ (\d+) jetons de texte avant extraction\.\n\n([\s\S]*)\n\nLes sources modifiées remplacent leur version mémorisée\. Aucune suppression d’autres documents\. La consolidation dépend des réglages de la banque\.(\n\nCe dossier sera rattaché à « .* » : ses sources ne pourront pas être envoyées à une autre banque\.)?$/,
+      /^([\d\s,.]+) sources? complètes? vers « (.*) », environ ([\d\s,.]+) jetons de texte avant extraction\.\n\n([\s\S]*)\n\nLes sources modifiées remplacent leur version mémorisée\. Aucune suppression d’autres documents\. La consolidation dépend des réglages de la banque\.(\n\nCe dossier sera rattaché à « .* » : ses sources ne pourront pas être envoyées à une autre banque\.)?$/,
       (n, bank, tokens, items, binds) =>
-        `${n} complete sources to “${bank}”, approximately ${tokens} text tokens before extraction.\n\n${items}\n\nChanged sources replace their stored version. Other documents are kept. Consolidation follows the memory bank settings.${binds ? `\n\nThis folder will be linked to “${bank}”: its sources cannot be uploaded to another memory bank.` : ''}`,
+        `${count(n, 'complete source')} to “${bank}”, approximately ${tokens.trim()} text tokens before extraction.\n\n${items}\n\nChanged sources replace their stored version. Other documents are kept. Consolidation follows the memory bank settings.${binds ? `\n\nThis folder will be linked to “${bank}”: its sources cannot be uploaded to another memory bank.` : ''}`,
     ],
   ],
   [
-    /^Lancer la consolidation \?$/,
+    /^Consolider les faits \?$/,
     [
-      /^Le serveur va créer\/mettre à jour les observations à partir des faits non consolidés \((\d+) en attente\)\. Cela appelle le LLM de consolidation\. Chaque fait se fond dans les observations de sa portée \(celle de son document\)\.(?:\n\n([^\n]+))?$/,
+      /^Le serveur va créer ou mettre à jour les observations à partir (?:du seul fait|des ([\d\s  .,]+) faits) pas encore consolidés?\. Cela appelle le LLM de consolidation\. Chaque fait rejoint les observations de sa portée \(celle de son document\)\.(?:\n\n([^\n]+))?$/,
       (n, cost) =>
-        `The server will create or update observations from unconsolidated facts (${n} pending). This calls the consolidation LLM. Each fact contributes to observations in its scope (its document's scope).${cost ? '\n\n' + costSummary(cost) : ''}`,
+        `The server will create or update observations from ${n ? `the ${n} facts` : 'the only fact'} not yet consolidated. This calls the consolidation LLM. Each fact joins the observations of its scope (its document’s scope).${cost ? '\n\n' + costSummary(cost) : ''}`,
     ],
   ],
   [
-    /^Réessayer les faits en échec de consolidation \?$/,
+    /^Reconsolider les faits en échec \?$/,
     [
-      /^(\d+) fait\(s\) marqués « échec définitif » seront remis dans la file de consolidation \(aucune observation supprimée\)\.$/,
+      /^(?:Le fait en échec de consolidation sera remis|Les ([\d\s  .,]+) faits en échec de consolidation seront remis) dans la file\. Aucune observation n'est supprimée\.$/,
       (n) =>
-        `${n} fact(s) marked as permanently failed will be requeued for consolidation. No observations are deleted.`,
+        `${n ? `The ${n} facts` : 'The fact'} that failed consolidation will be requeued. No observations are deleted.`,
     ],
   ],
   [
-    /^Annuler ([\d\s]+) régénérations? en double \?$/,
+    /^Annuler ([\d\s,.]+) régénérations? en double \?$/,
     [
-      /^([\d\s]+) connaissances? (?:est|sont) dans la file plusieurs fois : ([\d\s]+) régénérations? en trop (?:sera annulée|seront annulées)\.\nChaque connaissance garde une seule régénération \(celle en cours, sinon la plus récente\) : son contenu final est le même, sans payer plusieurs fois\.$/,
+      /^([\d\s,.]+) connaissances? (?:est|sont) dans la file plusieurs fois : ([\d\s,.]+) régénérations? en trop (?:sera annulée|seront annulées)\.\nChaque connaissance garde une seule régénération \(celle en cours, sinon la plus récente\) : son contenu final est le même, sans payer plusieurs fois\.$/,
       (items, extra) =>
         `${count(items, 'knowledge item is', 'knowledge items are')} queued more than once: ${count(extra, 'extra regeneration')} will be cancelled.\nEach knowledge item keeps a single regeneration (the running one, otherwise the most recent): its final content is the same, without paying several times.`,
     ],
@@ -1064,11 +1756,11 @@ const messageRules: Array<[RegExp, Rule]> = [
     ],
   ],
   [
-    /^Revenir à la configuration du serveur \?$/,
+    /^Revenir aux réglages du serveur \?$/,
     [
-      /^Les (\d+) réglage\(s\) propres à « (.*) » sont supprimés, y compris ceux de l'administration \(journal d'audit, etc\.\)\. Les faits existants ne changent pas\.$/,
-      (n, bank) =>
-        `The ${n} setting override(s) for “${bank}” will be removed, including administration settings (audit log, etc.). Existing facts are unchanged.`,
+      /^(?:Les ([\d\s,.]+) réglages propres à « (.*) » sont supprimés|Le réglage propre à « (.*) » est supprimé), y compris ceux de l'administration \(journal d'accès, etc\.\)\. Les faits existants ne changent pas\.( La consolidation automatique reste coupée jusqu'à la fin de la pause\.)?$/,
+      (n, bank, oneBank, paused) =>
+        `${n ? `The ${n} bank-specific settings of “${bank}” will be removed` : `The bank-specific setting of “${oneBank}” will be removed`}, including administration settings (access log, etc.). Existing facts are unchanged.${paused ? ' Automatic consolidation stays off until the pause ends.' : ''}`,
     ],
   ],
   [
@@ -1085,8 +1777,9 @@ function confirmationMessage(confirmation: Confirmation): string {
   const { title, message } = confirmation;
   // Les directives contiennent directement le texte de l’utilisateur, même lorsqu’il
   // ressemble à une phrase système connue : leur corps ne passe jamais au dictionnaire.
-  if (/^(Créer|Modifier|Supprimer) la directive « /.test(title) || /^Modifier « /.test(title))
-    return message;
+  if (/^(Créer|Supprimer) la directive « /.test(title)) return message;
+  if (/^Modifier la directive « /.test(title)) return directiveBody(message);
+  if (/^Modifier « .* » pour cette banque \?$/.test(title)) return overrideBody(message);
   if (Object.hasOwn(bodies, message)) return bodies[message];
   for (const [titlePattern, [pattern, render]] of messageRules) {
     if (!titlePattern.test(title)) continue;
@@ -1135,6 +1828,13 @@ export function localizeNativeSnapshot(snapshot: Snapshot): Snapshot {
         fields: Array.isArray(role.fields) ? fields(role.fields) : role.fields,
       }));
     if (Array.isArray(data.otherVariables)) data.otherVariables = fields(data.otherVariables);
+    if (Array.isArray(data.diagnostic))
+      data.diagnostic = data.diagnostic.map((row: Row) => ({
+        ...row,
+        title: text(row.title),
+        status: llmStatus[row.status] ?? row.status,
+      }));
+    data.testModelsBlocked = text(data.testModelsBlocked);
     if (Array.isArray(data.accounts))
       data.accounts = data.accounts.map((account: Row) => ({
         ...account,

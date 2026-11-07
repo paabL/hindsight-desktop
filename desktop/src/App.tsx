@@ -47,6 +47,7 @@ import { useI18n, translate as tr, type Language } from './i18n';
 import { localizeNativeSnapshot, nativeSystemMessage } from './native-messages';
 import { nativeRequest, host } from './transport';
 import { exampleRequest } from './demo';
+import { startExampleContent } from './demo-en';
 import {
   Badge,
   Button,
@@ -246,6 +247,58 @@ export default function App() {
     `${app.serverURL}|${app.bank || ''}|${app.folder || ''}`;
   const notify = useCallback((message: string) => setToast(message), []);
   const busy = busyCount > 0;
+  // Bandeau : ce que la pause suspend vraiment (envois, consolidation automatique, régénérations), la file
+  // gelée à part, et les banques dont la consolidation automatique n'a pas encore pu être coupée.
+  const pauseState = snapshot.app.pause;
+  const pausedBankName = (id: string) =>
+    bankLabel(snapshot.app.banks.find((b) => b.bank_id === id)) || id;
+  const pauseBanner = (() => {
+    const parts: string[] = [];
+    if (snapshot.app.consultationOnly)
+      parts.push(
+        t(
+          'Serveur en mode consultation : il refuse les écritures (envois, réglages, traitements).',
+          'Server in read-only mode: it refuses writes (uploads, settings, processing).',
+        ),
+      );
+    if (!pauseState) return parts.length ? parts.join(' ') : null;
+    const paused = pauseState.all
+      ? t('Pause sur toutes les banques', 'All banks paused')
+      : pauseState.banks?.length
+        ? `${t('En pause :', 'Paused:')} ${pauseState.banks.map(pausedBankName).join(', ')}`
+        : null;
+    if (paused)
+      parts.push(
+        paused +
+          t(
+            ' — envois, consolidation automatique et régénérations suspendus.',
+            ' — uploads, automatic consolidation and regenerations suspended.',
+          ),
+      );
+    if (pauseState.uncut?.length)
+      parts.push(
+        `${t('Consolidation automatique pas encore coupée :', 'Automatic consolidation not turned off yet:')} ${pauseState.uncut.map(pausedBankName).join(', ')}.`,
+      );
+    if (pauseState.unreleased?.length)
+      parts.push(
+        `${t('Consolidation automatique pas encore rétablie :', 'Automatic consolidation not restored yet:')} ${pauseState.unreleased.map(pausedBankName).join(', ')}.`,
+      );
+    if (pauseState.frozen)
+      parts.push(
+        t(
+          'File du serveur gelée : aucune opération n’est traitée.',
+          'Server queue frozen: no operations are processed.',
+        ),
+      );
+    else if (pauseState.workerOff)
+      parts.push(
+        t(
+          'Worker du serveur arrêté : les opérations attendent.',
+          'Server worker off: operations wait.',
+        ),
+      );
+    return parts.length ? parts.join(' ') : null;
+  })();
   const run = useCallback(async (action: string, args: Row = {}) => {
     const quiet = action === 'snapshot' || args.polling === true;
     if (quiet && (foregroundRequests.current.size || contextTransition.current !== null))
@@ -255,6 +308,7 @@ export default function App() {
       action,
     );
     if (changesContext) {
+      viewArgs.current = {};
       contextGeneration.current++;
       contextTransition.current = sequence;
       sourcesCache.current = null;
@@ -326,11 +380,20 @@ export default function App() {
       }
     }
   }, []);
+  // Recherche et filtres de la vue ouverte (texte, type, statut…) : une actualisation sans eux (↻, après une
+  // confirmation, sondage) repart de la même vue au lieu d’afficher toute la banque sous des champs encore
+  // remplis. Une navigation ou un changement de banque repart d’une vue neuve.
+  const viewArgs = useRef<Row>({});
   const refresh = useCallback(
-    (args: Row = {}) => run('section', { section: routeRef.current, ...args }),
+    (args: Row = {}) => {
+      for (const [key, value] of Object.entries(args))
+        if (key !== 'polling' && key !== 'explicit') viewArgs.current[key] = value;
+      return run('section', { section: routeRef.current, ...viewArgs.current, ...args });
+    },
     [run],
   );
   function navigate(section: Section) {
+    viewArgs.current = {};
     routeRef.current = section;
     setRoute(section);
     location.hash = section;
@@ -352,6 +415,7 @@ export default function App() {
     contextTransition.current = null;
     foregroundRequests.current.clear();
     setBusyCount(0);
+    if (value) startExampleContent();
     setDemo(value);
     demoRef.current = value;
     seenMessages.current.clear();
@@ -401,6 +465,11 @@ export default function App() {
       !!(snapshot.data?.connectingAccount || snapshot.data?.hindsightModels?.local?.busy));
   const sourcesWork =
     route === 'sources' && !!(snapshot.data?.refreshing || snapshot.data?.collecting);
+  // Connaissances : une régénération en file ou en cours se suit jusqu'à la fin, sans recharger à la main.
+  const knowledgeWork =
+    route === 'models' &&
+    Array.isArray(snapshot.data?.refreshing) &&
+    snapshot.data.refreshing.length > 0;
   useEffect(() => {
     if (
       !ready ||
@@ -417,7 +486,9 @@ export default function App() {
           ? 20
           : route === 'consumption'
             ? 30
-            : 0;
+            : route === 'models' && knowledgeWork
+              ? 10
+              : 0;
     if (!seconds) return;
     let polling = false;
     const interval = setInterval(async () => {
@@ -432,7 +503,7 @@ export default function App() {
       }
     }, seconds * 1000);
     return () => clearInterval(interval);
-  }, [route, snapshot.app.connected, ready, demo, refresh, serverWork, sourcesWork]);
+  }, [route, snapshot.app.connected, ready, demo, refresh, serverWork, sourcesWork, knowledgeWork]);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem('hindsight-desktop-theme-v2', theme);
@@ -617,12 +688,7 @@ export default function App() {
       case 'dashboard':
         return <Dashboard {...props} />;
       case 'operations':
-        return (
-          <Operations
-            {...props}
-            paused={Boolean(snapshot.app.bank && snapshot.app.paused?.includes(snapshot.app.bank))}
-          />
-        );
+        return <Operations {...props} pause={snapshot.app.pause} bank={snapshot.app.bank} />;
       case 'timeline':
         return <Timeline {...props} />;
       case 'graph':
@@ -693,8 +759,8 @@ export default function App() {
                 <small>
                   {bank
                     ? t(
-                        `${number(bank.fact_count)} faits en mémoire`,
-                        `${number(bank.fact_count)} facts in memory`,
+                        `${number(bank.fact_count)} fait${bank.fact_count > 1 ? 's' : ''} en mémoire`,
+                        `${number(bank.fact_count)} fact${bank.fact_count === 1 ? '' : 's'} in memory`,
                       )
                     : snapshot.app.connected
                       ? t('Choisissez une banque', 'Choose a memory bank')
@@ -850,7 +916,7 @@ export default function App() {
               icon={RefreshCw}
               label={t('Actualiser la vue', 'Refresh view')}
               disabled={busy}
-              onClick={() => void refresh()}
+              onClick={() => void refresh({ explicit: true })}
             />
           </div>
         </header>
@@ -861,13 +927,16 @@ export default function App() {
             aria-label={t('Action en cours', 'Action in progress')}
           />
         )}
-        {snapshot.app.paused?.length ? (
+        {pauseBanner ? (
           <div className="pause-banner">
             <span className="status-dot warning" />
-            {t('Traitements en pause :', 'Processing paused:')}{' '}
-            {snapshot.app.paused
-              .map((id) => bankLabel(snapshot.app.banks.find((b) => b.bank_id === id)) || id)
-              .join(', ')}
+            <span>{pauseBanner}</span>
+            {/* Rien n'est réécrit sans clic : ce qui n'a pas pu être coupé ou rétabli se relance ici. */}
+            {(pauseState?.uncut?.length || pauseState?.unreleased?.length) && (
+              <button disabled={busy} onClick={() => void run('pause.reconcile')}>
+                {t('Réessayer', 'Try again')}
+              </button>
+            )}
             <button onClick={() => navigate('operations')}>
               {t('Voir les traitements', 'View processing')}
               <ArrowRight size={13} />
@@ -1222,7 +1291,7 @@ function Settings({
             <kbd>⌘ K</kbd>
           </div>
           <div>
-            <span>{t('Actualiser la vue', 'Refresh the view')}</span>
+            <span>{t('Actualiser la vue', 'Refresh view')}</span>
             <kbd>⌘ R</kbd>
           </div>
           <div>

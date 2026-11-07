@@ -123,7 +123,7 @@ public final class MemoryFolderViewModel {
             let expectedVersions = versions
             var consumed = false
             confirmation = ConfirmationRequest(
-                title: "Ajouter \(paths.count) document(s) ?",
+                title: "Ajouter \(Format.count(paths.count, "document")) ?",
                 message: "Projet : \(project)\nDestination : \(root.path)/documents/\(project)/\n\n\(names)\n\nLe collecteur de ce dossier copie les originaux et actualise uniquement le catalogue local. Aucun envoi ni traitement Hindsight ; les quatre collecteurs externes ne sont pas lancés.",
                 confirmTitle: "Ajouter", severity: .normal
             ) { [weak self] in
@@ -185,7 +185,7 @@ public final class MemoryFolderViewModel {
                 if let bytes = line.data(using: .utf8), let json = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any] {
                     let added = json["imported"] as? Int ?? 0
                     let unchanged = json["unchanged"] as? Int ?? 0
-                    importSummary = "\(added) document(s) ajouté(s) ou mis à jour, \(unchanged) déjà à jour. Aucun traitement Hindsight."
+                    importSummary = "\(Format.count(added, "document ajouté ou mis à jour", "documents ajoutés ou mis à jour")), \(Format.number(unchanged)) déjà à jour. Aucun traitement Hindsight."
                 }
             }
         } catch { self.error = "Collecte impossible : \(error.localizedDescription)" }

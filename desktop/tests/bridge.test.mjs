@@ -47,7 +47,8 @@ before(async () => {
             'audit_log',
             'llm_trace',
             'store_document_text',
-          ].map((key) => [key, false]),
+            // Réglages par banque acceptés, comme par défaut sur un serveur Hindsight.
+          ].map((key) => [key, key === 'bank_config_api']),
         ),
       };
     else if (url.pathname === '/v1/default/banks')
@@ -422,4 +423,16 @@ test('un même résultat d’action, produit deux fois, est une nouvelle occurre
     /Clés non prises en charge ici : audit_log_enabled/,
   );
   assert.ok(calls.slice(before).every((c) => c.method === 'GET'));
+});
+
+test('un texte collé avec des séparateurs Unicode reste une seule requête et une seule réponse', async () => {
+  // U+2028, U+2029 et U+0085 sont permis tels quels en JSON, mais beaucoup de lecteurs de lignes
+  // y voient une fin de ligne : la requête ne doit pas être coupée, ni la réponse illisible.
+  const separators = [0x2028, 0x2029, 0x85].map((code) => String.fromCharCode(code));
+  const query = `avant${separators.join('milieu')}après`;
+  const result = await bridge.request('section', { section: 'documents', query });
+  assert.equal(result.data.query, query);
+  const next = await bridge.request('snapshot');
+  assert.equal(next.app.connected, true);
+  await bridge.request('section', { section: 'documents', query: '' });
 });

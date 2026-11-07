@@ -62,7 +62,7 @@ try {
           ],
           folder: state.open,
           serverURL: 'http://127.0.0.1:8888',
-          paused: [],
+          pause: { all: false, banks: [] },
         },
         section: 'sources',
         data: state.open

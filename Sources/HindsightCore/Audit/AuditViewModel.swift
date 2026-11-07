@@ -135,9 +135,29 @@ public final class AuditViewModel {
     public func requestEnableAudit() { requestAudit(enabled: true) }
     public func requestDisableAudit() { requestAudit(enabled: false) }
 
+    /// Le journal peut-il être activé ou désactivé d'ici ? Faux si son état est inconnu ou si le serveur refuse
+    /// les réglages par banque.
+    public var canToggleAudit: Bool {
+        switch auditStatus {
+        case .enabled: return features?.bankConfigApi != false
+        case .disabled(let canEnableViaAPI): return canEnableViaAPI
+        default: return false
+        }
+    }
+
     private func requestAudit(enabled: Bool) {
+        guard canToggleAudit else {
+            if case .disabled = auditStatus {
+                actionMessage = "Ce serveur n'accepte pas les réglages par banque : activez le journal côté serveur en ajoutant `\(Self.auditEnvVar)=true` au script de lancement, puis redémarrez-le."
+            } else if case .enabled = auditStatus {
+                actionMessage = ServerCapabilities.bankConfigDisabledMessage
+            } else {
+                actionMessage = "État du journal d'accès inconnu : actualisez la page avant de le modifier."
+            }
+            return
+        }
         confirmation = ConfirmationRequest(
-            title: enabled ? "Activer le journal d'audit pour « \(bank) » ?" : "Désactiver le journal d'audit pour « \(bank) » ?",
+            title: enabled ? "Activer le journal d'accès pour « \(bank) » ?" : "Désactiver le journal d'accès pour « \(bank) » ?",
             message: enabled
                 ? "Le serveur enregistrera chaque accès à cette banque (action, transport, requête, réponse). Les accès passés ne sont pas récupérables. Écrit `audit_log_enabled = true` dans la configuration de la banque (PATCH …/config)."
                 : "Les prochains accès ne seront plus enregistrés. Les entrées existantes sont conservées.",
@@ -146,7 +166,7 @@ public final class AuditViewModel {
             guard let self else { return }
             do {
                 _ = try await self.client.updateBankConfig(self.bank, updates: ["audit_log_enabled": .bool(enabled)])
-                self.actionMessage = enabled ? "Journal d'audit activé pour cette banque." : "Journal d'audit désactivé."
+                self.actionMessage = enabled ? "Journal d'accès activé pour cette banque." : "Journal d'accès désactivé."
                 await self.loadAudit()
                 await self.onConfigChanged?()
             } catch {

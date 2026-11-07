@@ -337,7 +337,8 @@ public final class ServerSettingsViewModel {
             let a = original.value(n), b = draft.value(n)
             guard a != b else { return nil }
             func show(_ v: String?) -> String { v.map { "« \(LaunchScript.maskValue(n, $0)) »" } ?? "(non défini)" }
-            return "\(n) : \(show(a)) → \(show(b))"
+            // Le nom de la page Modèles ; la variable seulement quand la page ne la montre pas (détail dans le diff).
+            return "\(ServerSettingsCatalog.label(forVariable: n) ?? n) : \(show(a)) → \(show(b))"
         }
     }
 
@@ -515,6 +516,8 @@ public final class ServerSettingsViewModel {
             return "Hindsight Cloud : connectez votre compte ou configurez \(keyName). Pour un modèle local, choisissez « Sur ce Mac »."
         }
         let global = "HINDSIGHT_API_DECISION_MODEL_"
+        // Nom de chaque usage tel que la page Modèles l'affiche, pas l'identifiant du serveur.
+        let usage = ["RECALL": "de la recherche", "REFLECT": "des réponses", "CONSOLIDATION": "de la consolidation"]
         for operation in ["RECALL", "REFLECT", "CONSOLIDATION"] {
             let own = "HINDSIGHT_API_\(operation)_DECISION_MODEL_"
             let ownProvider = draft.value(own + "PROVIDER").flatMap { $0.isEmpty ? nil : $0 }
@@ -532,9 +535,9 @@ public final class ServerSettingsViewModel {
             let inheritedLocalKey = inherits && (draft.value(own + "API_KEY") ?? "").isEmpty
                 && draft.value(global + "BASE_URL") == LocalDecisionModel.baseURL && !setting("API_KEY").isEmpty
             if inheritedLocalKey {
-                problems.append("Décision \(operation.lowercased()) : l'URL Cloud hériterait de la clé du modèle local. Choisissez l'URL locale ou une clé propre à cette opération avant d'enregistrer.")
+                problems.append("Modèle de décision \(usage[operation]!) : l'URL Cloud hériterait de la clé du modèle local. Choisissez l'URL locale ou une clé propre à cet usage avant d'enregistrer.")
             } else if setting("API_KEY").isEmpty && !connected {
-                problems.append("Décision \(operation.lowercased()) sur Hindsight Cloud : connectez le compte ou configurez \(own)API_KEY. Pour un modèle local, choisissez l'URL de ce Mac.")
+                problems.append("Modèle de décision \(usage[operation]!) sur Hindsight Cloud : connectez le compte ou configurez \(own)API_KEY. Pour un modèle local, choisissez l'URL de ce Mac.")
             }
         }
         return problems
@@ -777,10 +780,10 @@ public final class ServerSettingsViewModel {
                 return
             }
         }
-        let bad = llmHealth?.operations.filter { !$0.ok } ?? []
-        restartState =
-            bad.isEmpty
-            ? .succeeded(llmHealth == nil ? "Serveur redémarré." : "Serveur redémarré ; tous les LLM répondent.")
-            : .failed("Serveur redémarré, mais : " + bad.map { "\($0.operation) → \($0.status)" }.joined(separator: ", "))
+        if let health = llmHealth, let failures = LLMHealthSummary.failures(health) {
+            restartState = .failed("Serveur redémarré, mais : \(failures)")
+        } else {
+            restartState = .succeeded(llmHealth == nil ? "Serveur redémarré." : "Serveur redémarré ; tous les LLM répondent.")
+        }
     }
 }

@@ -37,21 +37,37 @@ const rules: Rule[] = [
   ],
   [
     /^Fusionner « .* » dans « .* » \?$/,
-    /^Les documents de « (.*) » \(([\d\s,.]+) faits\) sont ajoutés à « (.*) » \(([\d\s,.]+) faits\)\.\nSans appel LLM : les faits sont ré-indexés avec le modèle d'embeddings de la cible et leurs entités fusionnées avec celles de la cible\.\nDocuments dont l'identifiant existe déjà dans la cible : (ignorer les documents déjà présents|les importer sous un nouvel identifiant|remplacer ceux de la cible)\.\nLes réglages, directives et modèles mentaux de la source ne sont PAS copiés\. Les observations de la cible seront mises à jour par sa prochaine consolidation \(appels LLM\)\.\n« (.*) » est conservée\.$/,
-    (source, sourceFacts, target, targetFacts, conflict, kept) =>
-      `${mergeIntro(source, sourceFacts, target, targetFacts, conflict)}\n“${kept}” will be kept.`,
-  ],
-  [
-    /^Fusionner « .* » dans « .* » \?$/,
-    /^Les documents de « (.*) » \(([\d\s,.]+) faits\) sont ajoutés à « (.*) » \(([\d\s,.]+) faits\)\.\nSans appel LLM : les faits sont ré-indexés avec le modèle d'embeddings de la cible et leurs entités fusionnées avec celles de la cible\.\nDocuments dont l'identifiant existe déjà dans la cible : (ignorer les documents déjà présents|les importer sous un nouvel identifiant|remplacer ceux de la cible)\.\nLes réglages, directives et modèles mentaux de la source ne sont PAS copiés\. Les observations de la cible seront mises à jour par sa prochaine consolidation \(appels LLM\)\.\n« (.*) » sera ensuite SUPPRIMÉE\.$/,
-    (source, sourceFacts, target, targetFacts, conflict, deleted) =>
-      `${mergeIntro(source, sourceFacts, target, targetFacts, conflict)}\n“${deleted}” will then be DELETED.`,
-  ],
-  [
-    /^Fusionner « .* » dans « .* » \?$/,
-    /^Les documents de « (.*) » \(([\d\s,.]+) faits\) sont ajoutés à « (.*) » \(([\d\s,.]+) faits\)\.\nSans appel LLM : les faits sont ré-indexés avec le modèle d'embeddings de la cible et leurs entités fusionnées avec celles de la cible\.\nDocuments dont l'identifiant existe déjà dans la cible : (ignorer les documents déjà présents|les importer sous un nouvel identifiant|remplacer ceux de la cible)\.\nLes réglages, directives et modèles mentaux de la source ne sont PAS copiés\. Les observations de la cible seront mises à jour par sa prochaine consolidation \(appels LLM\)\.\n« (.*) » sera ensuite SUPPRIMÉE, et son identifiant mènera à « (.*) »\.$/,
-    (source, sourceFacts, target, targetFacts, conflict, deleted, aliasTarget) =>
-      `${mergeIntro(source, sourceFacts, target, targetFacts, conflict)}\n“${deleted}” will then be DELETED, and its identifier will point to “${aliasTarget}”.`,
+    /^Les documents de « (.*) » \(([\d\s,.]+) faits\) sont ajoutés à « (.*) » \(([\d\s,.]+) faits\), avec leurs observations et connaissances\. Les réglages et directives de la source ne sont PAS copiés\.\nL'import n'appelle pas de LLM : les faits sont ré-indexés avec le modèle d'embeddings de la cible et leurs entités fusionnées avec celles de la cible\.\nDocuments dont l'identifiant existe déjà dans la cible : (ignorer les documents déjà présents|les importer sous un nouvel identifiant|remplacer ceux de la cible)\.\n(?:« (.*) » ne crée pas d'observations : les faits que la source n'avait pas encore consolidés le resteront|Les faits que la source n'avait pas encore consolidés seront consolidés automatiquement dans « (.*) » \(appels LLM\)|Les faits que la source n'avait pas encore consolidés attendront que vous lanciez la consolidation de « (.*) » \(appels LLM\))\.\n« (.*?) » (?:est conservée|sera ensuite (SUPPRIMÉE)(?:, et son identifiant mènera à « (.*) »)?)\.$/,
+    (
+      source,
+      sourceFacts,
+      target,
+      targetFacts,
+      conflict,
+      noObservations,
+      automatic,
+      manual,
+      after,
+      deleted,
+      aliasTarget,
+    ) => {
+      const conflicts: Record<string, string> = {
+        'ignorer les documents déjà présents': 'skip existing documents',
+        'les importer sous un nouvel identifiant': 'import them with a new identifier',
+        'remplacer ceux de la cible': 'replace the target documents',
+      };
+      const consolidation = noObservations
+        ? `“${noObservations}” does not create observations, so facts the source had not consolidated yet will stay unconsolidated.`
+        : automatic
+          ? `Facts the source had not consolidated yet will be consolidated automatically in “${automatic}” (LLM calls).`
+          : `Facts the source had not consolidated yet will wait until you run consolidation on “${manual}” (LLM calls).`;
+      const ending = !deleted
+        ? `“${after}” will be kept.`
+        : aliasTarget
+          ? `“${after}” will then be DELETED, and its identifier will point to “${aliasTarget}”.`
+          : `“${after}” will then be DELETED.`;
+      return `Documents from “${source}” (${sourceFacts} facts) will be added to “${target}” (${targetFacts} facts), with their observations and knowledge. The source’s settings and directives are NOT copied.\nThe import makes no LLM calls: facts are reindexed with the target’s embedding model and their entities merged with the target’s entities.\nDocuments whose identifiers already exist in the target: ${conflicts[conflict]}.\n${consolidation}\n${ending}`;
+    },
   ],
   [
     /^Afficher « .* » sous le nom « .* » \?$/,
@@ -66,15 +82,16 @@ const rules: Rule[] = [
       `A new memory bank will be created; it must not already exist. No LLM calls: facts are reindexed and entities resolved again.${warning ? ' Warning: the copied configuration includes the source memory bank’s webhooks.' : ''}`,
   ],
   [
-    /^Fusionner l'archive dans « .* » \?$/,
-    /^Les documents de l'archive sont ajoutés\. Documents déjà présents : (REMPLACÉS|importés sous un nouvel identifiant|ignorés)\.$/,
+    /^Importer l'archive dans « .* » \?$/,
+    /^Les documents de l'archive sont ajoutés à la banque\. Documents déjà présents : (REMPLACÉS|importés sous un nouvel identifiant|ignorés)\.$/,
     (conflict) =>
-      `Documents from the archive will be added. Existing documents: ${conflict === 'REMPLACÉS' ? 'REPLACED' : conflict === 'ignorés' ? 'skipped' : 'imported with a new identifier'}.`,
+      `Documents from the archive will be added to the memory bank. Existing documents: ${conflict === 'REMPLACÉS' ? 'REPLACED' : conflict === 'ignorés' ? 'skipped' : 'imported with a new identifier'}.`,
   ],
   [
     /^Restaurer l'archive dans une nouvelle banque \?$/,
     /^La banque « (.*) » sera créée ; elle ne doit pas exister\.$/,
-    (bank) => `Memory bank “${bank}” will be created; it must not already exist.`,
+    (bank) =>
+      `Memory bank “${bank === "(id de l'archive)" ? '(archive ID)' : bank}” will be created; it must not already exist.`,
   ],
   [
     /^(Réinstaller|Installer) le service Hindsight \?$/,
@@ -101,39 +118,24 @@ const rules: Rule[] = [
       `Build ${repository} (a few minutes; this local copy will be built with your permissions), then replace the app${app}.`,
   ],
   [
-    /^Ajouter \d+ document\(s\) \?$/,
+    /^Ajouter [\d\s,.]+ documents? \?$/,
     /^Projet : (.*)\nDestination : (.*)\n\n([\s\S]*)\n\nLe collecteur de ce dossier copie les originaux et actualise uniquement le catalogue local\. Aucun envoi ni traitement Hindsight ; les quatre collecteurs externes ne sont pas lancés\.$/,
     (project, destination, names) =>
       `Project: ${project}\nDestination: ${destination}\n\n${names}\n\nThis folder's collector copies the originals and updates only the local catalog. Nothing is uploaded or processed by Hindsight. The four external collectors are not run.`,
   ],
   [
     /^Vérifier ou reprendre l’envoi initial \?$/,
-    /^Le même lot de (\d+) sources sera présenté au serveur avec son identifiant initial\. Un lot déjà accepté ne sera pas extrait deux fois\. Le texte est celui de l’aperçu initial\.\n\n([\s\S]*)$/,
-    (count, ids) =>
-      `The same batch of ${count} sources will be sent to the server with its original identifier. A previously accepted batch will not be extracted twice. The text comes from the original preview.\n\n${ids}`,
+    /^Le même lot de ([\d\s,.]+) sources? sera présenté au serveur avec son identifiant initial\. Un lot déjà accepté ne sera pas extrait deux fois\. Le texte est celui de l’aperçu initial\.\n\n([\s\S]*)$/,
+    (n, ids) =>
+      `The same batch of ${n.trim()} source${n.trim() === '1' ? '' : 's'} will be sent to the server with its original identifier. A previously accepted batch will not be extracted twice. The text comes from the original preview.\n\n${ids}`,
   ],
   [
-    /^Lancer cette opération maintenant \?$/,
-    /^« ([\s\S]*) » attend sa prochaine tentative([\s\S]*)\. Elle sera lancée tout de suite ; selon son type, cela peut consommer des appels LLM\.$/,
+    /^Exécuter cette opération maintenant \?$/,
+    /^« ([\s\S]*) » attend sa prochaine tentative([\s\S]*)\. Elle sera exécutée tout de suite ; selon son type, cela peut consommer des appels LLM\.$/,
     (name, when) =>
       `“${operationTitle(name)}” is waiting for its next retry${when}. It will run immediately. Depending on its type, this may use LLM calls.`,
   ],
 ];
-
-function mergeIntro(
-  source: string,
-  sourceFacts: string,
-  target: string,
-  targetFacts: string,
-  conflict: string,
-) {
-  const conflicts: Record<string, string> = {
-    'ignorer les documents déjà présents': 'skip existing documents',
-    'les importer sous un nouvel identifiant': 'import them with a new identifier',
-    'remplacer ceux de la cible': 'replace the target documents',
-  };
-  return `Documents from “${source}” (${sourceFacts} facts) will be added to “${target}” (${targetFacts} facts).\nNo LLM calls: facts are reindexed with the target’s embedding model and their entities merged with the target’s entities.\nDocuments whose identifiers already exist in the target: ${conflicts[conflict]}.\nThe source’s settings, directives and mental models are NOT copied. Target observations will be updated by its next consolidation (LLM calls).`;
-}
 
 function restartMessage(message: string): string {
   const warning =
@@ -173,7 +175,7 @@ function installUpdateMessage(message: string): string {
   if (!message.endsWith(suffix)) return message;
   const body = message.slice(0, -suffix.length);
   const match =
-    /^(?:⚠︎ Le dépôt distant a changé depuis la dernière mise à jour \(avant : (.*)\)\.\n)?Dépôt : (.*)\nBranche : (.*) → (.*)\n(\d+) commit\(s\) :\n([\s\S]*)$/.exec(
+    /^(?:⚠︎ Le dépôt distant a changé depuis la dernière mise à jour \(avant : (.*)\)\.\n)?Dépôt : (.*)\nBranche : (.*) → (.*)\n([\d\s,.]+) commits? :\n([\s\S]*)$/.exec(
       body,
     );
   if (!match) return message;
@@ -182,7 +184,7 @@ function installUpdateMessage(message: string): string {
     (previous
       ? `⚠ The remote repository has changed since the last update (previously: ${previous}).\n`
       : '') +
-    `Repository: ${repository}\nBranch: ${branch} → ${commit}\n${count} commit(s):\n${commits}\nThis code will be built and then run on this Mac with your permissions. Accept only commits from a trusted source.\nThe app will be replaced. Relaunch it afterwards.`
+    `Repository: ${repository}\nBranch: ${branch} → ${commit}\n${count.trim()} commit${count.trim() === '1' ? '' : 's'}:\n${commits}\nThis code will be built and then run on this Mac with your permissions. Accept only commits from a trusted source.\nThe app will be replaced. Relaunch it afterwards.`
   );
 }
 

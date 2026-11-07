@@ -542,7 +542,7 @@ final class AuditTests: XCTestCase {
         let patch = try XCTUnwrap(t.requests.first { $0.method == "PATCH" })
         XCTAssertEqual(patch.bodyJSON?["updates"]?["audit_log_enabled"], true)
         XCTAssertEqual(vm.auditStatus, .enabled(viaBankOverride: true))
-        XCTAssertEqual(vm.actionMessage, "Journal d'audit activé pour cette banque.")
+        XCTAssertEqual(vm.actionMessage, "Journal d'accès activé pour cette banque.")
     }
 
     func testRefusedEnableExplainsEnvironmentVariable() async {
@@ -552,8 +552,10 @@ final class AuditTests: XCTestCase {
         let vm = AuditViewModel(client: makeClient(t), bank: testBank, features: features(audit: false, configAPI: false))
         await vm.reload()
         XCTAssertEqual(vm.auditStatus, .disabled(canEnableViaAPI: false))
+        XCTAssertFalse(vm.canToggleAudit)
         vm.requestEnableAudit()
-        await vm.confirmation!.perform()
+        XCTAssertNil(vm.confirmation, "le serveur refuserait l'écriture : rien à confirmer")
+        XCTAssertFalse(t.requests.contains { $0.method == "PATCH" })
         XCTAssertTrue(vm.actionMessage!.contains("HINDSIGHT_API_AUDIT_LOG_ENABLED=true"), vm.actionMessage!)
     }
 

@@ -1,4 +1,5 @@
 import { getLocale, useI18n } from '../i18n';
+import { translate as tr } from '../i18n-core';
 import { useEffect, useState } from 'react';
 import {
   ArrowDownToLine,
@@ -35,11 +36,65 @@ import {
   number,
 } from '../ui';
 import { nativeSystemMessage } from '../native-messages';
+import { OBSERVATION_SCOPES, isListedScope } from '../observation-scopes';
 import { factTypeLabel, factTypePluralLabel } from '../fact-types';
 import DocumentContent from './DocumentContent';
 
+/** Événements de l’historique d’un document (`kind` du serveur), avec les mots de l’app. */
+const documentEvents: Record<string, [string, string]> = {
+  retain: ['Envoi', 'Upload'],
+  append: ['Texte ajouté', 'Text appended'],
+  reprocess: ['Retraitement', 'Reprocessing'],
+  retag: ['Étiquettes modifiées', 'Tags changed'],
+  fact_edited: ['Fait corrigé', 'Fact corrected'],
+  fact_invalidated: ['Fait invalidé', 'Fact invalidated'],
+  fact_restored: ['Fait rétabli', 'Fact restored'],
+  fact_deleted: ['Fait supprimé', 'Fact deleted'],
+  observations_cleared: ['Observations effacées', 'Observations cleared'],
+  consolidation: ['Consolidation', 'Consolidation'],
+};
+function documentEventTitle(kind: unknown) {
+  const label = documentEvents[String(kind)];
+  return label ? tr(label[0], label[1]) : String(kind || tr('Événement', 'Event'));
+}
+/** « +12 faits · 3 observations créées » : ce que l’événement a changé, sans le JSON. */
+function documentEventSummary(event: Row) {
+  const parts: string[] = [];
+  const n = (value: unknown) => Number(value) || 0;
+  const plural = (count: number) => (count > 1 ? 's' : '');
+  if (n(event.facts_added))
+    parts.push(
+      tr(
+        `+${number(n(event.facts_added))} fait${plural(n(event.facts_added))}`,
+        `+${number(n(event.facts_added))} fact${plural(n(event.facts_added))}`,
+      ),
+    );
+  if (n(event.facts_removed))
+    parts.push(
+      tr(
+        `−${number(n(event.facts_removed))} fait${plural(n(event.facts_removed))}`,
+        `−${number(n(event.facts_removed))} fact${plural(n(event.facts_removed))}`,
+      ),
+    );
+  for (const [key, fr, en] of [
+    ['observations_created', 'créée', 'created'],
+    ['observations_updated', 'mise à jour', 'updated'],
+    ['observations_removed', 'retirée', 'removed'],
+  ]) {
+    const count = n(event[key]?.count);
+    if (count)
+      parts.push(
+        tr(
+          `${number(count)} observation${plural(count)} ${count > 1 && fr !== 'mise à jour' ? fr + 's' : count > 1 ? 'mises à jour' : fr}`,
+          `${number(count)} observation${plural(count)} ${en}`,
+        ),
+      );
+  }
+  return parts.join(' · ');
+}
+
 export function DocumentReader({
-  reader,
+  reader: opened,
   run,
   onClose,
   busy,
@@ -51,25 +106,39 @@ export function DocumentReader({
 }) {
   const { t } = useI18n();
   const [tab, setTab] = useState('text');
-  const [tags, setTags] = useState<string>((reader.document?.tags || []).join(', '));
+  // Lecteur affiché : celui reçu à l'ouverture, puis relu après chaque action (étiquettes, portée,
+  // retraitement) pour ne jamais garder des faits ou des étiquettes que le serveur n'a plus.
+  const [reader, setCurrent] = useState<Row>(opened);
+  useEffect(() => setCurrent(opened), [opened]);
   const document = reader.document || {};
+  const savedTags = (document.tags || []).join(', ');
+  const [tags, setTags] = useState<string>(savedTags);
+  useEffect(() => setTags(savedTags), [savedTags]);
   const [find, setFind] = useState('');
-  const [deleting, setDeleting] = useState(false);
+  const [acting, setActing] = useState(false);
   const facts: Row[] = reader.facts || [];
   const factsTotal = Math.max(Number(reader.factsTotal) || 0, facts.length);
-  // Une suppression confirmée ferme le lecteur côté moteur : la fenêtre se ferme avec lui.
+  // Une action du lecteur passe par une confirmation. Une suppression confirmée ferme le lecteur côté
+  // moteur : la fenêtre se ferme avec lui ; toute autre issue (faite, refusée, annulée) relit le document.
   useEffect(() => {
-    if (!deleting || busy) return;
-    let current = true;
-    void run('document.status', { id: document.id, polling: true }).then((status) => {
-      if (!current || typeof status?.open !== 'boolean') return;
-      if (!status.open) onClose();
-      else if (!status.confirming) setDeleting(false);
+    if (!acting || busy) return;
+    let active = true;
+    void run('document.status', { id: document.id, polling: true }).then(async (status) => {
+      if (!active || typeof status?.open !== 'boolean') return;
+      if (!status.open) return onClose();
+      if (status.confirming) return;
+      setActing(false);
+      const fresh = await run('document.open', { id: document.id });
+      if (active && fresh && !fresh.error && fresh.document?.id === document.id) setCurrent(fresh);
     });
     return () => {
-      current = false;
+      active = false;
     };
-  }, [deleting, busy]);
+  }, [acting, busy]);
+  function act(command: string, args: Row) {
+    setActing(true);
+    void run(command, { id: document.id, ...args });
+  }
   return (
     <Modal
       title={document.document_metadata?.title || document.id || 'Document'}
@@ -162,11 +231,15 @@ export function DocumentReader({
               <div key={event.id || i}>
                 <Clock3 size={16} />
                 <div>
-                  <strong>
-                    {event.event_type || event.type || event.action || t('Événement', 'Event')}
-                  </strong>
-                  <p>{date(event.created_at || event.timestamp, true)}</p>
-                  <pre>{JSON.stringify(event, null, 2)}</pre>
+                  <strong>{documentEventTitle(event.kind)}</strong>
+                  <p>
+                    {date(event.created_at || event.timestamp, true)}
+                    {documentEventSummary(event) && ` · ${documentEventSummary(event)}`}
+                  </p>
+                  <details>
+                    <summary>{t('Détail', 'Details')}</summary>
+                    <pre>{JSON.stringify(event, null, 2)}</pre>
+                  </details>
                 </div>
               </div>
             ))}
@@ -196,8 +269,7 @@ export function DocumentReader({
             icon={Tag}
             disabled={busy}
             onClick={() =>
-              void run('document.tags', {
-                id: document.id,
+              act('document.tags', {
                 tags: tags
                   .split(',')
                   .map((t) => t.trim())
@@ -208,43 +280,57 @@ export function DocumentReader({
             {' '}
             {t('Enregistrer les étiquettes', 'Save tags')}
           </Button>
-          <label>
-            {' '}
-            {t('Portée de consolidation', 'Consolidation scope')}
-            <select
-              defaultValue=""
-              onChange={(e) => {
-                if (e.target.value)
-                  void run('document.scope', { id: document.id, scope: e.target.value });
-              }}
-            >
-              <option value="">{t('Choisir une portée…', 'Choose a scope…')}</option>
-              <option value="shared">{t('Partagée', 'Shared')}</option>
-              <option value="combined">{t('Combinée', 'Combined')}</option>
-              <option value="per_tag">{t('Par étiquette', 'Per tag')}</option>
-            </select>
-          </label>
+          {/* La portée n'agit que si la banque crée des observations, et ne change qu'avec un serveur 1.1.0. */}
+          {reader.scopeEditable !== false && reader.observations !== false && (
+            <label>
+              {t('Portée des observations', 'Observation scope')}
+              <select
+                value={isListedScope(reader.scopeMode) ? reader.scopeMode : ''}
+                disabled={busy}
+                onChange={(e) => {
+                  if (e.target.value) act('document.scope', { scope: e.target.value });
+                }}
+              >
+                {!isListedScope(reader.scopeMode) && (
+                  <option value="" disabled>
+                    {reader.scope ? nativeSystemMessage(reader.scope) : t('Inconnue', 'Unknown')}
+                  </option>
+                )}
+                {OBSERVATION_SCOPES.map((scope) => (
+                  <option key={scope.value} value={scope.value}>
+                    {t(scope.fr, scope.en)}
+                  </option>
+                ))}
+              </select>
+              <small>
+                {t(
+                  'Décide quels faits peuvent se fondre dans les mêmes observations. Les faits ne sont pas réextraits.',
+                  'Decides which facts can merge into the same observations. Facts are not extracted again.',
+                )}
+              </small>
+            </label>
+          )}
           <div className="action-row">
-            <Button
-              icon={RotateCcw}
-              disabled={busy}
-              title={t(
-                'Relance l’extraction des faits de ce document (appels LLM).',
-                'Runs fact extraction again for this document (LLM calls).',
-              )}
-              onClick={() => void run('document.reprocess', { id: document.id })}
-            >
-              {' '}
-              {t('Retraiter le document', 'Reprocess document')}
-            </Button>
+            {/* Le serveur réextrait le texte original stocké : sans lui, le retraitement est impossible. */}
+            {reader.canReprocess !== false && (
+              <Button
+                icon={RotateCcw}
+                disabled={busy}
+                title={t(
+                  'Relance l’extraction des faits de ce document (appels LLM).',
+                  'Runs fact extraction again for this document (LLM calls).',
+                )}
+                onClick={() => act('document.reprocess', {})}
+              >
+                {' '}
+                {t('Retraiter le document', 'Reprocess document')}
+              </Button>
+            )}
             <Button
               icon={Trash2}
               kind="danger"
               disabled={busy}
-              onClick={() => {
-                setDeleting(true);
-                void run('document.delete', { id: document.id });
-              }}
+              onClick={() => act('document.delete', {})}
             >
               {' '}
               {t('Supprimer', 'Delete')}
@@ -278,6 +364,8 @@ export function Models({ data, run, busy, notify }: PageProps) {
     if (result?.error) throw new Error(nativeSystemMessage(result.error));
     setModel(result.model);
   }
+  // Régénération en attente ou en cours (opérations de Traitements) : l'état prime sur « À régénérer ».
+  const refreshing = new Set<string>(Array.isArray(data.refreshing) ? data.refreshing : []);
   const refreshFailed = (m: Row) =>
     !!m.last_refresh_failed_at &&
     (!m.last_refreshed_at ||
@@ -345,14 +433,26 @@ export function Models({ data, run, busy, notify }: PageProps) {
                 <span className={`model-glyph color-${i % 4}`}>
                   <BookOpen size={23} strokeWidth={1.5} />
                 </span>
-                <Badge tone={refreshFailed(m) ? 'red' : m.is_stale ? 'amber' : 'sage'}>
-                  {refreshFailed(m)
-                    ? t('Échec de la génération', 'Generation failed')
-                    : m.is_stale
-                      ? t('À régénérer', 'Needs regenerating')
-                      : m.last_refreshed_at
-                        ? t('À jour', 'Up to date')
-                        : t('Jamais générée', 'Never generated')}
+                <Badge
+                  tone={
+                    refreshing.has(m.id)
+                      ? 'blue'
+                      : refreshFailed(m)
+                        ? 'red'
+                        : m.is_stale
+                          ? 'amber'
+                          : 'sage'
+                  }
+                >
+                  {refreshing.has(m.id)
+                    ? t('Régénération en cours', 'Regenerating')
+                    : refreshFailed(m)
+                      ? t('Échec de la génération', 'Generation failed')
+                      : m.is_stale
+                        ? t('À régénérer', 'Needs regenerating')
+                        : m.last_refreshed_at
+                          ? t('À jour', 'Up to date')
+                          : t('Jamais générée', 'Never generated')}
                 </Badge>
               </div>
               <span className="model-kind">
@@ -368,7 +468,10 @@ export function Models({ data, run, busy, notify }: PageProps) {
               <div className="model-card-bottom">
                 <span>
                   <Clock3 size={13} />
-                  {date(m.last_refreshed_at || m.created_at)}
+                  {/* Une connaissance jamais générée n'a pas de date de génération : on dit quand elle a été créée. */}
+                  {m.last_refreshed_at
+                    ? date(m.last_refreshed_at)
+                    : `${t('Créée le', 'Created on')} ${date(m.created_at)}`}
                 </span>
                 <ArrowRight size={17} />
               </div>
@@ -416,15 +519,24 @@ export function Models({ data, run, busy, notify }: PageProps) {
             <div className="spacer" />
             <Button
               icon={WandSparkles}
-              disabled={busy}
-              title={t(
-                'Fait réécrire cette connaissance par le LLM à partir des faits actuels (appel LLM).',
-                'Has the LLM rewrite this knowledge item from the current facts (LLM call).',
-              )}
+              disabled={busy || refreshing.has(model.id)}
+              title={
+                refreshing.has(model.id)
+                  ? t(
+                      'Une régénération est déjà en cours ou en file (Activité › Traitements).',
+                      'A regeneration is already running or queued (Activity › Processing).',
+                    )
+                  : t(
+                      'Fait réécrire cette connaissance par le LLM à partir des faits actuels (appel LLM).',
+                      'Has the LLM rewrite this knowledge item from the current facts (LLM call).',
+                    )
+              }
               onClick={() => void run('model.refresh', { id: model.id })}
             >
               {' '}
-              {t('Régénérer', 'Regenerate')}
+              {refreshing.has(model.id)
+                ? t('Régénération en cours', 'Regenerating')
+                : t('Régénérer', 'Regenerate')}
             </Button>
             <IconButton
               icon={Trash2}
@@ -493,8 +605,8 @@ export function Models({ data, run, busy, notify }: PageProps) {
             <p className="form-hint">
               {' '}
               {t(
-                'La génération utilise le modèle de la banque. L’estimation sera présentée avant confirmation.',
-                "Generation uses the bank's model. An estimate will be shown before you confirm.",
+                'La génération utilise le modèle des Connaissances (Modèles). L’estimation sera présentée avant confirmation.',
+                'Generation uses the Knowledge model (Models). An estimate will be shown before you confirm.',
               )}
             </p>
             <div className="modal-actions">
@@ -621,8 +733,8 @@ export function SearchPage({ data, run, busy, notify }: PageProps) {
               <CircleHelp size={14} />
               {mode === 'reflect'
                 ? t(
-                    'Une réponse rédigée à partir des faits · utilise le modèle de la banque',
-                    "An answer based on facts · uses the bank's model",
+                    'Une réponse rédigée à partir des faits · utilise le modèle des Réponses (Modèles)',
+                    'An answer based on facts · uses the Answers model (Models)',
                   )
                 : mode === 'text'
                   ? t('Recherche les mots exacts dans les faits', 'Search for exact words in facts')
@@ -738,8 +850,8 @@ export function SearchPage({ data, run, busy, notify }: PageProps) {
                   <p className="form-hint">
                     {' '}
                     {t(
-                      'Ces options demandent un modèle de décision configuré pour recall. Le dédoublonnage ajoute un appel ; les faits peuvent être envoyés au fournisseur choisi sur le serveur.',
-                      'These options require a decision model configured for recall. Deduplication adds a request; facts may be sent to the provider selected on the server.',
+                      'Sans effet tant que le serveur n’a pas de modèle de décision pour la recherche (Modèles). Retirer les doublons ajoute une requête ; les faits peuvent être envoyés au fournisseur choisi sur le serveur.',
+                      'Has no effect until the server has a decision model configured for search (Models). Removing duplicates adds a request; facts may be sent to the provider selected on the server.',
                     )}
                   </p>
                 </>
@@ -808,7 +920,10 @@ export function SearchPage({ data, run, busy, notify }: PageProps) {
                   <span>{date(hit.occurredStart || hit.mentionedAt)}</span>
                   {hit.score != null && (
                     <span className="match-score">
-                      {Math.round(hit.score * 100)} {t('% de pertinence', '% relevance')}
+                      {t(
+                        `${Math.round(hit.score * 100)} % de pertinence`,
+                        `${Math.round(hit.score * 100)}% relevance`,
+                      )}
                     </span>
                   )}
                 </div>
@@ -861,6 +976,9 @@ export function SearchPage({ data, run, busy, notify }: PageProps) {
     </>
   );
 }
+
+// Au-delà, trier toute la banque demanderait trop de pages : le tri porte sur ce qui est chargé, et le dit.
+const sortLoadLimit = 2000;
 
 export function Documents({ data, run, busy, refresh, navigate }: PageProps) {
   const { t } = useI18n();
@@ -917,7 +1035,13 @@ export function Documents({ data, run, busy, refresh, navigate }: PageProps) {
           <select
             aria-label={t('Trier les documents', 'Sort documents')}
             value={sort}
-            onChange={(e) => setSort(e.target.value)}
+            onChange={(e) => {
+              const value = e.target.value;
+              setSort(value);
+              // Un tri autre que chronologique porte sur toute la banque, pas sur la première page.
+              if (value !== 'recent' && data.canLoadMore && Number(data.total) <= sortLoadLimit)
+                void run('documents.all');
+            }}
           >
             <option value="recent">{t('Les plus récents', 'Most recent')}</option>
             <option value="name">{t('Par nom', 'By name')}</option>
@@ -925,10 +1049,21 @@ export function Documents({ data, run, busy, refresh, navigate }: PageProps) {
           </select>
           {typeof data.total === 'number' && (
             <span className="toolbar-count" role="status">
-              {t(
-                `${number(data.total)} document${data.total > 1 ? 's' : ''}`,
-                `${number(data.total)} document${data.total === 1 ? '' : 's'}`,
-              )}
+              {data.totalIsEstimate
+                ? t(
+                    `Au moins ${number(data.total)} document${data.total > 1 ? 's' : ''}`,
+                    `At least ${number(data.total)} document${data.total === 1 ? '' : 's'}`,
+                  )
+                : t(
+                    `${number(data.total)} document${data.total > 1 ? 's' : ''}`,
+                    `${number(data.total)} document${data.total === 1 ? '' : 's'}`,
+                  )}
+              {sort !== 'recent' && data.canLoadMore
+                ? t(
+                    ` · tri parmi les ${number(items.length)} chargés`,
+                    ` · sorted among the ${number(items.length)} loaded`,
+                  )
+                : ''}
             </span>
           )}
         </form>
@@ -972,13 +1107,17 @@ export function Documents({ data, run, busy, refresh, navigate }: PageProps) {
                     </td>
                     <td>
                       <Badge tone={item.memory_unit_count ? 'sage' : 'amber'}>
-                        {number(item.memory_unit_count)} {t('faits', 'facts')}
+                        {number(item.memory_unit_count)}{' '}
+                        {t(
+                          item.memory_unit_count > 1 ? 'faits' : 'fait',
+                          item.memory_unit_count === 1 ? 'fact' : 'facts',
+                        )}
                       </Badge>
                     </td>
                     <td className="muted">
                       {t(
-                        `${number(item.text_length || 0)} signes`,
-                        `${number(item.text_length || 0)} characters`,
+                        `${number(item.text_length || 0)} signe${(item.text_length || 0) > 1 ? 's' : ''}`,
+                        `${number(item.text_length || 0)} character${(item.text_length || 0) === 1 ? '' : 's'}`,
                       )}
                     </td>
                     <td className="muted">{date(item.updated_at || item.created_at)}</td>
@@ -1026,7 +1165,7 @@ export function Documents({ data, run, busy, refresh, navigate }: PageProps) {
           <div className="card-footer">
             <Button onClick={() => void run('documents.more')} disabled={busy}>
               {' '}
-              {t('Charger plus de documents', 'Load more documents')}
+              {t('Afficher plus de documents', 'Show more documents')}
             </Button>
             <span>
               {number(items.length)} {t('sur', 'of')} {number(data.total)}

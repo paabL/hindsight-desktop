@@ -122,7 +122,7 @@ try {
         bank: 'horizon',
         banks: [{ bank_id: 'horizon', name: 'Horizon Project', fact_count: 2648 }],
         serverURL: 'http://127.0.0.1:8888',
-        paused: [],
+        pause: { all: false, banks: [] },
       },
       section: 'sources',
       confirmations: [],

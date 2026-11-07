@@ -350,8 +350,8 @@ export function ModelWorkflowSettings({
           <Help
             title={title}
             text={t(
-              'Le modèle de réflexion rédige avec les preuves retenues. C’est le même modèle, choisi en haut.',
-              'The reflection model writes using the selected evidence. It is the same model, chosen above.',
+              'Le modèle des Réponses rédige avec les preuves retenues. C’est le même modèle, choisi en haut.',
+              'The Answers model writes using the selected evidence. It is the same model, chosen above.',
             )}
             icon={PenLine}
           />
@@ -390,8 +390,8 @@ export function ModelWorkflowSettings({
           <Help
             title={t('Recherche', 'Search')}
             text={t(
-              'Retrouve les faits et classe les candidats. Le classement peut lui aussi utiliser le modèle de décision, indépendamment de la réflexion.',
-              'Finds facts and ranks candidates. Ranking can also use the decision model, independently of reflection.',
+              'Retrouve les faits et classe les candidats. Le classement peut lui aussi utiliser le modèle de décision, indépendamment des Réponses.',
+              'Finds facts and ranks candidates. Ranking can also use the decision model, independently of Answers.',
             )}
             icon={Search}
           />
@@ -499,8 +499,8 @@ export function ModelWorkflowSettings({
           {flow === 'recall' && (
             <div className="mw-recall-options">
               {[
-                ['PRUNE', t('Filtrer', 'Prune')],
-                ['DEDUP', t('Dédupliquer', 'Deduplicate')],
+                ['PRUNE', t('Écarter les faits inutiles', 'Remove irrelevant facts')],
+                ['DEDUP', t('Retirer les doublons', 'Remove duplicates')],
               ].map(([key, label]) => {
                 const name = `${P}RECALL_DECISION_MODEL_${key}`;
                 return (

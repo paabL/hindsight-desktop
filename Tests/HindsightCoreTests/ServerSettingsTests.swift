@@ -296,8 +296,9 @@ final class ServerSettingsViewModelTests: XCTestCase {
         XCTAssertTrue(roles["retain"]!.isChanged)
         let diffText = vm.diff.map(\.text).joined(separator: "\n")
         XCTAssertFalse(diffText.contains("AIza"), "aucun secret dans le diff")
-        XCTAssertTrue(vm.changeSummary.contains("HINDSIGHT_API_RETAIN_LLM_MODEL : (non défini) → « gemini-3.5-flash »"))
-        XCTAssertTrue(vm.changeSummary.contains { $0.hasPrefix("HINDSIGHT_API_VLM_API_KEY : « ••••34 » → « ••••99 »") })
+        // Les noms de la page Modèles, pas les variables du script (elles restent dans le diff).
+        XCTAssertTrue(vm.changeSummary.contains("Extraction des faits › Modèle : (non défini) → « gemini-3.5-flash »"), "\(vm.changeSummary)")
+        XCTAssertTrue(vm.changeSummary.contains { $0.hasPrefix("Vision (VLM) › Clé d'API : « ••••34 » → « ••••99 »") }, "\(vm.changeSummary)")
         vm.revert("HINDSIGHT_API_VLM_API_KEY")
         XCTAssertEqual(vm.changeSummary.count, 2)
         vm.revertAll()
@@ -511,7 +512,7 @@ final class ServerSettingsViewModelTests: XCTestCase {
         vm.setValue("HINDSIGHT_API_REFLECT_LLM_MODEL", "claude-opus-4")
         vm.requestSave()
         let c = try XCTUnwrap(vm.confirmation)
-        XCTAssertTrue(c.message.contains("HINDSIGHT_API_REFLECT_LLM_MODEL"))
+        XCTAssertTrue(c.message.contains("Réponses › Modèle : (non défini) → « claude-opus-4 »"), c.message)
         XCTAssertFalse(try String(contentsOf: url, encoding: .utf8).contains("REFLECT"), "rien n'est écrit avant confirmation")
         await c.perform()
         XCTAssertTrue(try String(contentsOf: url, encoding: .utf8).contains("export HINDSIGHT_API_REFLECT_LLM_MODEL=claude-opus-4"))
@@ -781,7 +782,7 @@ final class ServerSettingsViewModelTests: XCTestCase {
         await vm.confirmation!.perform()
         XCTAssertEqual(runner.commands, ["launchctl kickstart -k gui/501/local.hindsight"])
         guard case .failed(let msg) = vm.restartState else { return XCTFail("\(vm.restartState)") }
-        XCTAssertTrue(msg.contains("reflect → auth_failed"), msg)
+        XCTAssertTrue(msg.contains("Réponses (clé refusée)"), msg)
         XCTAssertEqual(vm.llmHealth?.operations.count, 2)
         XCTAssertTrue(vm.restartLog.contains("ok"))
     }
