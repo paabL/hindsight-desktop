@@ -115,7 +115,15 @@ test('slow Sources loads and collection keep navigation responsive and cannot cr
     await bounded(bridge.request('bank.select', { id: 'second' }));
     held.forEach((release) => release());
     held = [];
+    // Chaque banque a ses sources : changer de banque referme le catalogue et montre ses dossiers.
     result = await bounded(bridge.request('section', { section: 'sources', background: true }));
+    assert.equal(result.data.openKind, null);
+    assert.equal(result.app.folder, null);
+    assert.deepEqual(result.data.folders, []);
+    assert.equal(result.data.listBank, 'second');
+    // Un catalogue sans banque déclarée s'ouvre dans la banque qui le consulte, avec ses seuls documents.
+    result = await bounded(bridge.request('folder.choose', { path: folder, background: true }));
+    assert.equal(result.data.openKind, 'catalog');
     for (let i = 0; i < 100 && result.data.refreshing; i++) {
       await new Promise((resolve) => setTimeout(resolve, 20));
       result = await bounded(bridge.request('snapshot'));

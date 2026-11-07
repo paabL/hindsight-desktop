@@ -29,6 +29,7 @@ public final class InMemorySettingsStore: SettingsStore {
 }
 
 public enum SettingsKey {
+    /// Ancien dossier du Catalogue commun à tout le Mac : lu une fois par `SourceFolders.migrateLegacyCatalogFolder`.
     public static let memoryFolderPath = "memoryFolderPath"
     public static let serverURL = "serverURL"
     public static let lastBank = "lastBank"

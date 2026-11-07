@@ -15,8 +15,7 @@ export type Section =
   | 'graph'
   | 'server'
   | 'admin'
-  | 'settings'
-  | 'coverage';
+  | 'settings';
 export type Confirmation = {
   id: string;
   title: string;

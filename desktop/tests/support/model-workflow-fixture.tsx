@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { X } from 'lucide-react';
 import { ServerSettings, MemoryDesign, Admin } from '../../src/pages/Manage';
-import { Coverage } from '../../src/pages/Library';
+import Sources from '../../src/pages/Sources';
 import { ModelWorkflowSettings } from '../../src/components/ModelWorkflow';
 import { Button, IconButton, Modal } from '../../src/ui';
 import { modelWorkflowDemo } from '../../src/model-workflow-demo';
@@ -121,15 +121,14 @@ function Harness({ mode, initial }: { mode: string; initial: any }) {
       captured.modelWorkflow.revision += '.';
       captured.hasChanges = true;
     }
-    if (mode === 'coverage' && command === 'coverage.add')
-      captured.roots = [
-        ...(captured.roots || []),
-        ...args.paths.map((path: string) => ({
-          path,
-          allFiles: false,
-          autoSync: false,
-        })),
-      ];
+    if (mode === 'sources' && command === 'folder.choose') {
+      captured.open = args.path;
+      captured.openKind = 'folder';
+    }
+    if (mode === 'sources' && command === 'folder.close') {
+      captured.open = null;
+      captured.openKind = null;
+    }
     if (fixture.applyReplies) setData(captured);
     return { data: captured };
   }
@@ -145,7 +144,18 @@ function Harness({ mode, initial }: { mode: string; initial: any }) {
   if (mode === 'server') return <ServerSettings {...props} />;
   if (mode === 'memory') return <MemoryDesign {...props} />;
   if (mode === 'admin') return <Admin {...props} />;
-  if (mode === 'coverage') return <Coverage {...props} />;
+  if (mode === 'sources')
+    return (
+      <Sources
+        {...props}
+        serverConnected
+        banks={[
+          { bank_id: 'bank-a', name: 'Bank A' },
+          { bank_id: 'bank-b', name: 'Bank B' },
+        ]}
+        onExploreExample={() => {}}
+      />
+    );
   if (mode === 'workflow')
     return <ModelWorkflowSettings {...props} configure={() => {}} tools={() => {}} />;
   return <Controls />;

@@ -47,7 +47,7 @@ final class MemoryWorkspaceTests: XCTestCase {
         transport.on("GET", "\(bankPath)/operations", json: #"{"bank_id":"b","total":0,"limit":1,"offset":0,"operations":[]}"#)
         transport.on("POST", "\(bankPath)/memories", json: #"{"success":true,"bank_id":"b","items_count":1,"async":true,"operation_id":"op"}"#)
         let runner = FakeProcessRunner { _ in ProcessOutput(status: 0) }
-        let folder = MemoryFolderViewModel(settings: InMemorySettingsStore(), runner: runner, home: root, python: "/example/python", discoverAutomatically: false)
+        let folder = MemoryFolderViewModel(runner: runner, python: "/example/python")
         folder.choose(root)
         let vm = MemoryWorkspace(folder: folder, client: { makeClient(transport) }, bank: { testBank })
         return Setup(root: root, text: text, transport: transport, server: server, folder: folder, vm: vm, runner: runner)

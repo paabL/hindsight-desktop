@@ -18,10 +18,11 @@ errors, dialogs, and typography live in `desktop/src/ui.tsx`.
 
 ## Navigation and language
 
-The sidebar has seven primary groups: **Overview**, **Memory**, **Knowledge**,
-**Search**, **Models**, **Sources**, and **Activity**. Overview is the initial view. Settings
-stays at the bottom of the sidebar. All views are visible through these groups;
-there is no Advanced navigation section.
+The sidebar has seven primary groups. The first six show the selected bank:
+**Overview**, **Memory**, **Knowledge**, **Search**, **Sources** and **Activity**.
+**Models** concerns the server rather than one bank, so it sits below a thin line
+at the bottom of the sidebar, next to Settings. Overview is the initial view. All
+views are visible through these groups; there is no Advanced navigation section.
 
 | Group | Views |
 | --- | --- |
@@ -30,7 +31,7 @@ there is no Advanced navigation section.
 | Knowledge | Knowledge pages and mental models |
 | Search | Recall, exact text and confirmed reflect |
 | Models | Quick model selection and explanatory workflows; management stays in Settings |
-| Sources | Catalog, Tracked folders |
+| Sources | The folders on this Mac that feed the selected bank |
 | Activity | Processing, Usage, Logs |
 | Settings | Application, Memory bank, Memory behavior, Server & models |
 
@@ -46,26 +47,37 @@ Settings → Application → Language. Documents, source text, and content retur
 by the server keep their original language.
 
 **Memory** presents knowledge stored in the selected Hindsight bank. **Sources**
-presents the local catalog before processing: projects, collectors, source
-families, filters, and a reader with provenance. The local catalog is independent
-of the selected bank and remains readable offline. Upload previews explain what
-will be sent from Sources into Hindsight.
+lists the folders on this Mac that feed that bank, each with a one-line summary,
+and a single **Add a folder** action. Each bank has its own list; the same folder
+can feed several banks, each with its own status. Without a server, the list of
+the last selected bank stays readable. Clicking a folder opens it:
 
-Sources first displays its manifest with unchecked, locked entries, then compares
+- An **ordinary folder** shows its files compared with the bank's documents, with
+  **Upload** and **Remove from memory** for the selected files. Every upload is
+  confirmed. Only documents are compared unless the folder includes all text files.
+- A **folder with a catalog** (`catalog.json`, gathered by its `collect.py`
+  collector) shows its catalog: projects, collectors, source families, filters,
+  and a reader with provenance. It belongs to the bank named in its
+  `memory-policy.json`; there, it feeds the bank only through its catalog. In any
+  other bank it is an ordinary folder. A catalog without a declared bank joins the
+  bank of its first upload.
+
+Opening a folder, switching banks or removing the open folder returns to the
+list. A folder that disappeared from the Mac cannot be opened; it can only stop
+being tracked. Sources never tracks, collects or uploads a folder on navigation.
+
+A catalog first displays its manifest with unchecked, locked entries, then compares
 the existing files with the bank in the background. Cached navigation keeps the
 list visible on return. Collection also runs in the background with progress and
 output available. **Refresh folder** collects; the top-bar refresh only rechecks
 the catalog and memory. A reader stays open when inclusion changes, and late text
 responses cannot replace the newly selected source.
 
-Tracked folders are saved per bank, separately from the local catalog. If the
-catalog folder is not tracked for the current bank, this view shows its path and
-an explicit **Track this folder** action. It never registers or uploads it on
-navigation. A folder without `catalog.json` is an ordinary documents folder, not an
-error: Catalog says so neutrally, hides collection controls and empty catalog
-statistics, names the bank it would be tracked for and points to Tracked folders,
-which offers to track it. Loading is shown before the folder list arrives. Sidebar numbers use
-the `⌘` prefix to identify keyboard shortcuts.
+If a catalog loses its `catalog.json` while open, the page says so neutrally,
+hides collection controls and empty statistics, and returns to the list, where the
+folder now appears as an ordinary folder. Loading is shown before the folder list
+arrives, never an empty list. Sidebar numbers use the `⌘` prefix to identify
+keyboard shortcuts.
 
 Processing keeps its selected status during automatic refreshes and preserves
 opened pages. Large lists render in groups of 100 with **Load more**; this does
@@ -146,7 +158,8 @@ included.
 - Named buttons and fields, keyboard navigation, and visible focus.
 - Focus stays inside dialogs; Escape closes the topmost dialog.
 - Reduced-motion preferences are respected.
-- `⌘K`: quick navigation; `⌘R`: refresh; `⌘,`: settings; `⌘1…7`: primary group defaults.
+- `⌘K`: quick navigation; `⌘R`: refresh; `⌘,`: settings; `⌘1…7`: Overview, Memory, Knowledge,
+  Search, Sources, Activity and Models.
 
 Example mode is explicitly enabled and visibly marks its data as fictional. It
 does not replace error states from a real connection.

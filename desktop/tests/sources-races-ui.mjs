@@ -26,7 +26,8 @@ rows.push(...['excluded', 'current'].map((state, i) => ({
   memory: { state, enabled: false, locked: true, stored: false, document_id: 'review-' + i },
 })));
 function Fixture() {
-  const [data, setData] = useState({ folder: '/Fixture', canCollect: true,
+  const [data, setData] = useState({ folder: '/Fixture', canCollect: true, bank: 'bank-a', listBank: 'bank-a',
+    open: '/Fixture', openKind: 'catalog', folders: [{ path: '/Fixture', name: 'Fixture', kind: 'catalog', sources: 12002 }],
     catalog: { records: rows, projects: [{ id: 'fixture', name: 'Fixture' }], sources: [] } });
   const [context, setContext] = useState('server-a|bank-a|/Fixture');
   controls.setContext = setContext;
@@ -34,7 +35,7 @@ function Fixture() {
   controls.mutate = (id, change) => setData((previous) => ({ ...previous,
     catalog: { ...previous.catalog, records: previous.catalog.records.flatMap((row) => row.id !== id ? [row] :
       change === 'remove' ? [] : [{ ...row, memory: { ...row.memory, hash: 'changed' } }]) } }));
-  controls.setFolder = (folder) => setData((previous) => ({ ...previous, folder }));
+  controls.setFolder = (folder) => setData((previous) => ({ ...previous, folder, open: folder }));
   async function run(command, args = {}) {
     controls.requests.push({ command, args });
     if (command === 'folder.enabled') {

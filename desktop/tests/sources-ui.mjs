@@ -58,6 +58,11 @@ try {
       if (section === 'sources') {
         data = {
           folder: '/Fixture',
+          bank: 'fixture',
+          listBank: 'fixture',
+          open: '/Fixture',
+          openKind: 'catalog',
+          folders: [{ path: '/Fixture', name: 'Fixture', kind: 'catalog', sources: 12000 }],
           canCollect: true,
           catalogRevision: revision,
           collecting: performance.now() < collectingUntil,

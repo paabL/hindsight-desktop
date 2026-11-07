@@ -73,7 +73,8 @@ public final class AppModel {
         var clientRef: (@MainActor () -> HindsightClient)?
         self.services = AppServices(estimator: CostEstimator(settings: settings, client: { clientRef!() }), ledger: ledger, callers: CallerDirectory(settings: settings))
         self.settings = settings
-        self.memoryFolder = MemoryFolderViewModel(settings: settings, runner: processRunner, discoverAutomatically: automaticActions)
+        SourceFolders.migrateLegacyCatalogFolder(settings: settings)
+        self.memoryFolder = MemoryFolderViewModel(runner: processRunner)
         self.transport = transport
         let storedAddress = settings.string(forKey: SettingsKey.serverURL)
         let acceptedURL = storedAddress.flatMap(HindsightClient.normalizedBaseURL(from:)).flatMap {
@@ -85,7 +86,9 @@ public final class AppModel {
         self.serverSettings = ServerSettingsViewModel(
             settings: settings, runner: runner, client: { [unowned self] in self.client }, bank: { [unowned self] in self.selectedBankID })
         self.coverage = FileCoverageViewModel(settings: settings, client: { [unowned self] in self.client }, bank: { [unowned self] in self.selectedBankID })
-        self.coverage.memoryPolicyURL = { [unowned self] in self.memoryFolder.repository?.appendingPathComponent("memory-policy.json") }
+        self.coverage.memoryPolicyURL = { [unowned self] in
+            self.selectedBankID.flatMap { SourceFolders.policyURL(bank: $0, roots: FileCoverageViewModel.storedRoots(settings: settings, bank: $0)) }
+        }
         self.coverage.estimate = { @MainActor @Sendable [unowned self] bank, kind in self.services.estimator.estimate(kind, bank: bank) }
         self.coverage.priceBook = { @MainActor [unowned self] in self.services.estimator.priceBook }
         self.coverage.openOperations = { @MainActor [unowned self] in self.selectedSection = .operations }

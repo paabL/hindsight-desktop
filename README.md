@@ -39,10 +39,11 @@ For the everyday workflow, see the short [user guide](docs/USER_GUIDE.md).
 4. Open **Models** for quick choices and explanations. **Manage models** opens
    provider, account and installation settings. Save prepared changes, then
    restart the server separately when ready.
-5. Open **Sources** to browse a local folder, even without a server. Its catalog
-   appears first while version checks run in the background. Review the sources
-   and upload preview, then confirm what to send into Hindsight. Collection also
-   runs in the background so you can keep navigating.
+5. Open **Sources** and add the folders on this Mac that should feed the bank.
+   Each bank has its own folders, still listed without a server. Open a folder to
+   compare its files with the bank, then confirm what to upload. A folder with a
+   catalog shows its collected sources first while version checks and collection
+   run in the background, so you can keep navigating.
 6. Use **Activity** for processing, usage and logs. Related views appear as tabs;
    connection and bank configuration stay in **Settings**.
 

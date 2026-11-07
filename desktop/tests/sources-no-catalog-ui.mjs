@@ -2,8 +2,8 @@ import { chromium, expect } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-// Un dossier de documents ordinaire (sans catalog.json) n'est pas une erreur : pas de
-// statistiques ni de collecte vides, seulement l'orientation vers les dossiers suivis.
+// Un catalogue disparu pendant la consultation (catalog.json supprimé ou déplacé) n'est pas une erreur :
+// ni statistiques ni collecte vides, seulement le retour aux sources, où le dossier devient ordinaire.
 const root = fileURLToPath(new URL('../', import.meta.url));
 const port = 16432;
 const server = spawn(
@@ -26,28 +26,38 @@ try {
   page.on('pageerror', (e) => errors.push(e.message));
   await page.addInitScript(() => {
     localStorage.setItem('hindsight-desktop-language', 'en');
+    const folder = '/Users/example/Notes';
+    const state = (window.__noCatalogTest = { open: folder, requests: [] });
+    // Le pont recalcule la nature des dossiers à chaque réponse : sans catalog.json, c'est un dossier ordinaire.
+    const folders = [{ path: folder, name: 'Notes', kind: 'folder', files: 2, toSend: 2 }];
     const snapshot = (section) => ({
       app: {
         connected: true,
         bank: 'garden',
         banks: [{ bank_id: 'garden', name: 'Garden notes', fact_count: 0 }],
-        folder: '/Users/example/Notes',
+        folder: state.open,
         serverURL: 'http://127.0.0.1:8888',
         paused: [],
       },
       section,
       data:
-        section === 'sources'
-          ? {
-              folder: '/Users/example/Notes',
-              canCollect: false,
-              catalogRevision: 'none',
-              bank: 'garden',
-              catalogMissing: true,
-              bankMismatch: false,
-              catalog: null,
-            }
-          : { roots: [], catalogFolder: '/Users/example/Notes', catalogFolderHasCatalog: false },
+        section !== 'sources'
+          ? {}
+          : state.open
+            ? {
+                folder,
+                open: folder,
+                openKind: 'catalog',
+                listBank: 'garden',
+                folders,
+                canCollect: false,
+                catalogRevision: 'none',
+                bank: 'garden',
+                catalogMissing: true,
+                bankMismatch: false,
+                catalog: null,
+              }
+            : { bank: 'garden', listBank: 'garden', open: null, openKind: null, folders },
       confirmations: [],
       messages: [],
     });
@@ -56,31 +66,34 @@ try {
       invoke: async (cmd, payload) => {
         if (cmd !== 'bridge') throw new Error('Unexpected native call');
         const { command, args = {} } = payload.request;
+        state.requests.push(command);
         if (command === 'section' && args.section) section = args.section;
+        if (command === 'folder.close') state.open = null;
         return structuredClone(snapshot(section));
       },
     };
   });
   await page.goto(`http://127.0.0.1:${port}/#sources`);
-  const notice = page.locator('.coverage-catalog-folder');
-  await expect(notice).toContainText('No catalog in this folder');
-  await expect(notice).toContainText('it will be tracked for the selected bank, “Garden notes”');
-  await expect(page.locator('.archive-heading')).toContainText('No catalog');
+  const notice = page.getByRole('status').filter({ hasText: 'no longer has a catalog' });
+  await expect(notice).toContainText(
+    'This folder no longer has a catalog (catalog.json not found).',
+  );
   await expect(page.locator('.archive-stats')).toHaveCount(0);
   await expect(page.locator('.source-layout')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Collect sources' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Prepare upload to Hindsight' })).toHaveCount(0);
   await expect(page.getByRole('alert')).toHaveCount(0);
   if (process.env.SCREENSHOT) await page.screenshot({ path: process.env.SCREENSHOT });
-  await notice.getByRole('button', { name: 'Open Tracked folders' }).click();
-  const offer = page.locator('.coverage-catalog-folder');
-  await expect(offer).toContainText('Folder open in the Catalog');
-  await expect(offer).toContainText(
-    'This folder has no catalog: it is an ordinary documents folder.',
-  );
-  await expect(offer.getByRole('button', { name: 'Track this folder' })).toBeVisible();
+  await page.getByRole('button', { name: 'All sources', exact: true }).click();
+  const row = page.locator('.folder-row');
+  await expect(row).toContainText('Notes');
+  await expect(row).toContainText('2 files · 2 to upload');
+  await expect(row.locator('.badge')).toHaveCount(0);
+  const requests = await page.evaluate(() => window.__noCatalogTest.requests);
+  if (requests.some((command) => command.startsWith('coverage.') || command === 'folder.refresh'))
+    throw new Error(`A missing catalog triggered ${requests.join(', ')}`);
   if (errors.length) throw new Error(errors.join('\n'));
-  console.log(JSON.stringify({ noCatalogNotice: 'passed', trackingOffer: 'passed' }));
+  console.log(JSON.stringify({ missingCatalogNotice: 'passed', backToOrdinaryFolder: 'passed' }));
 } finally {
   await browser?.close();
   server.kill();

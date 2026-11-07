@@ -51,17 +51,6 @@ final class CoverageRootTests: XCTestCase {
         XCTAssertTrue(transport.requests.isEmpty, "Lire les dossiers enregistrés ne contacte aucun serveur")
     }
 
-    func testCatalogFolderDoesNotBecomeTrackedWithoutExplicitRegistration() async {
-        let settings = InMemorySettingsStore([SettingsKey.memoryFolderPath: "/example/catalog"])
-        let transport = MockTransport()
-        let vm = FileCoverageViewModel(settings: settings, client: { makeClient(transport) }, bank: { "first" })
-        vm.loadRoots()
-        XCTAssertTrue(vm.roots.isEmpty)
-        XCTAssertNil(settings.string(forKey: "coverageRoots.first"))
-        XCTAssertEqual(settings.string(forKey: SettingsKey.memoryFolderPath), "/example/catalog")
-        XCTAssertTrue(transport.requests.isEmpty)
-    }
-
     func testInvalidOptionTypesAreStillRejected() async {
         let json = #"[{"path":"/example/a","allFiles":"true"}]"#
         XCTAssertThrowsError(try JSONDecoder().decode([CoverageRoot].self, from: Data(json.utf8)))

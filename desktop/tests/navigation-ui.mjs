@@ -23,8 +23,7 @@ const routes = [
   { id: 'models', group: 'Knowledge' },
   { id: 'search', group: 'Search' },
   { id: 'model-settings', group: 'Models' },
-  { id: 'sources', group: 'Sources', list: 'Source views', tab: 'Catalog' },
-  { id: 'coverage', group: 'Sources', list: 'Source views', tab: 'Tracked folders' },
+  { id: 'sources', group: 'Sources' },
   { id: 'operations', group: 'Activity', list: 'Activity views', tab: 'Processing' },
   { id: 'consumption', group: 'Activity', list: 'Activity views', tab: 'Usage' },
   { id: 'audit', group: 'Activity', list: 'Activity views', tab: 'Logs' },
@@ -40,13 +39,12 @@ async function hasRoute(page, id) {
   await expect(page.getByText('This view could not be displayed', { exact: true })).toHaveCount(0);
 }
 
-async function selectedGroup(page, label, french = false) {
-  const button =
-    label === 'Settings' || label === 'Réglages'
-      ? page.locator('.sidebar').getByRole('button', { name: new RegExp(`^${label}`) })
-      : page
-          .getByRole('navigation', { name: french ? 'Navigation principale' : 'Main navigation' })
-          .getByRole('button', { name: new RegExp(`^${label}`) });
+// Vues de la banque dans la navigation principale ; Modèles et Réglages, communs au serveur, en bas.
+async function selectedGroup(page, label) {
+  const button = page.locator('.sidebar .nav-item').filter({
+    hasText: new RegExp(`^${label}`),
+  });
+  await expect(button).toHaveCount(1);
   await expect(button).toHaveClass(/active/);
 }
 
@@ -72,14 +70,19 @@ try {
   await page.goto(`${base}/?demo=1`);
   await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible();
   const nav = page.getByRole('navigation', { name: 'Main navigation' });
-  await expect(nav.getByRole('button')).toHaveCount(7);
+  // Les vues de la banque choisie, puis, sous un trait, ce qui vaut pour tout le serveur.
+  await expect(nav.getByRole('button')).toHaveCount(6);
   await expect(nav).toContainText('Overview');
   await expect(nav).toContainText('Memory');
   await expect(nav).toContainText('Knowledge');
   await expect(nav).toContainText('Search');
-  await expect(nav).toContainText('Models');
   await expect(nav).toContainText('Sources');
   await expect(nav).toContainText('Activity');
+  await expect(nav).not.toContainText('Models');
+  const general = page.getByRole('navigation', { name: 'Server and app settings' });
+  await expect(general.getByRole('button')).toHaveCount(1);
+  await expect(general).toContainText('Models');
+  await expect(general.getByRole('button', { name: /^Models/ })).toContainText('⌘7');
   await expect(page.getByRole('button', { name: 'Advanced', exact: true })).toHaveCount(0);
   await selectedGroup(page, 'Overview');
 
@@ -109,30 +112,32 @@ try {
   await hasRoute(page, 'search');
   await page.keyboard.press('Meta+2');
   await hasRoute(page, 'graph');
+  // Sources n'a qu'une vue : les dossiers de la banque. L'ancien lien « Dossiers suivis » y mène.
   await nav.getByRole('button', { name: /^Sources/ }).click();
-  await page
-    .getByRole('tablist', { name: 'Source views' })
-    .getByRole('tab', { name: 'Tracked folders', exact: true })
-    .click();
-  await hasRoute(page, 'coverage');
-  await nav.getByRole('button', { name: /^Overview/ }).click();
-  await nav.getByRole('button', { name: /^Sources/ }).click();
-  await hasRoute(page, 'coverage');
+  await hasRoute(page, 'sources');
+  await expect(page.getByRole('tablist', { name: 'Source views' })).toHaveCount(0);
+  await page.goto(`${base}/?demo=1#coverage`);
+  await hasRoute(page, 'sources');
+  await selectedGroup(page, 'Sources');
+  await page.goto(`${base}/?demo=1#graph`);
+  await hasRoute(page, 'graph');
   // Activity's last tab is Logs: the deep links above opened it after Processing and Usage.
+  await page.goto(`${base}/?demo=1#audit`);
+  await page.goto(`${base}/?demo=1#graph`);
   for (const [index, id] of [
     'dashboard',
     'graph',
     'models',
     'search',
-    'model-settings',
-    'coverage',
+    'sources',
     'audit',
+    'model-settings',
   ].entries()) {
     await page.keyboard.press(`Meta+${index + 1}`);
     await hasRoute(page, id);
   }
   await page.keyboard.press('Meta+9');
-  await hasRoute(page, 'audit');
+  await hasRoute(page, 'model-settings');
 
   // Memory shows stored facts, with type filters and a route back to source text.
   await page.keyboard.press('Meta+2');
@@ -154,24 +159,24 @@ try {
   await page.getByRole('button', { name: 'Close', exact: true }).click();
 
   // Hash history must change the rendered view, selected tab and active group together.
-  // A reload forgets the last tabs opened above, so the Sources group opens on Catalog.
+  // A reload forgets the last tabs opened above, so the Activity group opens on Processing.
   await page.goto(`${base}/?demo=1#graph`);
   await page.reload();
-  await nav.getByRole('button', { name: /^Sources/ }).click();
-  await hasRoute(page, 'sources');
+  await nav.getByRole('button', { name: /^Activity/ }).click();
+  await hasRoute(page, 'operations');
   await page
-    .getByRole('tablist', { name: 'Source views' })
-    .getByRole('tab', { name: 'Tracked folders', exact: true })
+    .getByRole('tablist', { name: 'Activity views' })
+    .getByRole('tab', { name: 'Logs', exact: true })
     .click();
-  await hasRoute(page, 'coverage');
+  await hasRoute(page, 'audit');
   await page.goBack();
-  await hasRoute(page, 'sources');
+  await hasRoute(page, 'operations');
   await page.goBack();
   await hasRoute(page, 'graph');
   await selectedGroup(page, 'Memory');
   await page.goForward();
-  await hasRoute(page, 'sources');
-  await selectedGroup(page, 'Sources');
+  await hasRoute(page, 'operations');
+  await selectedGroup(page, 'Activity');
 
   await page.keyboard.press('Meta+k');
   await expect(page.locator('.command-list button')).toHaveCount(routes.length);
@@ -187,7 +192,7 @@ try {
   );
   await page.keyboard.press('Meta+2');
   await hasRoute(page, 'facts');
-  await selectedGroup(page, 'Mémoire', true);
+  await selectedGroup(page, 'Mémoire');
   const memory = page.getByRole('tablist', { name: 'Vues de la mémoire', exact: true });
   await expect(memory.getByRole('tab', { name: 'Faits', exact: true })).toHaveAttribute(
     'aria-selected',
@@ -195,7 +200,7 @@ try {
   );
   await memory.getByRole('tab', { name: 'Chronologie', exact: true }).click();
   await hasRoute(page, 'timeline');
-  await page.keyboard.press('Meta+7');
+  await page.keyboard.press('Meta+6');
   await expect(page.getByRole('tablist', { name: 'Vues de l’activité' })).toBeVisible();
   await page.keyboard.press('Meta+,');
   await expect(page.getByRole('tablist', { name: 'Vues des réglages' })).toBeVisible();
@@ -209,7 +214,10 @@ try {
     await page.setViewportSize({ width, height: 680 });
     await expect(
       page.getByRole('navigation', { name: 'Navigation principale' }).getByRole('button'),
-    ).toHaveCount(7);
+    ).toHaveCount(6);
+    await expect(
+      page.getByRole('navigation', { name: 'Réglages du serveur et de l’application' }),
+    ).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
       true,
     );
@@ -303,7 +311,7 @@ try {
   await factsPage.close();
   expect(errors).toEqual([]);
   console.log(
-    'Navigation verified: seven groups, seventeen deep links, contextual tabs, history, remembered tabs, shortcuts and both languages.',
+    'Navigation verified: seven groups, sixteen deep links and the former Tracked folders link, contextual tabs, history, remembered tabs, shortcuts and both languages.',
   );
 } finally {
   await browser?.close();

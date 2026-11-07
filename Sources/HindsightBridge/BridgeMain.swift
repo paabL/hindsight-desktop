@@ -97,6 +97,7 @@ func wire<T>(_ value: T) -> Any {
 @MainActor
 final class DesktopBridge {
     let app: AppModel
+    let settings: SettingsStore
     var ownConfirmation: ConfirmationRequest?
     var section = "sources"
     var note: String?
@@ -113,6 +114,10 @@ final class DesktopBridge {
     var graphMode = GraphViewModel.Mode.entities
     var graphLimit = 300
     var catalogCache: (stamp: [String], header: Any)?
+    /// Dossier ouvert dans Sources (catalogue ou dossier ordinaire) ; nil : la liste des dossiers de la banque.
+    var openFolder: (path: String, catalog: Bool)?
+    /// Résumé de chaque catalogue pour la liste des dossiers, relu quand son fichier change.
+    var catalogSummaries: [String: (stamp: [String], summary: [String: Any])] = [:]
     /// Clé d'occurrence de chaque message émis (voir `forgetEmittedMessages`), préfixée par cette exécution du
     /// moteur pour qu'un moteur relancé ne réutilise pas les clés déjà vues par la coque.
     var messageKeys: [String: String] = [:]
@@ -125,6 +130,7 @@ final class DesktopBridge {
         let defaults = UserDefaults(suiteName: "local.hindsight.desktop")!
         // Préférences indépendantes : le premier lancement n'altère pas celles de SwiftUI.
         let settings: SettingsStore = testing ? InMemorySettingsStore() : UserDefaultsSettingsStore(defaults: defaults)
+        self.settings = settings
         let ledgerURL = UsageLedger.defaultURL.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("HindsightDesktop/usage-ledger.json")
         let env = ProcessInfo.processInfo.environment
         let identity = AppInfo(version: env["HINDSIGHT_DESKTOP_VERSION"] ?? "dev", build: "Tauri", commit: env["HINDSIGHT_DESKTOP_COMMIT"], sourceRepository: env["HINDSIGHT_DESKTOP_SOURCE"], bundlePath: env["HINDSIGHT_DESKTOP_BUNDLE"].flatMap { $0.isEmpty ? nil : $0 })
@@ -155,7 +161,7 @@ final class DesktopBridge {
             await connected()
         case "server.url":
             guard serviceTask == nil, !app.service.isBusy else { throw BridgeFailure("Le service est déjà en cours de modification.") }
-            cancelSourcesRefresh()
+            closeFolder()
             clearConfirmations()
             guard await app.applyServerURL(str("url")) else { throw BridgeFailure(app.serverURLNotice ?? "Adresse invalide.") }
             await connected()
@@ -182,7 +188,7 @@ final class DesktopBridge {
         case "bank.select":
             guard app.banks.contains(where: { $0.bankId == str("id") }) else { throw BridgeFailure("Banque inconnue.") }
             clearConfirmations()
-            cancelSourcesRefresh()
+            closeFolder()
             app.selectBank(str("id"))
             if !testing { await app.services.estimator.refreshProfile(bank: str("id")) }
         case "bank.create": app.requestCreateBank(id: str("id"), name: str("name"), mission: str("mission"))
@@ -192,17 +198,35 @@ final class DesktopBridge {
             section = str("section", "sources")
             try await load(section, p)
         case "folder.choose":
+            // Ouvre un dossier de Sources : son catalogue s'il passe par lui dans cette banque, sinon ses fichiers.
             let path = str("path")
             guard path.hasPrefix("/") else { throw BridgeFailure("Choisissez un dossier absolu.") }
-            guard collectionTask == nil else { throw BridgeFailure("Une collecte est en cours dans ce dossier.") }
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else {
+                throw BridgeFailure("Ce dossier est introuvable.")
+            }
+            let url = URL(fileURLWithPath: path).standardizedFileURL
+            let catalog = SourceFolders.isCatalog(url, for: listBank)
+            if catalog, collectionTask != nil || app.memoryFolder.collecting { throw BridgeFailure("Une collecte est en cours dans ce dossier.") }
             cancelSourcesRefresh()
-            app.memoryFolder.choose(URL(fileURLWithPath: path))
-            if p["background"] as? Bool == true { startSourcesRefresh() } else { await workspace.refresh() }
+            openFolder = (url.path, catalog)
+            if catalog {
+                app.memoryFolder.choose(url)
+                if p["background"] as? Bool == true { startSourcesRefresh() } else { await workspace.refresh() }
+            } else {
+                releaseClosedCatalog()
+                if app.selectedBankID != nil { await app.coverage.loadIfNeeded() }
+            }
+        case "folder.close": closeFolder()
         case "folder.refresh":
             if p["background"] as? Bool == true {
                 guard collectionTask == nil else { break }
                 cancelSourcesRefresh(invalidate: false)
-                collectionTask = Task { @MainActor in await self.workspace.refreshSources(); self.collectionTask = nil }
+                collectionTask = Task { @MainActor in
+                    await self.workspace.refreshSources()
+                    self.collectionTask = nil
+                    self.releaseClosedCatalog()
+                }
             } else { await workspace.refreshSources() }
         case "folder.prepare":
             guard collectionTask == nil else { throw BridgeFailure("Une collecte est en cours dans ce dossier.") }
@@ -222,7 +246,15 @@ final class DesktopBridge {
             guard ["pdf", "tex", "md"].contains(url.pathExtension.lowercased()) else { throw BridgeFailure("Format de document non autorisé.") }
             if !testing { NSWorkspace.shared.open(url) }
         case "folder.reveal":
-            if let url = app.memoryFolder.repository { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: url.path) }
+            // Un dossier de la banque ou le dossier ouvert ; sans chemin, le catalogue ouvert.
+            let requested = str("path")
+            if requested.isEmpty {
+                if let url = app.memoryFolder.repository, !testing { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: url.path) }
+            } else {
+                let known = listBank.map { FileCoverageViewModel.storedRoots(settings: settings, bank: $0) }?.contains { $0.path == requested } == true
+                guard known || openFolder?.path == requested else { throw BridgeFailure("Dossier inconnu.") }
+                if !testing { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: requested) }
+            }
         case "folder.read": return try readSource(str("path"))
         case "external.open":
             guard let url = URL(string: str("url")), ["https", "codex", "claude"].contains(url.scheme?.lowercased() ?? ""), url.user == nil, url.password == nil else { throw BridgeFailure("Lien non autorisé.") }
@@ -433,10 +465,15 @@ final class DesktopBridge {
         case "service.install": app.service.requestInstall(startAtLogin: p["atLogin"] as? Bool ?? false)
         case "service.uninstall": app.service.requestUninstall()
         case "service.atLogin": app.service.setStartAtLogin(p["enabled"] as? Bool ?? false)
-        case "coverage.add": await app.coverage.addRoots(strings("paths").map { URL(fileURLWithPath: $0) })
+        case "coverage.add":
+            guard app.selectedBankID != nil else { throw BridgeFailure("Choisissez une banque avant d'ajouter un dossier.") }
+            await app.coverage.addRoots(strings("paths").map { URL(fileURLWithPath: $0) })
         case "coverage.removeRoot", "coverage.auto", "coverage.allFiles":
             guard let root = app.coverage.roots.first(where: { $0.id == str("id") }) else { throw BridgeFailure("Dossier inconnu.") }
-            if command == "coverage.removeRoot" { await app.coverage.removeRoot(root) }
+            if command == "coverage.removeRoot" {
+                if openFolder?.path == root.url.standardizedFileURL.path { closeFolder() }
+                await app.coverage.removeRoot(root)
+            }
             else if command == "coverage.auto" {
                 app.coverage.requestAutoSync(p["enabled"] as? Bool ?? false, for: root)
                 autoSyncConfirmation = app.coverage.confirmation?.id
@@ -482,17 +519,41 @@ final class DesktopBridge {
                 cancelSourcesRefresh(invalidate: false)
                 collectionTask = Task { @MainActor in
                     await request.perform()
-                    await self.workspace.refresh()
+                    if self.openFolder?.catalog == true { await self.workspace.refresh() }
                     self.collectionTask = nil
+                    self.releaseClosedCatalog()
                 }
             }
-            else { await request.perform(); if section == "sources" && !workspaceAction { await workspace.refresh() } }
+            else {
+                await request.perform()
+                if section == "sources" && !workspaceAction && openFolder?.catalog == true { await workspace.refresh() }
+            }
             if activateSync { app.coverage.startAutoSync() }
         case "cancel": clearConfirmations()
         default: throw BridgeFailure("Action inconnue : \(command)")
         }
         return snapshot(sourceRevision: p["sourceRevision"] as? String)
     }
+    /// Banque dont Sources montre les dossiers : la banque choisie, ou hors connexion la dernière choisie.
+    var listBank: String? {
+        if let bank = app.selectedBankID { return bank }
+        return app.connection.isConnected ? nil : settings.string(forKey: SettingsKey.lastBank)
+    }
+
+    /// Retour à la liste des dossiers. Une collecte en cours garde son dossier jusqu'à sa fin.
+    func closeFolder() {
+        openFolder = nil
+        cancelSourcesRefresh()
+        releaseClosedCatalog()
+    }
+
+    /// Referme le catalogue que Sources n'affiche plus, dès qu'aucune collecte ne l'occupe.
+    func releaseClosedCatalog() {
+        guard openFolder?.catalog != true, app.memoryFolder.folder != nil, collectionTask == nil, !app.memoryFolder.collecting else { return }
+        app.memoryFolder.choose(nil)
+        workspace.invalidate()
+    }
+
     func cancelSourcesRefresh(invalidate: Bool = true) {
         sourcesGeneration = UUID(); sourcesTask?.cancel(); sourcesTask = nil
         if invalidate { workspace.invalidate() }
@@ -526,7 +587,13 @@ final class DesktopBridge {
             await app.refreshBanks()
         }
         if name == "sources" {
-            if p["background"] as? Bool == true { startSourcesRefresh() } else { await workspace.refresh() }
+            if openFolder?.catalog == true {
+                if p["background"] as? Bool == true { startSourcesRefresh() } else { await workspace.refresh() }
+            } else if let bank = app.selectedBankID,
+                      FileCoverageViewModel.storedRoots(settings: settings, bank: bank).contains(where: { !SourceFolders.isCatalog($0.url, for: bank) }) {
+                // Liste et dossier ordinaire : comparaison des fichiers avec la banque (les catalogues ont la leur).
+                await app.coverage.reload()
+            }
             return
         }
         if name == "consumption" {
@@ -558,7 +625,6 @@ final class DesktopBridge {
             s.documents.query = p["query"] as? String ?? ""
             s.documents.selectedTags = p["tags"] as? [String] ?? []
             await s.documents.reload()
-        case "coverage": await app.coverage.reload()
         case "operations":
             if let status = p["status"] as? String {
                 guard let filter = OperationsViewModel.StatusFilter(rawValue: status) else { throw BridgeFailure("Filtre d'opérations inconnu.") }
@@ -622,7 +688,7 @@ final class DesktopBridge {
         return [
             "app": ["connected": connected, "connectionError": wire(error), "serverURLNotice": wire(app.serverURLNotice), "serverURL": app.serverURL.absoluteString,
                     "version": wire(app.connection.version), "banks": wire(app.banks), "bank": wire(app.selectedBankID),
-                    "folder": wire(app.memoryFolder.repository?.path), "paused": wire(app.pause.heldBanks)],
+                    "folder": wire(openFolder?.catalog == true ? app.memoryFolder.repository?.path : nil), "paused": wire(app.pause.heldBanks)],
             "serviceBusy": serviceTask != nil || app.service.isBusy,
             "updates": updateSnapshot(),
             "section": section, "data": sectionData(sourceRevision: sourceRevision), "messages": messages.map { SecretMasker.mask($0) },
@@ -689,13 +755,15 @@ final class DesktopBridge {
         let s = app.session
         switch section {
         case "sources":
+            var data = foldersData()
+            guard openFolder?.catalog == true else { return data }
             let folder = app.memoryFolder!
             let revision = workspace.revision.uuidString
-            var data: [String: Any] = ["folder": wire(folder.repository?.path), "error": wire(workspace.error ?? folder.error), "memoryMessage": wire(workspace.message),
+            data.merge(["folder": wire(folder.repository?.path), "error": wire(workspace.error ?? folder.error), "memoryMessage": wire(workspace.message),
                 "canCollect": folder.canCollect, "collecting": folder.collecting || collectionTask != nil, "importing": folder.importing,
                 "refreshing": sourcesTask != nil, "catalogRevision": revision, "output": folder.output,
-                "boundBank": wire(workspace.boundBank), "bankMismatch": workspace.bankMismatch, "bank": wire(app.selectedBankID),
-                "catalogMissing": workspace.catalog == nil]
+                "boundBank": wire(workspace.boundBank), "bankMismatch": workspace.bankMismatch,
+                "catalogMissing": workspace.catalog == nil]) { $1 }
             if sourceRevision == revision { data["catalogUnchanged"] = true; return data }
             if let sourceRevision, sourceRevision == workspace.previousRevision?.uuidString,
                workspace.changedRecords.count < max(1, workspace.records.count / 2), var header = workspace.catalog {
@@ -726,17 +794,6 @@ final class DesktopBridge {
             return ["items": wire(s?.documents.sortedItems ?? []), "total": s?.documents.total ?? 0,
                     "canLoadMore": s?.documents.canLoadMore ?? false, "error": wire(s?.documents.state.errorMessage),
                     "query": s?.documents.query ?? ""]
-        case "coverage":
-            // Dossiers suivis : seuls les fichiers suivis ; les autres documents de la banque ont leur page (Mémoire › Documents).
-            let catalogBank = MemoryWorkspace.declaredBank(in: app.memoryFolder.repository)
-            return ["items": wire(app.coverage.visibleItems.filter { $0.state != .stored }.map { item -> [String: Any] in
-                        var row = (wire(item) as? [String: Any]) ?? [:]
-                        row["state"] = item.state.rawValue
-                        row["canSend"] = item.entry?.canSend ?? false
-                        return row
-                    }), "roots": wire(app.coverage.roots),
-                    "catalogBank": wire(catalogBank), "bank": wire(app.selectedBankID),
-                    "catalogFolder": wire(app.memoryFolder.repository?.path), "catalogFolderHasCatalog": app.memoryFolder.catalogURL != nil, "loading": app.coverage.state.isLoading, "error": wire(app.coverage.state.errorMessage), "warnings": app.coverage.warnings]
         case "operations":
             return ["items": wire(s?.operations.rows.map(\.raw) ?? []), "total": s?.operations.total ?? 0,
                     "statusFilter": s?.operations.statusFilter.rawValue ?? "all", "refreshing": s?.operations.isRefreshing ?? false,
@@ -783,6 +840,69 @@ final class DesktopBridge {
         case "server", "model-settings": return serverSnapshot()
         default: return [:]
         }
+    }
+
+    /// Sources : les dossiers de la banque et, pour un dossier ordinaire ouvert, ses fichiers comparés à la banque.
+    func foldersData() -> [String: Any] {
+        let bank = listBank
+        let roots = bank.map { FileCoverageViewModel.storedRoots(settings: settings, bank: $0) } ?? []
+        let compared = bank != nil && app.coverage.reportBank == bank
+        let tracked = compared ? app.coverage.library.filter { $0.group.kind == .folder } : []
+        var rows: [[String: Any]] = []
+        var openItems: [[String: Any]] = []
+        var claimed = Set<String>()
+        for root in roots {
+            let catalog = SourceFolders.isCatalog(root.url, for: bank)
+            var row: [String: Any] = ["path": root.path, "name": root.url.lastPathComponent, "kind": catalog ? "catalog" : "folder",
+                                      "allFiles": root.allFiles, "autoSync": root.autoSync,
+                                      "exists": FileManager.default.fileExists(atPath: root.path)]
+            if catalog {
+                row.merge(catalogSummary(root.url)) { $1 }
+            } else if compared {
+                // Un dépôt atteint par deux dossiers suivis n'est compté qu'une fois, dans le premier.
+                let repos = Set(FileCoverageScanner.repositories(in: [root.url]).map(\.lastPathComponent)).subtracting(claimed)
+                claimed.formUnion(repos)
+                let items = tracked.filter { repos.contains($0.group.title) }
+                row["files"] = items.filter { $0.entry != nil }.count
+                row["toSend"] = items.filter { $0.entry?.canSend == true }.count
+                row["modified"] = items.filter { $0.state == .modified }.count
+                row["queued"] = items.filter { $0.state == .queued }.count
+                if openFolder?.catalog == false, openFolder?.path == root.url.standardizedFileURL.path {
+                    openItems = items.map { item in
+                        var row = (wire(item) as? [String: Any]) ?? [:]
+                        row["state"] = item.state.rawValue
+                        row["canSend"] = item.entry?.canSend ?? false
+                        return row
+                    }
+                }
+            }
+            rows.append(row)
+        }
+        var data: [String: Any] = ["folders": rows, "bank": wire(app.selectedBankID), "listBank": wire(bank),
+                                   "open": wire(openFolder?.path), "openKind": wire(openFolder.map { $0.catalog ? "catalog" : "folder" }),
+                                   "foldersLoading": app.coverage.state.isLoading || app.coverage.isRefreshing,
+                                   "foldersError": wire(app.coverage.state.errorMessage), "warnings": app.coverage.warnings]
+        if openFolder?.catalog == false { data["items"] = openItems; data["compared"] = compared }
+        return data
+    }
+
+    /// Nombre de sources et date de collecte d'un catalogue, sans ses archives à part (comme la page du catalogue).
+    func catalogSummary(_ folder: URL) -> [String: Any] {
+        var summary: [String: Any] = ["catalogBank": wire(SourceFolders.declaredBank(of: folder))]
+        guard let url = SourceFolders.catalogURL(in: folder),
+              let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let size = (attributes[.size] as? NSNumber)?.intValue else { return summary }
+        let stamp = [url.path, String(size), String(describing: attributes[.modificationDate]), String(describing: attributes[.systemFileNumber])]
+        if let cached = catalogSummaries[folder.path], cached.stamp == stamp { return summary.merging(cached.summary) { $1 } }
+        var values: [String: Any] = ["unreadable": true]
+        if size < 60_000_000, let data = try? Data(contentsOf: url),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let records = json["records"] as? [[String: Any]] {
+            let aside: Set<String> = ["internal_review", "empty_export"]
+            values = ["sources": records.filter { !aside.contains(($0["context"] as? [String: Any])?["conversation_kind"] as? String ?? "") }.count,
+                      "collectedAt": json["generated_at"] ?? NSNull()]
+        }
+        catalogSummaries[folder.path] = (stamp, values)
+        return summary.merging(values) { $1 }
     }
 
     /// Catalogue lu sans ses enregistrements (remplacés par ceux de l'espace mémoire), relu seulement quand

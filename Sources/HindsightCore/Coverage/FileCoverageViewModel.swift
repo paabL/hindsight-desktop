@@ -47,7 +47,8 @@ public final class FileCoverageViewModel {
     @ObservationIgnored public var priceBook: (@MainActor () -> PriceBook)?
     /// Refus pendant une pause de la banque : ni envoi, ni synchronisation automatique.
     @ObservationIgnored public var pauseGate: PauseGate?
-    /// Politique du dossier commun, relue avant préparation et avant confirmation effective.
+    /// Politique du catalogue rattaché à la banque (nil sans catalogue), relue avant préparation et avant
+    /// confirmation effective.
     @ObservationIgnored public var memoryPolicyURL: (@MainActor () -> URL?)?
     /// Sessions de conversation connues d'un catalogue (lecture seule).
     @ObservationIgnored public var sessions: (@MainActor () async -> [CodexSessionSummary])?
@@ -175,9 +176,17 @@ public final class FileCoverageViewModel {
 
     static func rootsKey(_ bank: String) -> String { "coverageRoots.\(bank)" }
 
-    private func storedRoots(_ bank: String) -> [CoverageRoot] {
-        settings.string(forKey: Self.rootsKey(bank)).flatMap { try? JSONDecoder().decode([CoverageRoot].self, from: Data($0.utf8)) } ?? []
+    /// Dossiers suivis par une banque, lus sans contacter le serveur (la liste reste lisible hors ligne).
+    public static func storedRoots(settings: SettingsStore, bank: String) -> [CoverageRoot] {
+        settings.string(forKey: rootsKey(bank)).flatMap { try? JSONDecoder().decode([CoverageRoot].self, from: Data($0.utf8)) } ?? []
     }
+
+    public static func saveRoots(_ roots: [CoverageRoot], settings: SettingsStore, bank: String) {
+        let json = roots.isEmpty ? nil : (try? JSONEncoder().encode(roots)).map { String(decoding: $0, as: UTF8.self) }
+        settings.set(json, forKey: rootsKey(bank))
+    }
+
+    private func storedRoots(_ bank: String) -> [CoverageRoot] { Self.storedRoots(settings: settings, bank: bank) }
 
     func loadRoots() {
         guard let bank else { return roots = [] }
@@ -187,8 +196,7 @@ public final class FileCoverageViewModel {
 
     func saveRoots() {
         guard let bank else { return }
-        let json = roots.isEmpty ? nil : (try? JSONEncoder().encode(roots)).map { String(decoding: $0, as: UTF8.self) }
-        settings.set(json, forKey: Self.rootsKey(bank))
+        Self.saveRoots(roots, settings: settings, bank: bank)
     }
 
     public func addRoots(_ urls: [URL]) async {
@@ -230,7 +238,9 @@ public final class FileCoverageViewModel {
 
     private func context(client: HindsightClient) -> Context? {
         guard let bank else { return nil }
-        let roots = storedRoots(bank)
+        // Dans sa banque, un dossier à catalogue passe uniquement par son catalogue : ses fichiers ne sont ni
+        // analysés ni proposés une seconde fois.
+        let roots = storedRoots(bank).filter { !SourceFolders.isCatalog($0.url, for: bank) }
         return Context(revision: contextRevision, bank: bank, server: client.baseURL, authorization: client.authorization, roots: roots,
                        resolvedRoots: roots.map { $0.url.resolvingSymlinksInPath().standardizedFileURL },
                        rootIdentities: roots.map { root in (try? FileVersion(root.url).values).map { Array($0.prefix(2)) } },
@@ -718,8 +728,8 @@ public final class FileCoverageViewModel {
     }
 
     private func selectionPolicyError(_ entries: [CoverageEntry], bank: String) -> String? {
-        guard let provider = memoryPolicyURL else { return nil }
-        guard let url = provider() else { return "Choisissez le dossier mémoire commun avant de préparer un envoi." }
+        // Une banque sans catalogue n'a pas de politique : chaque envoi reste soumis à la confirmation.
+        guard let provider = memoryPolicyURL, let url = provider() else { return nil }
         do {
             guard let policy = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any],
                 policy["version"] as? Int == 1, let target = policy["bank_id"] as? String,

@@ -50,8 +50,12 @@ try {
     .getByRole('navigation', { name: 'Navigation principale' })
     .getByRole('button', { name: /^Sources/ })
     .click();
-  await page.keyboard.press('Meta+6');
-  await expect(page.getByRole('heading', { name: 'Catalogue', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Sources', exact: true })).toBeVisible();
+  await expect(
+    page.getByText('Les dossiers de ce Mac qui alimentent « Projet Horizon ».'),
+  ).toBeVisible();
+  await page.locator('.folder-row', { hasText: 'horizon-memory' }).click();
+  await expect(page.getByRole('heading', { name: 'horizon-memory', exact: true })).toBeVisible();
   await page.locator('.source-row').first().click();
   await expect(page.locator('.modal .markdown')).toBeVisible();
   const originalDocument = await page.locator('.modal .markdown').textContent();

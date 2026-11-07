@@ -161,8 +161,11 @@ final class FileCoverageTests: XCTestCase {
         XCTAssertTrue(vm.actionMessage?.contains("inaccessible") == true)
         vm.memoryPolicyURL = { nil }
         await vm.requestSend()
-        XCTAssertNil(vm.confirmation)
-        XCTAssertTrue(vm.actionMessage?.contains("Choisissez le dossier mémoire") == true)
+        XCTAssertNil(vm.confirmation, "retirer la politique change le contexte : la liste doit être actualisée")
+        await vm.reload()
+        vm.selectVisible()
+        await vm.requestSend()
+        XCTAssertNotNil(vm.confirmation, "une banque sans catalogue n'a pas de politique : l'envoi reste soumis à la seule confirmation")
     }
 
     func testAllFilesOptionAndAutomaticSyncBlocked() async throws {

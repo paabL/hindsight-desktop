@@ -56,13 +56,23 @@ try {
       invoke: async (command, payload) => {
         if (command !== 'bridge')
           throw new Error('Native access is disabled in documentation captures');
-        const { exampleSnapshot } = await import('/src/demo.ts');
-        const route = payload?.request?.args?.section || location.hash.slice(1) || 'dashboard';
-        const snapshot = exampleSnapshot(route);
+        const { exampleSnapshot, exampleRequest } = await import('/src/demo.ts');
+        const { command: action, args = {} } = payload?.request || {};
+        // L’exemple garde le dossier ouvert ; les captures montrent ses chemins en anglais.
+        if (action === 'folder.choose' || action === 'folder.close')
+          await exampleRequest(
+            action,
+            { ...args, path: args.path?.replace('/Example/', '/Exemple/') },
+            'sources',
+          );
+        const route = args.section || location.hash.slice(1) || 'dashboard';
+        const snapshot = JSON.parse(
+          JSON.stringify(exampleSnapshot(route)).replaceAll('/Exemple/', '/Example/'),
+        );
         snapshot.app.banks = [{ bank_id: 'horizon', name: 'Horizon Project', fact_count: 2648 }];
-        snapshot.app.folder = '/Example/horizon-memory';
-        if (route === 'sources') {
-          snapshot.data.folder = snapshot.app.folder;
+        for (const folder of snapshot.data.folders || [])
+          if (folder.collectedAt) folder.collectedAt = '2026-11-04T14:30:00Z';
+        if (route === 'sources' && snapshot.data.openKind === 'catalog') {
           snapshot.data.refreshing = false;
           snapshot.data.catalog.generated_at = '2026-11-04T14:30:00Z';
           snapshot.data.catalog.projects = [
@@ -123,17 +133,25 @@ try {
     .getByRole('navigation', { name: 'Main navigation' })
     .getByRole('button', { name: /^Sources/ })
     .click();
-  await expect(page.locator('.source-row')).toHaveCount(12);
+  await expect(page.locator('.folder-row')).toHaveCount(2);
   await page.getByRole('button', { name: 'Use light theme', exact: true }).click();
-  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.mouse.move(1420, 20);
   await page.screenshot({
     path: path.join(output, 'hindsight-sources.png'),
     animations: 'disabled',
   });
+  await page.locator('.folder-row').filter({ hasText: 'horizon-memory' }).click();
+  await expect(page.locator('.source-row')).toHaveCount(12);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.mouse.move(1420, 20);
+  await page.screenshot({
+    path: path.join(output, 'hindsight-catalog.png'),
+    animations: 'disabled',
+  });
 
   await page
-    .getByRole('navigation', { name: 'Main navigation' })
+    .getByRole('navigation', { name: 'Server and app settings' })
     .getByRole('button', { name: /^Models/ })
     .click();
   await page.getByRole('button', { name: 'Manage models', exact: true }).click();
@@ -143,7 +161,7 @@ try {
     .screenshot({ path: path.join(output, 'hindsight-accounts.png'), animations: 'disabled' });
   if (errors.length) throw new Error(errors.join('\n'));
   console.log(
-    'Documentation screenshots updated: Models, Sources, account status. Fictional data only.',
+    'Documentation screenshots updated: Models, Sources, a catalog, account status. Fictional data only.',
   );
 } finally {
   await browser?.close();

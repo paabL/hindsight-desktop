@@ -25,8 +25,12 @@ try {
       pending: [],
       details: [],
       hold: false,
-      roots: [],
-      coverageLoaded: false,
+      // Chaque banque a ses propres dossiers ; un dossier ouvert l'est dans la banque choisie.
+      folders: {
+        a: [{ path: '/Fixture/a-notes', name: 'a-notes', kind: 'folder', files: 3, toSend: 1 }],
+        b: [{ path: '/Fixture/b-notes', name: 'b-notes', kind: 'folder', files: 2, toSend: 0 }],
+      },
+      open: null,
     });
     const rows = Array.from({ length: 20000 }, (_, i) => ({
       id: `operation-${i}`,
@@ -48,9 +52,10 @@ try {
         if (request.command === 'bank.select') {
           fixture.bank = request.args.id;
           fixture.status = 'all';
+          fixture.open = null;
         }
-        if (request.command === 'coverage.add')
-          fixture.roots = request.args.paths.map((path) => ({ path }));
+        if (request.command === 'folder.choose') fixture.open = request.args.path;
+        if (request.command === 'folder.close') fixture.open = null;
         const { exampleSnapshot } = await import('/src/demo.ts');
         const result = structuredClone(exampleSnapshot(fixture.section));
         result.app = {
@@ -58,7 +63,7 @@ try {
           connected: true,
           connectionError: null,
           serverURL: 'http://127.0.0.1:9999',
-          folder: '/Fixture/catalog',
+          folder: null,
           bank: fixture.bank,
           banks: ['a', 'b'].map((id) => ({ bank_id: id, name: `Bank ${id}`, fact_count: 20000 })),
         };
@@ -77,13 +82,22 @@ try {
             error: null,
           };
         }
-        if (fixture.section === 'coverage')
+        if (fixture.section === 'sources') {
+          const folders = fixture.folders[fixture.bank] || [];
+          const open = folders.find((folder) => folder.path === fixture.open);
           result.data = {
-            roots: fixture.roots,
-            loaded: fixture.coverageLoaded,
-            catalogFolder: '/Fixture/catalog/',
-            items: [],
+            bank: fixture.bank,
+            listBank: fixture.bank,
+            folders,
+            open: open ? open.path : null,
+            openKind: open ? 'folder' : null,
+            foldersLoading: false,
+            ...(open && {
+              compared: true,
+              items: [{ id: 'note', title: 'note.md', state: 'notSent', canSend: true }],
+            }),
           };
+        }
         if (fixture.hold && request.command === 'section')
           return new Promise((resolve) =>
             fixture.pending.push({ request, resolve: () => resolve(result) }),
@@ -147,26 +161,52 @@ try {
   await expect(page.locator('.operation-row').first()).toContainText('Bank b:');
   await expect(page.locator('.operations-list')).not.toContainText('Bank a:');
 
+  // The old « Tracked folders » link opens Sources, which waits for the bank's folders instead of
+  // showing an empty list, and never tracks a folder by itself.
+  await page.evaluate(() => (window.__stateFixture.hold = true));
   await page.evaluate(() => (location.hash = '#coverage'));
-  await expect(page.getByText('Loading tracked folders…', { exact: true })).toBeVisible();
-  await expect(page.getByText('Choose a folder to track', { exact: true })).toHaveCount(0);
+  await expect(page).toHaveURL(/#sources$/);
+  await expect(page.getByText('Loading sources…', { exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.__stateFixture.pending.length)).toBe(1);
+  await expect(page.getByText(/No folder feeds/)).toHaveCount(0);
+  await page.evaluate(() => {
+    const fixture = window.__stateFixture;
+    fixture.hold = false;
+    for (const pending of fixture.pending.splice(0)) pending.resolve();
+  });
+  const folderRows = page.locator('.folder-row');
+  await expect(folderRows).toHaveCount(1);
+  await expect(folderRows).toContainText('b-notes');
+  await expect(folderRows).toContainText('2 files · up to date');
+
+  // A folder opens on its files, and the back link returns to the bank's list.
+  await folderRows.click();
+  await expect(page.getByRole('heading', { name: 'b-notes', exact: true })).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: 'Select note.md' })).toBeVisible();
+  await page.getByRole('button', { name: 'All sources', exact: true }).click();
+  await expect(folderRows).toHaveCount(1);
+
+  // Switching bank from an open folder closes it and lists only the other bank's folders.
+  await folderRows.click();
+  await expect(page.getByRole('heading', { name: 'b-notes', exact: true })).toBeVisible();
+  for (const [bank, own, other] of [
+    ['a', 'a-notes', 'b-notes'],
+    ['b', 'b-notes', 'a-notes'],
+  ]) {
+    await page.locator('.workspace-switch').click();
+    await page
+      .locator('.bank-menu')
+      .getByRole('button', { name: `Bank ${bank}`, exact: true })
+      .click();
+    await expect(folderRows).toHaveCount(1);
+    await expect(folderRows).toContainText(own);
+    await expect(page.locator('.source-folders')).not.toContainText(other);
+  }
   assert.equal(
     await page.evaluate(
       () => window.__stateFixture.requests.filter((r) => r.command === 'coverage.add').length,
     ),
     0,
-  );
-  await page.evaluate(() => (window.__stateFixture.coverageLoaded = true));
-  await page.keyboard.press('Meta+r');
-  await expect(page.locator('.coverage-catalog-folder')).toContainText('/Fixture/catalog/');
-  await page.getByRole('button', { name: 'Track this folder', exact: true }).click();
-  await expect(page.locator('.root-row')).toContainText('/Fixture/catalog/');
-  await expect(page.locator('.coverage-catalog-folder')).toHaveCount(0);
-  assert.equal(
-    await page.evaluate(
-      () => window.__stateFixture.requests.filter((r) => r.command === 'coverage.add').length,
-    ),
-    1,
   );
 
   await page.evaluate(() => (location.hash = '#operations'));
@@ -190,12 +230,12 @@ try {
   assert.deepEqual(errors, []);
   console.log(
     JSON.stringify({
-      scenarios: 7,
+      scenarios: 8,
       syntheticOperations: 20000,
       initiallyRendered: 100,
       firstPaintMs,
       reversedFilterReplies: 12,
-      contextChanges: 2,
+      contextChanges: 4,
       autoTrackedFolders: 0,
     }),
   );

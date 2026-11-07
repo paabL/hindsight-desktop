@@ -13,14 +13,12 @@ If needed, create one in **Settings → Memory bank → New bank**.
 
 ## Everyday use
 
-- **Sources → Tracked folders** lets you add files from ordinary folders. Choose
-  **Track a folder**, select files and choose **Send**, then review and confirm.
-  **Catalog** opens an existing, configured memory folder; use **Prepare upload
-  to Hindsight** for its collected sources. Optional collectors require separate
-  configuration.
-  The catalog and tracked folders are separate. If the catalog folder is not
-  tracked in the current bank, **Tracked folders** shows it with **Track this
-  folder**. This action adds the comparison; uploads still need confirmation.
+- **Sources** lists the folders on this Mac that feed the selected bank. Choose
+  **Add a folder**, open it, select files and choose **Upload**, then review and
+  confirm. Each bank has its own folders; the same folder can feed several banks.
+  A folder with a catalog (`catalog.json`, gathered by its `collect.py` collector)
+  opens on its catalog instead: use **Prepare upload to Hindsight** for its
+  collected sources. Collectors require separate configuration.
 - **Memory** shows what the selected bank has stored. Its tabs open **Facts**,
   **Documents**, **Timeline** and **Graph**. Open available source documents to
   check where a fact came from.
@@ -59,11 +57,23 @@ Account indicators are green for an available session, red for a disconnected or
 unavailable account, amber while checking or connecting, and gray when unchecked.
 A green indicator does not test model access or subscription quota.
 
-## Browse and update Sources
+## Feed a bank from this Mac
 
-![Sources catalog, filters and collection status — fictional data](images/hindsight-sources.png)
+![The folders that feed a memory bank — fictional data](images/hindsight-sources.png)
 
-The local list appears before the server comparison finishes. **Unchecked status**
+**Sources** lists the folders that feed the selected bank, with what remains to
+upload. **Add a folder** adds one for this bank only. Open an ordinary folder to
+compare its files with the bank: select files, choose **Upload**, then confirm.
+**Remove from memory** deletes their documents from the bank after confirmation.
+Only documents are compared unless you include all text files for that folder.
+
+## Browse and update a catalog
+
+![A folder catalog with filters and collection status — fictional data](images/hindsight-catalog.png)
+
+A folder with a catalog belongs to the bank named in its `memory-policy.json`;
+in another bank it is an ordinary folder. The local list appears before the
+server comparison finishes. **Unchecked status**
 means verification is pending or unavailable; it does not mean the source is up
 to date. Source selection controls become available after the initial check.
 You can browse and filter while verification or collection runs.
@@ -89,8 +99,8 @@ conversations remain readable in the generic catalog and document views.
 ## Shortcuts
 
 `⌘K` opens quick navigation, `⌘R` refreshes the current view and `⌘,` opens
-Settings. `⌘1…7` opens Overview, Memory, Knowledge, Search, Models, Sources and
-Activity respectively.
+Settings. `⌘1…7` opens Overview, Memory, Knowledge, Search, Sources, Activity and
+Models respectively.
 
 ## Preferences and updates
 

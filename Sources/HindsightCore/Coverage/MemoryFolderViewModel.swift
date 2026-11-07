@@ -1,7 +1,8 @@
 import Foundation
 import Observation
 
-/// The common folder is the source archive; loading it never contacts Hindsight.
+/// Le dossier à catalogue ouvert dans Sources. Le lire ne contacte jamais Hindsight ; le choix n'est pas
+/// enregistré : chaque banque retrouve ses dossiers dans ses propres Sources (voir `SourceFolders`).
 @MainActor
 @Observable
 public final class MemoryFolderViewModel {
@@ -15,25 +16,16 @@ public final class MemoryFolderViewModel {
     public private(set) var output = ""
     public var confirmation: ConfirmationRequest?
 
-    @ObservationIgnored private let settings: SettingsStore
     @ObservationIgnored private let runner: ProcessRunning
     @ObservationIgnored private let python: String
     @ObservationIgnored private var validatedCatalog: (url: URL, version: FileVersion)?
 
-    public init(settings: SettingsStore, runner: ProcessRunning = SystemProcessRunner(), home: URL = URL(fileURLWithPath: NSHomeDirectory()), python: String? = nil, discoverAutomatically: Bool = true) {
-        self.settings = settings
+    public init(runner: ProcessRunning = SystemProcessRunner(), python: String? = nil) {
         self.runner = runner
         self.python = python ?? ["/opt/homebrew/bin/python3", "/usr/local/bin/python3", "/usr/bin/python3"].first { FileManager.default.isExecutableFile(atPath: $0) } ?? "/usr/bin/python3"
-        folder = settings.string(forKey: SettingsKey.memoryFolderPath).map { URL(fileURLWithPath: $0) }
-            ?? (discoverAutomatically ? Self.discover(home: home) : nil)
-        reload()
     }
 
-    public var repository: URL? {
-        guard let folder else { return nil }
-        let parent = folder.deletingLastPathComponent()
-        return FileManager.default.fileExists(atPath: folder.appendingPathComponent("catalog.json").path) && FileManager.default.fileExists(atPath: parent.appendingPathComponent("collect.py").path) ? parent : folder
-    }
+    public var repository: URL? { folder.map(SourceFolders.repository(of:)) }
 
     public var collection: URL? { catalogURL?.deletingLastPathComponent() }
     public var indexURL: URL? {
@@ -45,10 +37,10 @@ public final class MemoryFolderViewModel {
         return FileManager.default.fileExists(atPath: url.path) && !collecting
     }
 
-    public func choose(_ url: URL) {
+    /// Ouvre un dossier (nil : le referme). Refusé pendant une collecte, qui doit finir dans son dossier.
+    public func choose(_ url: URL?) {
         guard !collecting else { return }
-        folder = url.standardizedFileURL
-        settings.set(folder?.path, forKey: SettingsKey.memoryFolderPath)
+        folder = url?.standardizedFileURL
         confirmation = nil
         output = ""
         importSummary = nil
@@ -59,10 +51,8 @@ public final class MemoryFolderViewModel {
         error = nil
         catalogURL = nil
         guard let folder else { return }
-        let candidates = [folder.appendingPathComponent("catalog.json"), folder.appendingPathComponent("collection/catalog.json")]
-        guard let catalog = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }) else {
-            // Un dossier de documents ordinaire n'a pas de catalogue : ce n'est pas une erreur,
-            // l'interface propose alors de le suivre (Dossiers suivis).
+        guard let catalog = SourceFolders.catalogURL(in: folder) else {
+            // Un dossier ordinaire n'a pas de catalogue : ce n'est pas une erreur (Sources le présente comme tel).
             revision = UUID()
             return
         }
@@ -202,21 +192,4 @@ public final class MemoryFolderViewModel {
     }
 
     private struct CatalogHeader: Decodable { let version: Int; let mode: String }
-
-    /// Reuse opted-in project locations, without a machine-specific path or a home-directory scan.
-    static func discover(home: URL) -> URL? {
-        let path = home.appendingPathComponent(".hindsight/coding-agent.json")
-        guard let data = try? Data(contentsOf: path), let config = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let mapping = config["mapPathToBank"] as? [String: String] else { return nil }
-        var found: [String: URL] = [:]
-        for path in mapping.keys {
-            let root = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
-            let children = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey], options: .skipsHiddenFiles)) ?? []
-            for folder in [root] + children where FileManager.default.fileExists(atPath: folder.appendingPathComponent("projects.toml").path) {
-                let key = folder.standardizedFileURL.path.precomposedStringWithCanonicalMapping
-                found[key] = folder
-            }
-        }
-        return found.count == 1 ? found.values.first : nil
-    }
 }

@@ -3,6 +3,7 @@ import { translate as t, getLocale } from '../i18n-core';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDownToLine,
+  ArrowLeft,
   RefreshCw,
   ArrowRight,
   BookOpen,
@@ -16,10 +17,12 @@ import {
   FolderPlus,
   FolderSync,
   GitCommitHorizontal,
+  Library,
   MessageSquare,
   Search,
+  Send,
   Sparkles,
-  WandSparkles,
+  Trash2,
 } from 'lucide-react';
 import type { PageProps, Row } from '../types';
 import {
@@ -52,6 +55,47 @@ import {
 } from '../ui';
 import { nativeSourceReason } from '../native-messages';
 import { pickDirectory, pickDocuments } from '../transport';
+
+type SourcesProps = PageProps & {
+  serverConnected: boolean;
+  banks?: Row[];
+  onExploreExample: () => void;
+  contextKey?: string;
+};
+
+/** Mêmes chemins malgré une barre finale ou une autre forme Unicode de « é ». */
+function samePath(a: unknown, b: unknown): boolean {
+  const normalized = (value: unknown) =>
+    String(value || '')
+      .normalize('NFC')
+      .replace(/\/+$/, '');
+  return Boolean(a) && normalized(a) === normalized(b);
+}
+
+function bankNamer(banks: Row[]) {
+  return (id: unknown) => bankLabel(banks.find((x) => x.bank_id === id)) || String(id || '');
+}
+
+/** Retour à la liste des dossiers de la banque. */
+function BackToSources({ run, busy }: { run: PageProps['run']; busy: boolean }) {
+  return (
+    <button className="back-link" disabled={busy} onClick={() => void run('folder.close')}>
+      <ArrowLeft size={14} />
+      {t('Toutes les sources', 'All sources')}
+    </button>
+  );
+}
+
+/**
+ * Sources : les dossiers de ce Mac qui alimentent la banque choisie. Un dossier ordinaire montre ses fichiers
+ * comparés à la banque ; un dossier à catalogue (collect.py) montre son catalogue.
+ */
+export default function Sources(props: SourcesProps) {
+  useI18n();
+  if (props.data.openKind === 'catalog') return <CatalogFolder {...props} />;
+  if (props.data.openKind === 'folder') return <PlainFolder key={props.data.open} {...props} />;
+  return <FolderList {...props} />;
+}
 
 const memoryLabels: Record<string, string> = {
   get new() {
@@ -116,25 +160,16 @@ const kindIcons = {
   document: FileText,
 };
 
-export default function Sources({
+function CatalogFolder({
   data,
   run,
   busy,
   notify,
   demo,
-  navigate,
   serverConnected,
   banks = [],
-  onExploreExample,
   contextKey,
-}: PageProps & {
-  serverConnected: boolean;
-  banks?: Row[];
-  onExploreExample: () => void;
-  contextKey?: string;
-}) {
-  useI18n();
-
+}: SourcesProps) {
   const [query, setQuery] = useState('');
   const [memoryFilter, setMemoryFilter] = useState('all');
   const [linkSource, setLinkSource] = useState('');
@@ -254,11 +289,11 @@ export default function Sources({
   const activeSources = sources.filter((s) => !/disabled/.test(String(s.status || '')));
   // Sans catalogue lisible, le pont ne renvoie que les documents de la banque : rien à préparer.
   const hasCatalog = Boolean(data.catalog) && !data.catalogMissing;
-  // Dossier ordinaire choisi : ni collecte, ni statistiques de catalogue, seulement l'orientation vers le suivi.
+  // Catalogue disparu depuis l'ouverture (fichier supprimé ou déplacé) : rien à collecter ni à préparer.
   const noCatalog = !demo && Boolean(data.folder) && Boolean(data.catalogMissing) && !data.error;
   // Le dossier appartient à la banque déclarée dans sa politique ; une autre banque ne fait que le consulter.
-  const bankName = (id: unknown) =>
-    bankLabel(banks.find((x) => x.bank_id === id)) || String(id || '');
+  const bankName = bankNamer(banks);
+  const folderRow = (data.folders || []).find((row: Row) => samePath(row.path, data.open));
   const mismatch = !demo && Boolean(data.bankMismatch && data.boundBank);
   const boundBankExists = banks.some((b) => b.bank_id === data.boundBank);
   const catalogCount = useMemo(
@@ -271,14 +306,6 @@ export default function Sources({
   );
   const problems = sources.filter((s) => /error|fail|partial/.test(s.status));
 
-  async function choose() {
-    try {
-      const path = await pickDirectory();
-      if (path) await run('folder.choose', { path });
-    } catch (error) {
-      notify(String((error as Error).message));
-    }
-  }
   async function chooseDocuments() {
     try {
       const paths = await pickDocuments();
@@ -369,82 +396,24 @@ export default function Sources({
       </div>
     );
 
-  if (!demo && !data.folder && !hasCatalog)
-    return (
-      <>
-        <PageHeader
-          title={t('Catalogue', 'Catalog')}
-          description={t(
-            'Parcourez le catalogue de ce Mac et choisissez ce que vous souhaitez envoyer à la banque Hindsight sélectionnée.',
-            'Browse this Mac’s source catalog and choose what to send to the selected Hindsight bank.',
-          )}
-        />
-        <ErrorNotice message={data.error} />
-        <section className="card">
-          <Empty
-            icon={BookOpen}
-            title={t(
-              'Commencez avec votre serveur ou un exemple',
-              'Start with your server or an example',
-            )}
-            description={t(
-              'Hindsight Desktop est une interface pour un serveur Hindsight séparé. L’exemple permet de découvrir l’application avec des données fictives.',
-              'Hindsight Desktop connects to a separate Hindsight server. Explore the example to try the app with fictional data.',
-            )}
-            action={
-              <div className="action-row">
-                <Button
-                  kind="primary"
-                  onClick={() => navigate(serverConnected ? 'admin' : 'settings')}
-                >
-                  {serverConnected
-                    ? t('Gérer mes banques', 'Manage my banks')
-                    : t('Connecter mon serveur', 'Connect my server')}
-                </Button>
-                <Button icon={Sparkles} onClick={onExploreExample}>
-                  {t('Explorer l’exemple', 'Explore the example')}
-                </Button>
-              </div>
-            }
-          />
-        </section>
-        <section className="card settings-card">
-          <CardHeader
-            title={t('Vous avez déjà un dossier mémoire ?', 'Already have a memory folder?')}
-            subtitle={t(
-              'Ouvrez un catalogue existant pour parcourir ses sources, même sans connexion au serveur.',
-              'Open an existing catalog to browse its sources, even without a server connection.',
-            )}
-          />
-          <Button icon={FolderOpen} disabled={busy} onClick={choose}>
-            {t('Choisir le dossier mémoire', 'Choose a memory folder')}
-          </Button>
-          <p className="form-hint">
-            {t(
-              'Le choix du dossier permet sa lecture. L’envoi de contenu au serveur demande votre confirmation.',
-              'Choosing a folder allows the app to read it. Sending content to the server requires your confirmation.',
-            )}
-          </p>
-        </section>
-      </>
-    );
-
   return (
     <>
+      <BackToSources run={run} busy={busy} />
       <PageHeader
-        title={t('Catalogue', 'Catalog')}
-        description={t(
-          'Le catalogue de ce Mac et l’état de ses sources dans la banque Hindsight sélectionnée.',
-          'This Mac’s source catalog and the status of its sources in the selected Hindsight bank.',
-        )}
+        title={data.folder ? shortName(data.folder) : t('Catalogue', 'Catalog')}
+        description={
+          data.bank
+            ? t(
+                `Catalogue de ce dossier : les conversations, commits, rapports et documents rassemblés par son collecteur, et leur état dans « ${bankName(data.bank)} ».`,
+                `This folder’s catalog: conversations, commits, reports and documents gathered by its collector, and their status in “${bankName(data.bank)}”.`,
+              )
+            : t(
+                'Catalogue de ce dossier : les conversations, commits, rapports et documents rassemblés par son collecteur.',
+                'This folder’s catalog: conversations, commits, reports and documents gathered by its collector.',
+              )
+        }
         actions={
           <>
-            <IconButton
-              icon={FolderOpen}
-              label={t('Choisir le dossier mémoire', 'Choose a memory folder')}
-              onClick={choose}
-              disabled={busy || data.collecting}
-            />
             {!noCatalog && (
               <>
                 <Button
@@ -500,24 +469,29 @@ export default function Sources({
               }
               onClick={() => void run('section', { section: 'sources' })}
             />
+            {folderRow && data.bank && !demo && (
+              <IconButton
+                icon={Trash2}
+                label={t(
+                  `Ne plus suivre ce dossier pour « ${bankName(data.bank)} »`,
+                  `Stop tracking this folder for “${bankName(data.bank)}”`,
+                )}
+                disabled={busy || data.collecting}
+                onClick={() => void run('coverage.removeRoot', { id: folderRow.path })}
+              />
+            )}
           </>
         }
       />
       <ErrorNotice message={mismatch ? null : data.error} />
       {noCatalog && (
-        <section className="notice coverage-catalog-folder" role="status">
-          <div>
-            <strong>{t('Pas de catalogue dans ce dossier', 'No catalog in this folder')}</strong>
-            <p>
-              {t(
-                `Le Catalogue liste les sources rassemblées par un collecteur (collect.py) dans un fichier catalog.json : conversations, GitHub, W&B, rapports… Ce dossier n’en a pas : c’est un dossier de documents ordinaire. Pour envoyer ses fichiers à Hindsight, suivez-le dans « Dossiers suivis »${data.bank ? ` ; il sera suivi pour la banque sélectionnée, « ${bankName(data.bank)} »` : ''}.`,
-                `The Catalog lists sources gathered by a collector (collect.py) in a catalog.json file: conversations, GitHub, W&B, reports… This folder has none: it is an ordinary documents folder. To upload its files to Hindsight, track it in “Tracked folders”${data.bank ? `; it will be tracked for the selected bank, “${bankName(data.bank)}”` : ''}.`,
-              )}
-            </p>
-          </div>
-          <Button onClick={() => navigate('coverage')}>
-            {t('Ouvrir Dossiers suivis', 'Open Tracked folders')}
-          </Button>
+        <section className="notice" role="status">
+          <p>
+            {t(
+              'Ce dossier n’a plus de catalogue (catalog.json introuvable). Revenez aux sources : il y apparaît désormais comme un dossier ordinaire.',
+              'This folder no longer has a catalog (catalog.json not found). Return to the sources: it now appears as an ordinary folder.',
+            )}
+          </p>
         </section>
       )}
       {mismatch && (
@@ -547,8 +521,8 @@ export default function Sources({
                 )}
               </Button>
             )}
-            <Button icon={FolderOpen} disabled={busy || data.collecting} onClick={choose}>
-              {t('Choisir un autre dossier', 'Choose another folder')}
+            <Button icon={ArrowLeft} disabled={busy} onClick={() => void run('folder.close')}>
+              {t('Toutes les sources', 'All sources')}
             </Button>
           </div>
         </section>
@@ -581,7 +555,8 @@ export default function Sources({
           </span>
           <div>
             <div className="archive-heading">
-              <h2>{data.folder ? shortName(data.folder) : t('Dossier local', 'Local folder')}</h2>
+              {/* Le nom du dossier est le titre de la page : ce bloc dit ce qu’il contient. */}
+              <h2>{t('Catalogue', 'Catalog')}</h2>
               <Badge>
                 {!hasCatalog
                   ? t('Sans catalogue', 'No catalog')
@@ -779,9 +754,7 @@ export default function Sources({
                 title={
                   allRecords.length
                     ? t('Aucune source de projet ne correspond', 'No matching project sources')
-                    : data.folder
-                      ? t('Aucune source collectée', 'No sources collected')
-                      : t('Aucun dossier sélectionné', 'No folder selected')
+                    : t('Aucune source collectée', 'No sources collected')
                 }
                 description={
                   allRecords.length
@@ -789,22 +762,10 @@ export default function Sources({
                         'Essayez un autre filtre. Les validations internes et exports vides restent accessibles dans Archives à part.',
                         'Try another filter. Internal reviews and empty exports remain available in Separate archives.',
                       )
-                    : data.folder
-                      ? t(
-                          'Collectez les sources définies dans la configuration du dossier.',
-                          'Collect the sources defined in the folder configuration.',
-                        )
-                      : t(
-                          'Choisissez votre dossier mémoire pour consulter ses conversations, commits, notes et rapports.',
-                          'Choose your memory folder to browse its conversations, commits, notes, and reports.',
-                        )
-                }
-                action={
-                  !data.folder && (
-                    <Button icon={FolderOpen} onClick={choose}>
-                      {t('Choisir le dossier mémoire', 'Choose a memory folder')}
-                    </Button>
-                  )
+                    : t(
+                        'Collectez les sources définies dans la configuration du dossier.',
+                        'Collect the sources defined in the folder configuration.',
+                      )
                 }
               />
             )}
@@ -1306,5 +1267,525 @@ function SourceRows({
         );
       })}
     </div>
+  );
+}
+
+/** Ce que contient un dossier et ce qu’il reste à envoyer, en une ligne. */
+function folderSummary(folder: Row, comparing: boolean, offline: boolean): string {
+  if (folder.exists === false)
+    return t('Dossier introuvable sur ce Mac', 'Folder not found on this Mac');
+  if (folder.kind === 'catalog') {
+    if (folder.unreadable) return t('Catalogue illisible', 'Unreadable catalog');
+    const count = Number(folder.sources || 0);
+    const collected = folder.collectedAt
+      ? t(
+          ` · collecté le ${date(folder.collectedAt)}`,
+          ` · collected on ${date(folder.collectedAt)}`,
+        )
+      : '';
+    return (
+      t(
+        `${number(count)} source${count > 1 ? 's' : ''} collectée${count > 1 ? 's' : ''}`,
+        `${number(count)} collected source${count === 1 ? '' : 's'}`,
+      ) + collected
+    );
+  }
+  if (folder.files === undefined || folder.files === null)
+    return offline
+      ? t('Comparaison à la connexion du serveur', 'Compared once the server is connected')
+      : comparing
+        ? t('Comparaison avec la banque…', 'Comparing with the memory bank…')
+        : t('Pas encore comparé', 'Not compared yet');
+  const files = Number(folder.files);
+  if (!files) return t('Aucun document', 'No documents');
+  const toSend = Number(folder.toSend || 0);
+  const parts = [
+    t(
+      `${number(files)} fichier${files > 1 ? 's' : ''}`,
+      `${number(files)} file${files === 1 ? '' : 's'}`,
+    ),
+    toSend
+      ? t(`${number(toSend)} à envoyer`, `${number(toSend)} to upload`)
+      : t('à jour', 'up to date'),
+  ];
+  if (folder.queued)
+    parts.push(t(`${number(folder.queued)} en file`, `${number(folder.queued)} queued`));
+  return parts.join(' · ');
+}
+
+/** Liste des dossiers qui alimentent la banque choisie. */
+function FolderList({
+  data,
+  run,
+  busy,
+  demo,
+  navigate,
+  serverConnected,
+  banks = [],
+  onExploreExample,
+}: SourcesProps) {
+  const bankName = bankNamer(banks);
+  const [actionError, setActionError] = useState('');
+  const folders: Row[] = Array.isArray(data.folders) ? data.folders : [];
+  const listBank = data.listBank;
+  const offline = !demo && !data.bank && Boolean(listBank);
+  const comparing = Boolean(data.foldersLoading);
+  const hasCatalog = folders.some((folder) => folder.kind === 'catalog');
+  // Un double-clic n’ouvre le dossier qu’une fois.
+  const opening = useRef(false);
+  function openFolder(path: string) {
+    if (opening.current) return;
+    opening.current = true;
+    void run('folder.choose', { path }).finally(() => (opening.current = false));
+  }
+  async function add() {
+    setActionError('');
+    try {
+      const path = await pickDirectory(
+        t(
+          `Ajouter un dossier à « ${bankName(listBank)} »`,
+          `Add a folder to “${bankName(listBank)}”`,
+        ),
+      );
+      if (!path) return;
+      const result = await run('coverage.add', { paths: [path] });
+      if (result?.error) setActionError(String(result.error));
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  // Pendant un changement de banque ou de dossier, la vue attend la réponse au lieu d’afficher un état vide.
+  if (data.folders === undefined)
+    return (
+      <div className="loading-state" role="status">
+        {t('Chargement des sources…', 'Loading sources…')}
+      </div>
+    );
+
+  if (!listBank)
+    return (
+      <>
+        <PageHeader
+          title={t('Sources', 'Sources')}
+          description={t(
+            'Les dossiers de ce Mac qui alimentent une banque Hindsight.',
+            'The folders on this Mac that feed a Hindsight memory bank.',
+          )}
+        />
+        <section className="card">
+          <Empty
+            icon={BookOpen}
+            title={
+              serverConnected
+                ? t('Choisissez ou créez une banque', 'Choose or create a memory bank')
+                : t(
+                    'Commencez avec votre serveur ou un exemple',
+                    'Start with your server or an example',
+                  )
+            }
+            description={t(
+              'Chaque banque a ses propres sources : les dossiers de ce Mac dont les fichiers l’alimentent. L’exemple permet de découvrir l’application avec des données fictives.',
+              'Each memory bank has its own sources: the folders on this Mac whose files feed it. Explore the example to try the app with fictional data.',
+            )}
+            action={
+              <div className="action-row">
+                <Button
+                  kind="primary"
+                  onClick={() => navigate(serverConnected ? 'admin' : 'settings')}
+                >
+                  {serverConnected
+                    ? t('Gérer mes banques', 'Manage my banks')
+                    : t('Connecter mon serveur', 'Connect my server')}
+                </Button>
+                <Button icon={Sparkles} onClick={onExploreExample}>
+                  {t('Explorer l’exemple', 'Explore the example')}
+                </Button>
+              </div>
+            }
+          />
+        </section>
+      </>
+    );
+
+  return (
+    <>
+      <PageHeader
+        title={t('Sources', 'Sources')}
+        description={t(
+          `Les dossiers de ce Mac qui alimentent « ${bankName(listBank)} ».`,
+          `The folders on this Mac that feed “${bankName(listBank)}”.`,
+        )}
+        actions={
+          <Button
+            icon={FolderPlus}
+            kind="primary"
+            disabled={busy || (!data.bank && !demo)}
+            onClick={() => void add()}
+          >
+            {t('Ajouter un dossier', 'Add a folder')}
+          </Button>
+        }
+      />
+      {offline && (
+        <div className="notice" role="status">
+          {t(
+            `Serveur déconnecté : voici les dossiers de « ${bankName(listBank)} », la dernière banque choisie. La comparaison avec la banque reprendra à la connexion.`,
+            `Server disconnected: these are the folders of “${bankName(listBank)}”, the last memory bank you selected. Comparison with the bank resumes once connected.`,
+          )}
+        </div>
+      )}
+      <ErrorNotice message={data.foldersError} />
+      <ErrorNotice message={actionError} />
+      <section className="card source-folders">
+        {folders.length ? (
+          <div className="folder-rows">
+            {folders.map((folder) => {
+              const content = (
+                <>
+                  <span className={`file-icon folder-icon ${folder.kind}`}>
+                    {folder.kind === 'catalog' ? (
+                      <Library size={18} strokeWidth={1.6} />
+                    ) : (
+                      <Folder size={18} strokeWidth={1.6} />
+                    )}
+                  </span>
+                  <span className="folder-row-main">
+                    <span className="folder-row-title">
+                      <strong>{folder.name || shortName(folder.path)}</strong>
+                      {folder.kind === 'catalog' && (
+                        <Badge tone="accent">{t('Catalogue', 'Catalog')}</Badge>
+                      )}
+                    </span>
+                    <span className="folder-row-path">{folder.path}</span>
+                  </span>
+                  <span className="folder-row-summary">
+                    {folderSummary(folder, comparing, offline)}
+                  </span>
+                </>
+              );
+              // Un dossier introuvable ne s’ouvre pas ; il peut seulement ne plus être suivi.
+              return folder.exists === false ? (
+                <div className="folder-row missing" key={folder.path}>
+                  {content}
+                  {data.bank && (
+                    <IconButton
+                      icon={Trash2}
+                      label={t(
+                        `Ne plus suivre ce dossier pour « ${bankName(data.bank)} »`,
+                        `Stop tracking this folder for “${bankName(data.bank)}”`,
+                      )}
+                      disabled={busy}
+                      onClick={() => void run('coverage.removeRoot', { id: folder.path })}
+                    />
+                  )}
+                </div>
+              ) : (
+                <button
+                  className="folder-row"
+                  key={folder.path}
+                  disabled={busy}
+                  onClick={() => openFolder(folder.path)}
+                >
+                  {content}
+                  <ArrowRight size={15} />
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <Empty
+            icon={FolderPlus}
+            title={t(
+              `Aucun dossier n’alimente « ${bankName(listBank)} »`,
+              `No folder feeds “${bankName(listBank)}” yet`,
+            )}
+            description={t(
+              'Ajoutez un dossier de ce Mac : ses fichiers seront comparés aux documents de la banque, puis vous choisirez ce qu’il faut envoyer.',
+              'Add a folder from this Mac: its files are compared with the bank’s documents, then you choose what to upload.',
+            )}
+            action={
+              data.bank || demo ? (
+                <Button icon={FolderPlus} disabled={busy} onClick={() => void add()}>
+                  {t('Ajouter un dossier', 'Add a folder')}
+                </Button>
+              ) : undefined
+            }
+          />
+        )}
+      </section>
+      <p className="form-hint sources-hint">
+        {t(
+          'Un même dossier peut alimenter plusieurs banques ; chacune garde son propre état. Rien n’est envoyé sans votre confirmation.',
+          'A folder can feed several memory banks; each keeps its own status. Nothing is uploaded without your confirmation.',
+        )}
+        {hasCatalog &&
+          ' ' +
+            t(
+              'Un dossier à catalogue passe par son catalogue : conversations, commits et rapports rassemblés par son collecteur (collect.py).',
+              'A folder with a catalog goes through its catalog: conversations, commits and reports gathered by its collector (collect.py).',
+            )}
+      </p>
+      {(data.warnings || []).map((warning: string) => (
+        <div key={warning} className="notice">
+          {warning}
+        </div>
+      ))}
+    </>
+  );
+}
+
+const fileStates: Record<string, { fr: string; en: string; tone: string }> = {
+  current: { fr: 'À jour', en: 'Up to date', tone: 'sage' },
+  notSent: { fr: 'Non envoyé', en: 'Not sent', tone: 'amber' },
+  modified: { fr: 'Modifié', en: 'Modified', tone: 'amber' },
+  noFacts: { fr: 'Sans fait', en: 'No facts', tone: 'amber' },
+  fileMissing: { fr: 'Fichier disparu', en: 'File missing', tone: 'neutral' },
+  queued: { fr: 'En file', en: 'Queued', tone: 'blue' },
+  stored: { fr: 'En mémoire', en: 'In memory', tone: 'neutral' },
+};
+
+/** Dossier ordinaire : ses fichiers comparés aux documents de la banque, envoi et retrait après confirmation. */
+function PlainFolder({ data, run, busy, demo, banks = [] }: SourcesProps) {
+  const bankName = bankNamer(banks);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [working, setWorking] = useState(false);
+  const [actionError, setActionError] = useState('');
+  const pending = useRef(false);
+  const folder: Row = (data.folders || []).find((row: Row) => samePath(row.path, data.open)) || {
+    path: data.open,
+    name: shortName(String(data.open || '')),
+  };
+  const items: Row[] = Array.isArray(data.items) ? data.items : [];
+  const offline = !demo && !data.bank;
+  const comparing = !offline && (Boolean(data.foldersLoading) || data.compared === false);
+  const disabled = busy || working || comparing || offline;
+  const itemID = (item: Row, index: number) => String(item.id || item.key || index);
+  const itemIDs = items.map(itemID);
+  const currentSelection = new Set(itemIDs.filter((id) => selected.has(id)));
+  const selectedItems = items.filter((item, index) => currentSelection.has(itemID(item, index)));
+  const sendable = selectedItems.filter((item) => item.canSend);
+  const removable = selectedItems.filter((item) => (item.documents || []).length > 0);
+  const toSend = items.filter((item) => item.canSend).length;
+  async function perform(action: () => Promise<any>) {
+    if (busy || pending.current) return;
+    pending.current = true;
+    setWorking(true);
+    setActionError('');
+    try {
+      const result = await action();
+      if (result?.error) setActionError(String(result.error));
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      pending.current = false;
+      setWorking(false);
+    }
+  }
+  return (
+    <>
+      <BackToSources run={run} busy={busy} />
+      <PageHeader
+        title={folder.name || shortName(String(folder.path || ''))}
+        description={
+          data.bank
+            ? t(
+                `Dossier suivi pour « ${bankName(data.bank)} » : ses fichiers sont comparés aux documents de la banque. Choisissez ce qu’il faut envoyer ; chaque envoi reste à confirmer.`,
+                `Folder tracked for “${bankName(data.bank)}”: its files are compared with the bank’s documents. Choose what to upload; every upload still needs confirmation.`,
+              )
+            : t(
+                'Dossier suivi : ses fichiers seront comparés aux documents de la banque à la connexion du serveur.',
+                'Tracked folder: its files are compared with the bank’s documents once the server is connected.',
+              )
+        }
+        actions={
+          <>
+            <Button
+              kind="ghost"
+              icon={FolderOpen}
+              disabled={busy || working}
+              onClick={() => void perform(() => run('folder.reveal', { path: folder.path }))}
+            >
+              {t('Afficher dans le Finder', 'Show in Finder')}
+            </Button>
+            {data.bank && (
+              <IconButton
+                icon={Trash2}
+                label={t(
+                  `Ne plus suivre ce dossier pour « ${bankName(data.bank)} »`,
+                  `Stop tracking this folder for “${bankName(data.bank)}”`,
+                )}
+                disabled={busy || working}
+                onClick={() => void perform(() => run('coverage.removeRoot', { id: folder.path }))}
+              />
+            )}
+          </>
+        }
+      />
+      <p className="folder-path-line">{folder.path}</p>
+      <ErrorNotice message={data.foldersError} />
+      <ErrorNotice message={actionError} />
+      <div className="folder-options">
+        <label className="checkbox-label">
+          <input
+            type="checkbox"
+            checked={Boolean(folder.allFiles)}
+            disabled={disabled || demo}
+            onChange={(e) =>
+              void perform(() =>
+                run('coverage.allFiles', { id: folder.path, enabled: e.target.checked }),
+              )
+            }
+          />{' '}
+          {t(
+            'Inclure tous les fichiers texte (code, données…), pas seulement les documents',
+            'Include all text files (code, data…), not only documents',
+          )}
+        </label>
+        {folder.autoSync && (
+          <Button
+            kind="ghost"
+            disabled={disabled}
+            title={t(
+              'La synchronisation automatique est suspendue : chaque envoi demande une validation.',
+              'Automatic sync is suspended: every upload needs approval.',
+            )}
+            onClick={() =>
+              void perform(() => run('coverage.auto', { id: folder.path, enabled: false }))
+            }
+          >
+            {t('Désactiver l’ancienne synchro auto.', 'Turn off legacy auto-sync')}
+          </Button>
+        )}
+      </div>
+      <section className="card">
+        <CardHeader
+          title={t('Fichiers', 'Files')}
+          subtitle={
+            items.length
+              ? t(
+                  `${number(items.length)} fichier${items.length > 1 ? 's' : ''} · ${number(toSend)} à envoyer`,
+                  `${number(items.length)} file${items.length === 1 ? '' : 's'} · ${number(toSend)} to upload`,
+                )
+              : undefined
+          }
+          action={
+            <div className="action-row">
+              <Button
+                icon={Send}
+                kind="primary"
+                disabled={disabled || !sendable.length}
+                onClick={() =>
+                  void perform(() => run('coverage.send', { ids: [...currentSelection] }))
+                }
+              >
+                {t(`Envoyer (${sendable.length})`, `Upload (${sendable.length})`)}
+              </Button>
+              <Button
+                icon={Trash2}
+                kind="danger"
+                disabled={disabled || !removable.length}
+                onClick={() =>
+                  void perform(() => run('coverage.remove', { ids: [...currentSelection] }))
+                }
+              >
+                {t(
+                  `Retirer de la mémoire (${removable.length})`,
+                  `Remove from memory (${removable.length})`,
+                )}
+              </Button>
+            </div>
+          }
+        />
+        {offline ? (
+          <p className="notice" role="status">
+            {t(
+              'Connectez le serveur pour comparer ce dossier à la banque.',
+              'Connect the server to compare this folder with the memory bank.',
+            )}
+          </p>
+        ) : comparing && !items.length ? (
+          <p className="notice" role="status">
+            {t('Comparaison avec la banque…', 'Comparing with the memory bank…')}
+          </p>
+        ) : !items.length ? (
+          <Empty
+            icon={FileText}
+            title={t('Aucun document dans ce dossier', 'No documents in this folder')}
+            description={
+              folder.allFiles
+                ? t(
+                    'Ce dossier ne contient aucun fichier texte à comparer.',
+                    'This folder contains no text files to compare.',
+                  )
+                : t(
+                    'Seuls les documents (Markdown, TeX, texte, HTML, PDF, Word, PowerPoint, Excel) sont comparés. Cochez l’option ci-dessus pour inclure les autres fichiers texte.',
+                    'Only documents (Markdown, TeX, text, HTML, PDF, Word, PowerPoint, Excel) are compared. Tick the option above to include other text files.',
+                  )
+            }
+          />
+        ) : (
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>
+                    <input
+                      type="checkbox"
+                      aria-label={t('Tout sélectionner', 'Select all')}
+                      checked={!!items.length && currentSelection.size === items.length}
+                      disabled={disabled}
+                      onChange={(e) => setSelected(e.target.checked ? new Set(itemIDs) : new Set())}
+                    />
+                  </th>
+                  <th>{t('Fichier', 'File')}</th>
+                  <th>{t('État', 'Status')}</th>
+                  <th>{t('Faits', 'Facts')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item, index) => {
+                  const id = itemID(item, index);
+                  const state = fileStates[item.state] || fileStates.stored;
+                  return (
+                    <tr key={id}>
+                      <td>
+                        <input
+                          type="checkbox"
+                          aria-label={`${t('Sélectionner', 'Select')} ${item.title || id}`}
+                          checked={selected.has(id)}
+                          disabled={disabled}
+                          onChange={() =>
+                            setSelected((old) => {
+                              const next = new Set(old);
+                              if (next.has(id)) next.delete(id);
+                              else next.add(id);
+                              return next;
+                            })
+                          }
+                        />
+                      </td>
+                      <td className="file-cell">
+                        <strong>{item.title || item.entry?.file?.path || id}</strong>
+                        {item.location && <small>{item.location}</small>}
+                      </td>
+                      <td>
+                        <Badge tone={state.tone}>{t(state.fr, state.en)}</Badge>
+                      </td>
+                      <td>{number(item.facts ?? 0)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+      {(data.warnings || []).map((warning: string) => (
+        <div key={warning} className="notice">
+          {warning}
+        </div>
+      ))}
+    </>
   );
 }

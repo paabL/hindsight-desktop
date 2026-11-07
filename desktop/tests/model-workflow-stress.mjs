@@ -76,112 +76,147 @@ check(
   },
 );
 
+const emptyList = (page) => page.getByRole('heading', { name: /No folder feeds/ });
+
+check('sources waits for the bank’s folders and opens one only when asked, once', async (page) => {
+  await open(page, 'sources');
+  await expect(page.getByRole('status')).toContainText('Loading sources');
+  await expect(emptyList(page)).toHaveCount(0);
+  assert.deepEqual(await calls(page), []);
+  await page.evaluate(() =>
+    window.modelFixture.update({
+      bank: 'bank-a',
+      listBank: 'bank-a',
+      openKind: null,
+      open: null,
+      folders: [{ path: '/fictional/notes', name: 'notes', kind: 'folder', files: 2, toSend: 1 }],
+    }),
+  );
+  await expect(page.locator('.folder-row')).toContainText('2 files · 1 to upload');
+  assert.deepEqual(await calls(page), [], 'listing the folders neither tracks nor opens one');
+  await page.evaluate(() => {
+    window.modelFixture.delay = 180;
+    const row = document.querySelector('.folder-row');
+    for (let i = 0; i < 25; i++) row.click();
+  });
+  await expect(page.getByRole('heading', { name: 'notes', exact: true })).toBeVisible();
+  assert.deepEqual(await calls(page), [
+    { command: 'folder.choose', args: { path: '/fictional/notes' } },
+  ]);
+});
+
 check(
-  'coverage waits for roots and offers the existing catalog folder only as an explicit action',
+  'sources never replaces a loading or failed comparison with an empty list, and finds the open folder under another spelling',
   async (page) => {
-    await open(page, 'coverage');
-    await expect(page.getByRole('status')).toContainText('Loading tracked folders');
-    await expect(
-      page.getByRole('heading', { name: 'Choose a folder to track', exact: true }),
-    ).toHaveCount(0);
-    assert.deepEqual(await calls(page), []);
+    await open(page, 'sources');
+    const folder = {
+      path: '/fictional/réunions',
+      name: 'réunions',
+      kind: 'folder',
+      allFiles: true,
+    };
+    await page.evaluate(
+      (folder) =>
+        window.modelFixture.update({
+          bank: 'bank-a',
+          listBank: 'bank-a',
+          folders: [folder, { path: '/fictional/moved', name: 'moved', exists: false }],
+          foldersLoading: true,
+        }),
+      folder,
+    );
+    await expect(page.locator('.folder-row').first()).toContainText(
+      'Comparing with the memory bank…',
+    );
+    // Un dossier introuvable ne s’ouvre pas : il peut seulement ne plus être suivi.
+    await expect(page.locator('.folder-row.missing')).toContainText('Folder not found on this Mac');
+    await expect(page.locator('button.folder-row')).toHaveCount(1);
+    await page.evaluate(() => window.modelFixture.update({ folders: undefined }));
+    await expect(page.getByRole('status')).toContainText('Loading sources');
+    await expect(emptyList(page)).toHaveCount(0);
+    await page.evaluate(
+      (folder) =>
+        window.modelFixture.update({
+          folders: [folder],
+          foldersLoading: false,
+          foldersError: 'Fixture cannot compare the folders',
+        }),
+      folder,
+    );
+    await expect(page.getByRole('alert')).toContainText('Fixture cannot compare');
+    await expect(page.locator('.folder-row')).toContainText('Not compared yet');
+    await expect(emptyList(page)).toHaveCount(0);
+    // macOS peut rendre le chemin décomposé (NFD) et avec une barre finale : c’est le même dossier suivi.
     await page.evaluate(() =>
       window.modelFixture.update({
-        roots: [],
-        catalogFolder: '/fictional/catalog/',
-        loaded: true,
+        foldersError: null,
+        openKind: 'folder',
+        open: '/fictional/réunions/',
+        compared: true,
+        items: [],
       }),
     );
-    const track = page.getByRole('button', { name: 'Track this folder', exact: true });
-    await expect(track).toBeVisible();
-    await expect(page.locator('.root-row')).toHaveCount(0);
-    await expect(page.getByText('/fictional/catalog/', { exact: true })).toBeVisible();
-    assert.deepEqual(await calls(page), [], 'opening a catalog must not register or collect it');
-    await page.evaluate(() => {
-      window.modelFixture.delay = 180;
-      const button = [...document.querySelectorAll('button')].find((el) =>
-        el.textContent.includes('Track this folder'),
-      );
-      for (let i = 0; i < 25; i++) button.click();
-    });
-    await expect(page.locator('.root-row')).toHaveCount(1);
-    await expect(track).toHaveCount(0);
-    assert.deepEqual(await calls(page), [
-      { command: 'coverage.add', args: { paths: ['/fictional/catalog/'] } },
-    ]);
+    await expect(page.getByRole('heading', { name: 'réunions', exact: true })).toBeVisible();
+    await expect(page.getByRole('checkbox', { name: /Include all text files/ })).toBeChecked();
+    assert.deepEqual(await calls(page), []);
   },
 );
 
 check(
-  'coverage recognizes normalized tracked paths and never replaces an error with empty onboarding',
+  'a folder upload failure keeps the selection, and refreshed or other-bank files never submit vanished IDs',
   async (page) => {
-    await open(page, 'coverage');
-    await page.evaluate(() =>
-      window.modelFixture.update({
-        roots: [{ path: '/fictional/catalog', allFiles: true, autoSync: false }],
-        catalogFolder: '/fictional/./catalog///',
-      }),
+    await open(page, 'sources');
+    const folder = { path: '/fictional/notes', name: 'notes', kind: 'folder', files: 1, toSend: 1 };
+    await page.evaluate(
+      (folder) =>
+        window.modelFixture.update({
+          bank: 'bank-a',
+          listBank: 'bank-a',
+          folders: [folder],
+          openKind: 'folder',
+          open: folder.path,
+          compared: true,
+          // Le bouton n’annonce que les fichiers réellement envoyables (`canSend`, fourni par le moteur).
+          items: [{ id: 'obsolete-id', title: 'Old source', state: 'modified', canSend: true }],
+        }),
+      folder,
     );
-    await expect(page.locator('.root-row')).toContainText('/fictional/catalog');
-    await expect(page.getByRole('button', { name: 'Track this folder', exact: true })).toHaveCount(
-      0,
-    );
-    await page.evaluate(() => window.modelFixture.update({ roots: [], loaded: false }));
-    await expect(page.getByRole('status')).toBeVisible();
-    await expect(
-      page.getByRole('heading', { name: 'Choose a folder to track', exact: true }),
-    ).toHaveCount(0);
-    await page.evaluate(() =>
-      window.modelFixture.update({ loaded: true, error: 'Fixture cannot load tracked folders' }),
-    );
-    await expect(page.getByRole('alert')).toContainText('Fixture cannot load');
-    await expect(
-      page.getByRole('heading', { name: 'Choose a folder to track', exact: true }),
-    ).toHaveCount(0);
-    assert.deepEqual(await calls(page), []);
-  },
-);
-
-check(
-  'coverage failures preserve the proposed folder and refreshed selections never submit vanished IDs',
-  async (page) => {
-    await open(page, 'coverage');
-    await page.evaluate(() => {
-      window.modelFixture.failure = 'coverage.add';
-      window.modelFixture.update({ roots: [], catalogFolder: '/fictional/catalog', loaded: true });
-    });
-    const track = page.getByRole('button', { name: 'Track this folder', exact: true });
-    await track.click();
+    await page.getByRole('checkbox', { name: 'Select all', exact: true }).check();
+    const upload = page.getByRole('button', { name: 'Upload (1)', exact: true });
+    await expect(upload).toBeEnabled();
+    await page.evaluate(() => (window.modelFixture.failure = 'coverage.send'));
+    await upload.click();
     await expect(page.getByRole('alert')).toContainText('Fixture rejects');
-    await expect(track).toBeEnabled();
+    await expect(upload).toBeEnabled();
+    assert.deepEqual(await calls(page), [
+      { command: 'coverage.send', args: { ids: ['obsolete-id'] } },
+    ]);
     await page.evaluate(() => {
       window.modelFixture.failure = '';
       window.modelFixture.update({
-        // Le bouton n’annonce que les fichiers réellement envoyables (`canSend`, fourni par le moteur).
-        items: [{ id: 'obsolete-id', title: 'Old source', state: 'modified', canSend: true }],
+        items: [{ id: 'new-id', title: 'New source', state: 'current' }],
       });
     });
-    await page.getByRole('checkbox', { name: 'Select all', exact: true }).check();
-    await expect(page.getByRole('button', { name: 'Send (1)', exact: true })).toBeEnabled();
-    await page.evaluate(() =>
-      window.modelFixture.update({
-        items: [{ id: 'new-id', title: 'New source', state: 'current' }],
-      }),
+    await expect(page.getByRole('button', { name: 'Upload (0)', exact: true })).toBeDisabled();
+    await page.evaluate(
+      (folder) =>
+        window.modelFixture.mount(
+          'sources',
+          {
+            bank: 'bank-b',
+            listBank: 'bank-b',
+            folders: [{ ...folder, path: '/fictional/bank-b' }],
+            openKind: 'folder',
+            open: '/fictional/bank-b',
+            compared: true,
+            items: [{ id: 'new-id', title: 'Bank B source', state: 'current' }],
+          },
+          'bank-b',
+        ),
+      folder,
     );
-    await expect(page.getByRole('button', { name: 'Send (0)', exact: true })).toBeDisabled();
-    await page.evaluate(() =>
-      window.modelFixture.mount(
-        'coverage',
-        {
-          roots: [{ path: '/fictional/bank-b', allFiles: false, autoSync: false }],
-          catalogFolder: '/fictional/bank-b/',
-          items: [{ id: 'new-id', title: 'Bank B source', state: 'current' }],
-        },
-        'bank-b',
-      ),
-    );
-    await expect(page.locator('.root-row')).toContainText('/fictional/bank-b');
-    await expect(page.getByRole('button', { name: 'Send (0)', exact: true })).toBeDisabled();
+    await expect(page.locator('.folder-path-line')).toHaveText('/fictional/bank-b');
+    await expect(page.getByRole('button', { name: 'Upload (0)', exact: true })).toBeDisabled();
     assert.deepEqual(await calls(page), []);
   },
 );

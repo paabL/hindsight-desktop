@@ -111,8 +111,14 @@ in the packaged app.
 responses, selection updates without closing the reader, cached navigation and
 navigation during collection. `sources-background.test.mjs` holds a document
 inventory response while switching banks and verifies that collection does not
-block the bridge or call Hindsight. `source-snapshot.test.mjs` checks incremental
-updates, ordering, removals and stale revisions.
+block the bridge or call Hindsight. `sources-folders.test.mjs` drives the real
+bridge with two fictional banks: each lists only its own folders, a catalog opens
+only in the bank its policy names and is an ordinary folder elsewhere, removing
+the open folder returns to the list, and nothing is written to the server.
+`source-snapshot.test.mjs` checks incremental updates, ordering, removals and
+stale revisions. `sources-bank-ui.mjs` keeps a catalog whose policy names another
+bank read-only, and `sources-no-catalog-ui.mjs` covers a catalog that disappears
+while open.
 
 Run the native suite in release mode after changes to source caching or concurrent
 loading. `MemoryWorkspaceTests` covers same-size edits with restored modification
@@ -127,7 +133,8 @@ for browser resources:
 
 - `app-state-stress.mjs`: 20,000 operations, progressive rendering, 12 reversed
   status replies, two simultaneous details, bank and demo switches, and the
-  explicit catalog-folder tracking action. Nothing is tracked on navigation.
+  Sources list: the former `#coverage` link, loading before the folders arrive,
+  opening a folder and switching banks from it. Nothing is tracked on navigation.
 - `sources-races-ui.mjs`: 12,002 sources, repeated inclusion changes, reversed
   reader replies, deleted/changed files, server and bank changes, and archive
   status filters.
@@ -147,7 +154,7 @@ after confirmation, and unchanged embedding configuration. Browser timings are
 diagnostics for these synthetic workloads, not model inference benchmarks or a
 guarantee about arbitrary servers and catalogs.
 
-Tracked-folder regressions reverse inventories and scans, switch between servers
+Source-folder regressions reverse inventories and scans, switch between servers
 with the same bank name, and change files, roots, authorization or selection after
 an upload is reviewed. Repeated confirmations must produce one write; rejected
 retain/delete responses must not announce success. Historical task rows sharing

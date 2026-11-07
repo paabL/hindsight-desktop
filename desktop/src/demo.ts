@@ -249,10 +249,6 @@ const data: Partial<Record<Section, Row>> = {
   facts: { facts, total: facts.length, truncated: false, query: '' },
   timeline: { facts, total: facts.length },
   graph: graphData(),
-  coverage: {
-    roots: [{ path: '/Exemple/horizon-app', allFiles: false, autoSync: false }],
-    items: [],
-  },
   operations: { items: operations, total: operations.length },
   dashboard: {
     snapshot: {
@@ -405,6 +401,91 @@ const data: Partial<Record<Section, Row>> = {
 };
 
 let selectedBank = 'horizon';
+// Sources de l’exemple : les dossiers de chaque banque fictive et le dossier ouvert.
+let openFolder: string | null = null;
+const exampleFolders: Record<string, Row[]> = {
+  horizon: [
+    {
+      path: '/Exemple/horizon-memory',
+      name: 'horizon-memory',
+      kind: 'catalog',
+      sources: demoRecords.length,
+      collectedAt: timestamp,
+      catalogBank: 'horizon',
+      exists: true,
+      allFiles: false,
+      autoSync: false,
+    },
+    {
+      path: '/Exemple/horizon-app',
+      name: 'horizon-app',
+      kind: 'folder',
+      files: 4,
+      toSend: 2,
+      modified: 1,
+      queued: 0,
+      exists: true,
+      allFiles: false,
+      autoSync: false,
+    },
+  ],
+  atelier: [
+    {
+      path: '/Exemple/atelier-notes',
+      name: 'atelier-notes',
+      kind: 'folder',
+      files: 2,
+      toSend: 1,
+      modified: 0,
+      queued: 0,
+      exists: true,
+      allFiles: false,
+      autoSync: false,
+    },
+  ],
+};
+function exampleFile(path: string, state: string, facts: number): Row {
+  const parts = path.split('/');
+  const title = parts.pop() || path;
+  return {
+    id: `example:${path}`,
+    title,
+    location: parts.join('/'),
+    state,
+    canSend: ['notSent', 'modified', 'noFacts'].includes(state),
+    facts,
+    documents: state === 'notSent' ? [] : [{ id: `doc:${path}` }],
+  };
+}
+const exampleFiles: Record<string, Row[]> = {
+  '/Exemple/horizon-app': [
+    exampleFile('horizon-app/README.md', 'current', 6),
+    exampleFile('horizon-app/docs/architecture.md', 'modified', 11),
+    exampleFile('horizon-app/docs/decisions.md', 'current', 9),
+    exampleFile('horizon-app/docs/roadmap.md', 'notSent', 0),
+  ],
+  '/Exemple/atelier-notes': [
+    exampleFile('atelier-notes/inventaire.md', 'current', 4),
+    exampleFile('atelier-notes/projets.md', 'notSent', 0),
+  ],
+};
+function sourcesData(): Row {
+  const folders = exampleFolders[selectedBank] || [];
+  const open = folders.find((folder) => folder.path === openFolder);
+  const base = {
+    folders,
+    bank: selectedBank,
+    listBank: selectedBank,
+    open: open?.path || null,
+    openKind: open?.kind || null,
+    foldersLoading: false,
+    warnings: [],
+  };
+  if (open?.kind === 'catalog')
+    return { ...data.sources, ...base, folder: open.path, boundBank: selectedBank };
+  if (open) return { ...base, items: exampleFiles[open.path] || [], compared: true };
+  return base;
+}
 let factQuery = '';
 let factType = 'all';
 let operationStatus = 'all';
@@ -448,7 +529,9 @@ export function exampleSnapshot(section: Section): Snapshot {
         { bank_id: 'horizon', name: 'Projet Horizon', fact_count: 2648 },
         { bank_id: 'atelier', name: 'Atelier', fact_count: 382 },
       ],
-      folder: '/Exemple/horizon-memory',
+      folder: (exampleFolders[selectedBank] || []).find(
+        (folder) => folder.path === openFolder && folder.kind === 'catalog',
+      )?.path,
       paused: [],
     },
     section,
@@ -461,7 +544,9 @@ export function exampleSnapshot(section: Section): Snapshot {
             ? factsData()
             : section === 'model-settings'
               ? data.server || {}
-              : data[section] || {},
+              : section === 'sources'
+                ? sourcesData()
+                : data[section] || {},
     ),
     messages: [],
     confirmations: [],
@@ -493,8 +578,14 @@ export async function exampleRequest(command: string, args: Row, section: Sectio
     factQuery = typeof args.query === 'string' ? args.query : '';
     factType = ['world', 'experience', 'observation'].includes(args.type) ? args.type : 'all';
   }
+  if (command === 'folder.choose')
+    openFolder = (exampleFolders[selectedBank] || []).some((folder) => folder.path === args.path)
+      ? args.path
+      : null;
+  if (command === 'folder.close') openFolder = null;
   if (command === 'bank.select') {
     selectedBank = args.id;
+    openFolder = null;
     factQuery = '';
     factType = 'all';
     operationStatus = 'all';
@@ -536,6 +627,8 @@ export async function exampleRequest(command: string, args: Row, section: Sectio
       'cancel',
       'bank.select',
       'document.close',
+      'folder.choose',
+      'folder.close',
     ].includes(command)
   ) {
     snapshot.messages = [

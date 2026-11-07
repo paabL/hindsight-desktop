@@ -65,7 +65,7 @@ import {
 import Sources from './pages/Sources';
 import { mergeSourceSnapshot } from './source-snapshot';
 import Updates from './pages/Updates';
-import { Coverage, Documents, Models, SearchPage } from './pages/Library';
+import { Documents, Models, SearchPage } from './pages/Library';
 import Consumption from './pages/Consumption';
 const Audit = lazy(() => import('./pages/Explore').then((m) => ({ default: m.Audit })));
 const Dashboard = lazy(() => import('./pages/Explore').then((m) => ({ default: m.Dashboard })));
@@ -82,28 +82,29 @@ const ServerSettings = lazy(() =>
 );
 const ModelChoices = lazy(() => import('./pages/ModelChoices'));
 
+// Vues de la banque choisie, puis, sous un trait, ce qui vaut pour tout le serveur (⌘1…7 dans cet ordre).
 const basePrimary = [
   { id: 'dashboard', label: 'Vue d’ensemble', english: 'Overview', icon: LayoutDashboard },
   { id: 'facts', label: 'Mémoire', english: 'Memory', icon: Layers3 },
   { id: 'models', label: 'Connaissances', english: 'Knowledge', icon: BookOpen },
   { id: 'search', label: 'Recherche', icon: Search },
-  { id: 'model-settings', label: 'Modèles', english: 'Models', icon: Cpu },
   { id: 'sources', label: 'Sources', english: 'Sources', icon: Folder },
   { id: 'operations', label: 'Activité', english: 'Activity', icon: Activity },
+  { id: 'model-settings', label: 'Modèles', english: 'Models', icon: Cpu },
 ] as const;
+const generalViews: readonly Section[] = ['model-settings'];
 const baseSections = [
   { id: 'dashboard', label: 'Vue d’ensemble', icon: LayoutDashboard },
   { id: 'facts', label: 'Faits', icon: Layers3 },
   { id: 'models', label: 'Connaissances', icon: BookOpen },
   { id: 'search', label: 'Recherche', icon: Search },
-  { id: 'sources', label: 'Catalogue', icon: Folder },
+  { id: 'sources', label: 'Sources', icon: Folder },
   { id: 'documents', label: 'Documents', icon: FileText },
   { id: 'operations', label: 'Traitements', icon: ListTodo },
   { id: 'consumption', label: 'Consommation', icon: BarChart3 },
   { id: 'audit', label: 'Journaux', icon: Activity },
   { id: 'timeline', label: 'Chronologie', icon: GitBranch },
   { id: 'graph', label: 'Graphe', icon: Network },
-  { id: 'coverage', label: 'Dossiers suivis', icon: Folder },
   { id: 'server', label: 'Serveur & modèles', icon: Server },
   { id: 'model-settings', label: 'Modèles', icon: Cpu },
   { id: 'admin', label: 'Banque', icon: Database },
@@ -111,7 +112,7 @@ const baseSections = [
   { id: 'settings', label: 'Application', icon: Settings2 },
 ] as const;
 const englishLabels: Record<Section, string> = {
-  sources: 'Catalog',
+  sources: 'Sources',
   facts: 'Facts',
   models: 'Knowledge',
   'model-settings': 'Models',
@@ -127,7 +128,6 @@ const englishLabels: Record<Section, string> = {
   server: 'Server & models',
   admin: 'Memory bank',
   settings: 'Application',
-  coverage: 'Tracked folders',
 };
 type NavigationGroup =
   | 'overview'
@@ -146,11 +146,6 @@ const viewGroups: Partial<
     english: 'Memory views',
     views: ['facts', 'documents', 'timeline', 'graph'],
   },
-  sources: {
-    label: 'Vues des sources',
-    english: 'Source views',
-    views: ['sources', 'coverage'],
-  },
   activity: {
     label: 'Vues de l’activité',
     english: 'Activity views',
@@ -164,7 +159,7 @@ const viewGroups: Partial<
 };
 function groupFor(section: Section): NavigationGroup {
   if (['facts', 'documents', 'timeline', 'graph'].includes(section)) return 'memory';
-  if (['sources', 'coverage'].includes(section)) return 'sources';
+  if (section === 'sources') return 'sources';
   if (['operations', 'consumption', 'audit'].includes(section)) return 'activity';
   if (['settings', 'admin', 'memory', 'server'].includes(section)) return 'settings';
   if (section === 'models') return 'knowledge';
@@ -181,6 +176,8 @@ const initial: Snapshot = {
 };
 function initialRoute(): Section {
   const id = location.hash.slice(1);
+  // Ancien lien « Dossiers suivis » : les dossiers de la banque sont désormais dans Sources.
+  if (id === 'coverage') return 'sources';
   return baseSections.some((s) => s.id === id) ? (id as Section) : 'dashboard';
 }
 
@@ -254,7 +251,9 @@ export default function App() {
     if (quiet && (foregroundRequests.current.size || contextTransition.current !== null))
       return null;
     const sequence = ++requestSequence.current;
-    const changesContext = ['bank.select', 'server.url', 'folder.choose'].includes(action);
+    const changesContext = ['bank.select', 'server.url', 'folder.choose', 'folder.close'].includes(
+      action,
+    );
     if (changesContext) {
       contextGeneration.current++;
       contextTransition.current = sequence;
@@ -492,6 +491,21 @@ export default function App() {
   }, []);
 
   const props: PageProps = { data: snapshot.data, run, busy, navigate, refresh, notify, demo };
+  function navItem({ id, label, icon: Icon }: (typeof primary)[number]) {
+    const shortcut = primary.findIndex((item) => item.id === id) + 1;
+    return (
+      <button
+        key={id}
+        className={`nav-item ${currentGroup === groupFor(id) ? 'active' : ''}`}
+        onClick={() => navigate(lastViews[groupFor(id)] || id)}
+        aria-current={currentGroup === groupFor(id) ? 'page' : undefined}
+      >
+        <Icon size={18} strokeWidth={1.6} />
+        <span>{label}</span>
+        {id === 'models' && demo ? <span className="nav-count">4</span> : <kbd>⌘{shortcut}</kbd>}
+      </button>
+    );
+  }
   const bank = snapshot.app.banks.find((b) => b.bank_id === snapshot.app.bank);
   const bankName = bankLabel(bank) || t('Votre espace', 'Your workspace');
   const title = sections.find((s) => s.id === route)?.label || 'Hindsight';
@@ -594,13 +608,6 @@ export default function App() {
         return <SearchPage {...props} />;
       case 'documents':
         return <Documents {...props} />;
-      case 'coverage':
-        return (
-          <Coverage
-            {...props}
-            data={{ ...props.data, catalogFolder: props.data.catalogFolder ?? snapshot.app.folder }}
-          />
-        );
       case 'consumption':
         return <Consumption {...props} />;
       case 'dashboard':
@@ -719,24 +726,15 @@ export default function App() {
           </div>
           <div className="sidebar-label">{t('VOTRE MÉMOIRE', 'YOUR MEMORY')}</div>
           <nav aria-label={t('Navigation principale', 'Main navigation')}>
-            {primary.map(({ id, label, icon: Icon }, i) => (
-              <button
-                key={id}
-                className={`nav-item ${currentGroup === groupFor(id) ? 'active' : ''}`}
-                onClick={() => navigate(lastViews[groupFor(id)] || id)}
-                aria-current={currentGroup === groupFor(id) ? 'page' : undefined}
-              >
-                <Icon size={18} strokeWidth={1.6} />
-                <span>{label}</span>
-                {id === 'models' && demo ? (
-                  <span className="nav-count">4</span>
-                ) : (
-                  <kbd>⌘{i + 1}</kbd>
-                )}
-              </button>
-            ))}
+            {primary.filter(({ id }) => !generalViews.includes(id)).map((item) => navItem(item))}
           </nav>
           <div className="sidebar-bottom">
+            <nav
+              className="sidebar-general"
+              aria-label={t('Réglages du serveur et de l’application', 'Server and app settings')}
+            >
+              {primary.filter(({ id }) => generalViews.includes(id)).map((item) => navItem(item))}
+            </nav>
             <button
               className={`nav-item ${currentGroup === 'settings' ? 'active' : ''}`}
               aria-current={currentGroup === 'settings' ? 'page' : undefined}

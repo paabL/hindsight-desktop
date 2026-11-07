@@ -44,11 +44,11 @@ opens explicitly labeled fictional data. Native file and server access uses Taur
 | Overview | Bank statistics, processing status and recent documents; initial view |
 | Memory → Facts | Stored bank facts and links to their original documents |
 | Knowledge | Read, create, refresh and delete knowledge pages and mental models with confirmation |
-| Sources → Catalog | Local sources, version status, selection, collection and upload previews |
+| Sources | The folders that feed the selected bank; a catalog folder shows its sources, collection and upload previews |
 | Search | Recall, exact text and confirmed reflect; filters and links to original documents |
 | Models | Direct model selectors, per-function decision switches, explanatory arrows and tooltips |
 | Memory → Documents | Stored text, facts, history, attachments, tags, scopes, reprocessing and deletion |
-| Sources → Tracked folders | File coverage, selection and confirmed uploads; automatic folder sync is suspended |
+| Sources → a folder | File comparison with the bank, selection and confirmed uploads; automatic folder sync is suspended |
 | Activity → Processing | Queued and completed work, errors and confirmed processing controls |
 | Activity → Usage | Traces, costs, token rates, price lists, limits and processing controls |
 | Memory → Timeline | Event or mention dates, search and source documents, up to 20,000 facts |
@@ -138,11 +138,12 @@ if replacement fails. Downloaded source code runs with the user's permissions.
 
 ## Local sources and uploads
 
-At first launch, the memory folder is selected explicitly. Settings remain
-accessible without a connected Hindsight server. Overview summarizes the selected
-bank; Sources keeps local files separate from stored memory. Sources → Catalog
-reads the chosen folder's catalog. Optional collection is driven by a separately configured
-`collect.py` and `projects.toml`. Filters cover project, repository, source type
+Each bank lists its own source folders; nothing is tracked until you add a folder.
+Settings remain accessible without a connected Hindsight server. Overview summarizes
+the selected bank; Sources keeps local files separate from stored memory. A folder
+with a catalog opens on that catalog in the bank named by its `memory-policy.json`.
+Optional collection is driven by a separately configured `collect.py` and
+`projects.toml`. Filters cover project, repository, source type
 and text, including original identifiers and provenance.
 
 The manifest is displayed immediately with unchecked, locked source states.

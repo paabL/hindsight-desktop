@@ -5070,3 +5070,133 @@ td {
 .field-explanation > summary {
   cursor: pointer;
 }
+
+/* Sources : les dossiers de la banque choisie, puis la page d'un dossier. */
+.folder-rows {
+  display: flex;
+  flex-direction: column;
+}
+.folder-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 74px;
+  padding: 15px 22px;
+  text-align: left;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--ink);
+}
+.folder-row:last-child {
+  border-bottom: 0;
+}
+button.folder-row:hover {
+  background: var(--hover);
+}
+button.folder-row > svg:last-child {
+  color: var(--faint);
+  flex-shrink: 0;
+}
+.folder-row.missing {
+  opacity: 0.75;
+}
+.folder-icon.catalog {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+.folder-row-main {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+.folder-row-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.folder-row-title strong {
+  font-size: 13px;
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.folder-row-path {
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 10px;
+  color: var(--faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.folder-row-summary {
+  flex-shrink: 0;
+  max-width: 42%;
+  font-size: 11px;
+  color: var(--secondary);
+  text-align: right;
+}
+.sources-hint {
+  margin: 14px 2px 0;
+}
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 4px 0;
+  font-size: 11px;
+  color: var(--secondary);
+}
+.back-link:hover {
+  color: var(--accent-strong);
+}
+.folder-path-line {
+  margin: -10px 0 18px;
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 10px;
+  color: var(--faint);
+  overflow-wrap: anywhere;
+}
+.folder-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 0 2px 16px;
+  font-size: 11px;
+  color: var(--secondary);
+}
+.file-cell strong {
+  display: block;
+  font-weight: 500;
+}
+.file-cell small {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--faint);
+}
+/* Barre latérale : ce qui vaut pour tout le serveur, sous un trait discret. */
+.sidebar-general {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-soft);
+}
+@media (max-width: 760px) {
+  .folder-row {
+    flex-wrap: wrap;
+  }
+  .folder-row-summary {
+    max-width: none;
+    width: 100%;
+    text-align: left;
+    padding-left: 45px;
+  }
+}

@@ -1,5 +1,5 @@
 import { getLocale, useI18n } from '../i18n';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ArrowDownToLine,
   ArrowRight,
@@ -13,7 +13,6 @@ import {
   Plus,
   RotateCcw,
   Search,
-  Send,
   Sparkles,
   Tag,
   Trash2,
@@ -35,7 +34,6 @@ import {
   date,
   number,
 } from '../ui';
-import { pickDirectory } from '../transport';
 import { nativeSystemMessage } from '../native-messages';
 import { factTypeLabel, factTypePluralLabel } from '../fact-types';
 import DocumentContent from './DocumentContent';
@@ -896,9 +894,9 @@ export function Documents({ data, run, busy, refresh, navigate }: PageProps) {
           'Browse stored documents and trace them back to their sources.',
         )}
         actions={
-          <Button icon={FolderPlus} onClick={() => navigate('coverage')}>
+          <Button icon={FolderPlus} onClick={() => navigate('sources')}>
             {' '}
-            {t('Dossiers suivis', 'Tracked folders')}
+            {t('Sources', 'Sources')}
           </Button>
         }
       />
@@ -1012,11 +1010,11 @@ export function Documents({ data, run, busy, refresh, navigate }: PageProps) {
           <Empty
             title={t('La bibliothèque est vide', 'The library is empty')}
             description={t(
-              'Ajoutez un dossier suivi pour comparer vos fichiers à la mémoire, puis choisissez ce que vous souhaitez envoyer.',
-              'Add a tracked folder to compare files with memory, then choose what to send.',
+              'Ajoutez un dossier dans Sources pour comparer vos fichiers à la mémoire, puis choisissez ce que vous souhaitez envoyer.',
+              'Add a folder in Sources to compare files with memory, then choose what to upload.',
             )}
             action={
-              <Button icon={FolderPlus} onClick={() => navigate('coverage')}>
+              <Button icon={FolderPlus} onClick={() => navigate('sources')}>
                 {' '}
                 {t('Ajouter des sources', 'Add sources')}
               </Button>
@@ -1038,283 +1036,6 @@ export function Documents({ data, run, busy, refresh, navigate }: PageProps) {
       {reader && (
         <DocumentReader reader={reader} run={run} busy={busy} onClose={() => setReader(null)} />
       )}
-    </>
-  );
-}
-
-export function Coverage({ data, run, busy }: PageProps) {
-  const { t } = useI18n();
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [working, setWorking] = useState(false);
-  const [actionError, setActionError] = useState('');
-  const pending = useRef(false);
-  const items: Row[] = data.items || [];
-  const roots: Row[] = Array.isArray(data.roots) ? data.roots : [];
-  const loading =
-    !Array.isArray(data.roots) || data.loaded === false || !!data.loading || !!data.refreshing;
-  const disabled = busy || working || loading;
-  const itemIDs = items.map((item, index) => item.id || item.key || String(index));
-  const currentSelection = new Set(itemIDs.filter((id) => selected.has(id)));
-  const selectedItems = items.filter((item, index) =>
-    currentSelection.has(item.id || item.key || String(index)),
-  );
-  const sendable = selectedItems.filter((item) => item.canSend);
-  const removable = selectedItems.filter((item) => (item.documents || []).length > 0);
-  function normalizedPath(path: string) {
-    const parts: string[] = [];
-    for (const part of path.normalize('NFC').split('/')) {
-      if (!part || part === '.') continue;
-      if (part === '..') parts.pop();
-      else parts.push(part);
-    }
-    return '/' + parts.join('/');
-  }
-  const catalogFolder = typeof data.catalogFolder === 'string' ? data.catalogFolder : '';
-  const catalogFolderHasCatalog = data.catalogFolderHasCatalog !== false;
-  // Un dossier rattaché à une autre banque ne se propose pas au suivi de celle-ci.
-  const catalogOfOtherBank = Boolean(
-    data.catalogBank && data.bank && data.catalogBank !== data.bank,
-  );
-  const offerCatalogFolder =
-    !loading &&
-    !catalogOfOtherBank &&
-    catalogFolder.startsWith('/') &&
-    !roots.some(
-      (root) =>
-        typeof root.path === 'string' &&
-        normalizedPath(root.path) === normalizedPath(catalogFolder),
-    );
-  async function perform(action: () => Promise<any>) {
-    if (disabled || pending.current) return;
-    pending.current = true;
-    setWorking(true);
-    setActionError('');
-    try {
-      const result = await action();
-      if (result?.error) setActionError(String(result.error));
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : String(error));
-    } finally {
-      pending.current = false;
-      setWorking(false);
-    }
-  }
-  async function add() {
-    await perform(async () => {
-      const path = await pickDirectory();
-      if (path) return run('coverage.add', { paths: [path] });
-    });
-  }
-  return (
-    <>
-      <PageHeader
-        title={t('Dossiers suivis', 'Tracked folders')}
-        description={t(
-          'Comparez vos fichiers à ce que Hindsight a réellement mémorisé.',
-          'Compare your files with what Hindsight has actually stored.',
-        )}
-        actions={
-          <Button icon={FolderPlus} kind="primary" disabled={disabled} onClick={() => void add()}>
-            {' '}
-            {t('Suivre un dossier', 'Track a folder')}
-          </Button>
-        }
-      />
-      <ErrorNotice message={data.error} />
-      <ErrorNotice message={actionError} />
-      <section className="card">
-        <CardHeader title={t('Dossiers suivis', 'Tracked folders')} />
-        {loading && !data.error && (
-          <p className="notice" role="status">
-            {t('Chargement des dossiers suivis…', 'Loading tracked folders…')}
-          </p>
-        )}
-        {roots.map((root: Row) => (
-          <div className="root-row" key={root.path}>
-            <FolderPlus size={19} />
-            <strong>{root.path}</strong>
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={root.allFiles || false}
-                disabled={disabled}
-                onChange={(e) =>
-                  void perform(() =>
-                    run('coverage.allFiles', { id: root.path, enabled: e.target.checked }),
-                  )
-                }
-              />{' '}
-              {t('Tous les fichiers texte', 'All text files')}
-            </label>
-            {root.autoSync && (
-              <Button
-                kind="ghost"
-                disabled={disabled}
-                title={t(
-                  'La synchronisation automatique est suspendue : chaque envoi demande une validation.',
-                  'Automatic sync is suspended: every upload needs approval.',
-                )}
-                onClick={() =>
-                  void perform(() => run('coverage.auto', { id: root.path, enabled: false }))
-                }
-              >
-                {t('Désactiver l’ancienne synchro auto.', 'Turn off legacy auto-sync')}
-              </Button>
-            )}
-            <IconButton
-              icon={Trash2}
-              label={t('Retirer le dossier du suivi', 'Stop tracking this folder')}
-              disabled={disabled}
-              onClick={() => void perform(() => run('coverage.removeRoot', { id: root.path }))}
-            />
-          </div>
-        ))}
-        {offerCatalogFolder && (
-          <div className="notice coverage-catalog-folder">
-            <div>
-              <strong>{t('Dossier ouvert dans le Catalogue', 'Folder open in the Catalog')}</strong>
-              <p>{catalogFolder}</p>
-              <p>
-                {catalogFolderHasCatalog
-                  ? t(
-                      'Ce dossier n’est pas suivi pour cette banque. Le suivi compare ses fichiers aux documents mémorisés et propose l’envoi de ce qui manque ; chaque envoi reste à valider.',
-                      'This folder is not tracked for this bank. Tracking compares its files with stored documents and offers to upload what is missing; each upload still requires approval.',
-                    )
-                  : t(
-                      'Ce dossier n’a pas de catalogue : c’est un dossier de documents ordinaire. Suivez-le pour comparer ses fichiers aux documents de cette banque et proposer l’envoi de ce qui manque ; chaque envoi reste à valider.',
-                      'This folder has no catalog: it is an ordinary documents folder. Track it to compare its files with this bank’s documents and offer to upload what is missing; each upload still requires approval.',
-                    )}
-              </p>
-            </div>
-            <Button
-              disabled={disabled}
-              onClick={() => void perform(() => run('coverage.add', { paths: [catalogFolder] }))}
-            >
-              {t('Suivre ce dossier', 'Track this folder')}
-            </Button>
-          </div>
-        )}
-        {!roots.length && !loading && !data.error && !offerCatalogFolder && (
-          <Empty
-            icon={FolderPlus}
-            title={t('Choisissez un dossier à suivre', 'Choose a folder to track')}
-            description={t(
-              'Le suivi compare les fichiers aux documents de la banque. L’envoi est proposé séparément.',
-              'Tracking compares files with bank documents. Sending is a separate step.',
-            )}
-            action={
-              <Button disabled={disabled} onClick={() => void add()}>
-                {' '}
-                {t('Choisir un dossier', 'Choose a folder')}
-              </Button>
-            }
-          />
-        )}
-      </section>
-      {!!items.length && (
-        <section className="card">
-          <CardHeader
-            title={t('État des sources', 'Source status')}
-            subtitle={`${number(items.length)} ${t('fichiers et documents', 'files and documents')}`}
-            action={
-              <div className="action-row">
-                <Button
-                  icon={Send}
-                  disabled={disabled || !sendable.length}
-                  onClick={() =>
-                    void perform(() => run('coverage.send', { ids: [...currentSelection] }))
-                  }
-                >
-                  {' '}
-                  {t('Envoyer (', 'Send (')}
-                  {sendable.length})
-                </Button>
-                <Button
-                  icon={Trash2}
-                  kind="danger"
-                  disabled={disabled || !removable.length}
-                  onClick={() =>
-                    void perform(() => run('coverage.remove', { ids: [...currentSelection] }))
-                  }
-                >
-                  {' '}
-                  {t('Retirer de la mémoire (', 'Remove from memory (')}
-                  {removable.length})
-                </Button>
-              </div>
-            }
-          />
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>
-                    <input
-                      type="checkbox"
-                      aria-label={t('Tout sélectionner', 'Select all')}
-                      checked={!!items.length && currentSelection.size === items.length}
-                      disabled={disabled}
-                      onChange={(e) => setSelected(e.target.checked ? new Set(itemIDs) : new Set())}
-                    />
-                  </th>
-                  <th>Source</th>
-                  <th>{t('État', 'Status')}</th>
-                  <th>{t('Faits', 'Facts')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item: Row, i: number) => {
-                  const id = item.id || item.key || String(i);
-                  return (
-                    <tr key={id}>
-                      <td>
-                        <input
-                          type="checkbox"
-                          aria-label={`${t('Sélectionner', 'Select')} ${item.title || id}`}
-                          checked={selected.has(id)}
-                          disabled={disabled}
-                          onChange={() =>
-                            setSelected((old) => {
-                              const next = new Set(old);
-                              if (next.has(id)) next.delete(id);
-                              else next.add(id);
-                              return next;
-                            })
-                          }
-                        />
-                      </td>
-                      <td>{item.title || item.name || item.entry?.file?.path || id}</td>
-                      <td>
-                        <Badge>
-                          {(
-                            {
-                              current: t('À jour', 'Up to date'),
-                              notSent: t('Non envoyé', 'Not sent'),
-                              modified: t('Modifié', 'Modified'),
-                              noFacts: t('Sans fait', 'No facts'),
-                              fileMissing: t('Fichier disparu', 'File missing'),
-                              queued: t('En file', 'Queued'),
-                              stored: t('En mémoire', 'In memory'),
-                            } as Record<string, string>
-                          )[item.state] ||
-                            item.state ||
-                            t('En mémoire', 'In memory')}
-                        </Badge>
-                      </td>
-                      <td>{number(item.facts ?? item.document?.memory_unit_count)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
-      {data.warnings?.map((w: string) => (
-        <div key={w} className="notice">
-          {w}
-        </div>
-      ))}
     </>
   );
 }

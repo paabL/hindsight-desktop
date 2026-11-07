@@ -140,6 +140,9 @@ const exact: Record<string, string> = {
   'Aucune mise à jour installée à relancer.': 'No installed update is ready to relaunch.',
   'Banque inconnue.': 'Unknown memory bank.',
   'Choisissez un dossier absolu.': 'Choose an absolute folder path.',
+  'Ce dossier est introuvable.': 'This folder cannot be found.',
+  "Choisissez une banque avant d'ajouter un dossier.":
+    'Choose a memory bank before adding a folder.',
   'Format de document non autorisé.': 'Document format is not allowed.',
   'Lien non autorisé.': 'Link is not allowed.',
   'Entité inconnue ; rechargez les filtres.': 'Unknown entity; reload the filters.',
