@@ -1,11 +1,11 @@
 {
-  "version": "0.1.12",
-  "notes": "Hindsight Desktop 0.1.12 community beta.",
-  "pub_date": "2026-11-06T21:54:30.887Z",
+  "version": "0.1.13",
+  "notes": "Hindsight Desktop 0.1.13 community beta.",
+  "pub_date": "2026-11-07T02:00:46.694Z",
   "platforms": {
     "darwin-aarch64": {
-      "url": "https://github.com/paabL/hindsight-desktop/releases/download/v0.1.12/Hindsight-Desktop_0.1.12_macOS-Apple-Silicon.app.tar.gz",
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTWDFNTFRDcUlTTFFhaEtTUDdEdzB0OXJWemJzM0FHbUpOWnhwTFVtc0ZPTFB5MVArOTRxMTBYZ2o2eUVhZlVhZVhpSlNZdXlRMFhNbVZrdjBwN2VHdG11V2RGSkpQTkFJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MDAyMDcwCWZpbGU6SGluZHNpZ2h0LURlc2t0b3BfMC4xLjEyX21hY09TLUFwcGxlLVNpbGljb24uYXBwLnRhci5negl2ZXJzaW9uOjAuMS4xMgpYNktQZktvVGUwM2RicDlEM3ZhK3hHSkZsYU4xWjNTdlNCT2tVNE1rTTNGT3dEb1NOUzcxbzduSTVFQ3dVK3kzNmk2MVZ2R1RvTUZHQ3JCSkc4Z0NEZz09Cg=="
+      "url": "https://github.com/paabL/hindsight-desktop/releases/download/v0.1.13/Hindsight-Desktop_0.1.13_macOS-Apple-Silicon.app.tar.gz",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTWDFNTFRDcUlTTFc5UURPWWdJdGkyZ3JjVGViTXF6bzlZdTRONDREWjIvVUIyaEZ0QWhERENXWUdSQUFMbm1iWWt1OGJiM3ZyY2ZEQmJ0eFVLQ3RsRjFkRG0rUGxMWXdnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MDE2ODQ2CWZpbGU6SGluZHNpZ2h0LURlc2t0b3BfMC4xLjEzX21hY09TLUFwcGxlLVNpbGljb24uYXBwLnRhci5negl2ZXJzaW9uOjAuMS4xMworTW80c0NIaFA4SFl0cVlGMzhKdnJzZGZRMmkzZXdIdE9BT3hjUzdXMzR0Rjd5MUF0REtoMVJNSGhweVZsbmRCQmNMbjVEUzJRdExKMlBIdUZyalZEQT09Cg=="
     }
   }
 }
