@@ -121,7 +121,9 @@ verifies its signature and installs it. No update check or download runs
 automatically. Public update packages currently target macOS 15+ on Apple Silicon.
 Version 0.1.2 and earlier need one manual installation of a newer build from
 [Releases](https://github.com/paabL/hindsight-desktop/releases). That page also
-remains the manual fallback.
+remains the manual fallback. When an update fails, the app names the cause
+(download, replacement refused by macOS, disk space) and writes the technical
+detail to `~/Library/Logs/local.hindsight.desktop.tauri/updates.log`.
 
 The Rust shell uses Tauri’s updater with a fixed HTTPS feed and embedded public
 key. Update signatures are bound to the app version. The private signing key is

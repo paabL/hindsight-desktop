@@ -344,8 +344,25 @@ fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }
 
+/// The failure class the app names in plain words; the full error follows the code.
+/// Copies made by commands report their errno only in their message.
+pub(crate) fn io_code(error: &io::Error) -> &'static str {
+    let message = error.to_string();
+    if error.kind() == io::ErrorKind::PermissionDenied
+        || message.contains("Operation not permitted")
+        || message.contains("Permission denied")
+    {
+        "UPDATE_PERMISSION_DENIED"
+    } else if error.raw_os_error() == Some(28) || message.contains("No space left on device") {
+        // Darwin sys/errno.h: ENOSPC.
+        "UPDATE_DISK_FULL"
+    } else {
+        "UPDATE_INSTALL_FAILED"
+    }
+}
+
 fn io_error(operation: &str, error: io::Error) -> String {
-    format!("UPDATE_INSTALL_FAILED: {operation}: {error}")
+    format!("{}: {operation}: {error}", io_code(&error))
 }
 
 fn updater_error(error: tauri_plugin_updater::Error) -> String {
@@ -696,12 +713,13 @@ mod tests {
 
         // Permission failures from staging/validation/the plugin are not the
         // precommit hook and must never authorize bypassing staged validation.
+        // They are reported as refused permissions, never as UPDATE_ADMIN_REQUIRED.
         assert!(io_error("validation", io::Error::from_raw_os_error(13))
-            .starts_with("UPDATE_INSTALL_FAILED:"));
+            .starts_with("UPDATE_PERMISSION_DENIED:"));
         assert!(updater_error(tauri_plugin_updater::Error::Io(
             io::Error::from_raw_os_error(13)
         ))
-        .starts_with("UPDATE_INSTALL_FAILED:"));
+        .starts_with("UPDATE_PERMISSION_DENIED:"));
     }
 
     #[test]
@@ -728,9 +746,14 @@ mod tests {
             assert!(matches!(result, Err(CommitError::Io(_))));
             fixture.old_contents();
             bookmark.assert_unchanged(&fixture.original);
+            let expected = if error_code == 13 {
+                "UPDATE_PERMISSION_DENIED:"
+            } else {
+                "UPDATE_INSTALL_FAILED:"
+            };
             assert!(finish_commit(fixture.staging, result)
                 .unwrap_err()
-                .starts_with("UPDATE_INSTALL_FAILED:"));
+                .starts_with(expected));
             fixture.original.unchanged().unwrap();
         }
     }

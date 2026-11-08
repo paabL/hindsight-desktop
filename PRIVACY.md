@@ -24,7 +24,10 @@ Hindsight server you configure and does not host your memories.
   `~/Library/Application Support/HindsightDesktop/usage-ledger.json` stores
   counts, provider/model names, timestamps and bank/document identifiers,
   without prompt or response text. Files, saved upload plans and backups in
-  the memory folder may contain your document content.
+  the memory folder may contain your document content. A failed in-app update
+  is recorded in `~/Library/Logs/local.hindsight.desktop.tauri/updates.log`
+  (time, versions and the technical error, which can include file paths),
+  without memory content.
 - **Accounts.** Sign-in uses separately installed official clients. Hindsight
   Cloud stores its key in `~/.hindsight/cloud/credentials.json`. Local sign-out
   does not revoke that cloud key.

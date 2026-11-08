@@ -12,13 +12,19 @@ const releaseErrorCodes = new Set([
   'UPDATE_CHECK_FAILED',
   'UPDATE_NOT_AVAILABLE',
   'UPDATE_VERSION_CHANGED',
+  'UPDATE_DOWNLOAD_FAILED',
+  'UPDATE_PERMISSION_DENIED',
+  'UPDATE_DISK_FULL',
   'UPDATE_INSTALL_FAILED',
   'UPDATE_RESTART_FAILED',
   'UPDATE_MOVE_TO_APPLICATIONS',
   'UPDATE_UNTRUSTED_SOURCE',
 ]);
+// The shell may follow the code with a technical detail ("CODE: detail"). Only the code is
+// shown: the detail can hold paths or signed URLs, so it goes to the local update log.
 function releaseErrorCode(error: unknown, fallback: string) {
-  return typeof error === 'string' && releaseErrorCodes.has(error) ? error : fallback;
+  const code = typeof error === 'string' ? error.split(':', 1)[0] : '';
+  return releaseErrorCodes.has(code) ? code : fallback;
 }
 
 export default function Updates({
@@ -101,6 +107,21 @@ export default function Updates({
         return t(
           'La mise à jour n’a pas pu être vérifiée et n’a pas été installée. Réessayez plus tard.',
           'The update could not be verified and was not installed. Please try again later.',
+        );
+      case 'UPDATE_DOWNLOAD_FAILED':
+        return t(
+          'Le téléchargement de la mise à jour a échoué. Vérifiez votre connexion, puis réessayez.',
+          'The update could not be downloaded. Check your connection, then try again.',
+        );
+      case 'UPDATE_PERMISSION_DENIED':
+        return t(
+          'macOS n’a pas autorisé le remplacement de l’app. Réessayez en acceptant sa demande, ou téléchargez l’app depuis « Voir les versions ».',
+          'macOS did not allow the app to be replaced. Try again and accept its prompt, or download the app from View releases.',
+        );
+      case 'UPDATE_DISK_FULL':
+        return t(
+          'Espace disque insuffisant pour installer la mise à jour. Libérez de la place, puis réessayez.',
+          'There is not enough disk space to install the update. Free up some space, then try again.',
         );
       case 'UPDATE_INSTALL_FAILED':
         return t(

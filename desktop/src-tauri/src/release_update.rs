@@ -46,6 +46,19 @@ pub async fn release_update_install(
     bridge: State<'_, BridgeState>,
     version: String,
 ) -> Result<(), String> {
+    let result = install_release(&app, &state, &bridge, &version).await;
+    if let Err(error) = &result {
+        record_failure(&app, &version, error);
+    }
+    result
+}
+
+async fn install_release(
+    app: &tauri::AppHandle,
+    state: &ReleaseUpdateState,
+    bridge: &BridgeState,
+    version: &str,
+) -> Result<(), String> {
     let mut pending = state.0.try_lock().map_err(|_| "UPDATE_BUSY")?;
     // Do not interrupt a native request. Holding this guard also prevents a new
     // bridge operation from beginning between replacement and restart.
@@ -56,13 +69,13 @@ pub async fn release_update_install(
     if !install_location_allowed(&executable) {
         return Err("UPDATE_MOVE_TO_APPLICATIONS".into());
     }
-    if let Err(error) = selected_version(pending.as_ref().map(|u| u.version.as_str()), &version) {
+    if let Err(error) = selected_version(pending.as_ref().map(|u| u.version.as_str()), version) {
         *pending = None;
         return Err(error.into());
     }
-    require_idle_bridge(&app, &mut bridge_guard).await?;
+    require_idle_bridge(app, &mut bridge_guard).await?;
     let update = pending.take().ok_or("UPDATE_NOT_AVAILABLE")?;
-    if !trusted_download(&update.download_url, &version) {
+    if !trusted_download(&update.download_url, version) {
         return Err("UPDATE_UNTRUSTED_SOURCE".into());
     }
     // The plugin verifies the package signature and its signed version before
@@ -70,11 +83,11 @@ pub async fn release_update_install(
     let bytes = update
         .download(|_, _| {}, || {})
         .await
-        .map_err(|error| install_error(&error))?;
+        .map_err(|error| download_error(&error))?;
     // Detached native work may have started during the download. Refuse to
     // replace/restart until it finishes; a readiness failure is never a bypass.
-    require_idle_bridge(&app, &mut bridge_guard).await?;
-    match crate::macos_install::install(&app, &update, &bytes, &executable) {
+    require_idle_bridge(app, &mut bridge_guard).await?;
+    match crate::macos_install::install(app, &update, &bytes, &executable) {
         Ok(()) => {}
         // Keep the existing OS authorization flow for administrator-owned apps.
         // Its whole-bundle swap is followed by the same waited relaunch and legacy
@@ -82,7 +95,7 @@ pub async fn release_update_install(
         Err(code) if code == "UPDATE_ADMIN_REQUIRED" => update.install(&bytes).map_err(|error| install_error(&error))?,
         Err(error) => return Err(error),
     }
-    crate::relaunch::restart(&app)?;
+    crate::relaunch::restart(app)?;
     Ok(())
 }
 
@@ -144,7 +157,9 @@ fn trusted_download(url: &tauri::Url, version: &str) -> bool {
     !filename.contains('/') && filename.ends_with(".app.tar.gz")
 }
 
-fn install_error(error: &tauri_plugin_updater::Error) -> &'static str {
+// Each code names a cause the app explains in plain words; the detail after it is
+// only recorded in the update log, never shown.
+fn install_error(error: &tauri_plugin_updater::Error) -> String {
     use tauri_plugin_updater::Error;
     match error {
         Error::Minisign(_)
@@ -152,9 +167,66 @@ fn install_error(error: &tauri_plugin_updater::Error) -> &'static str {
         | Error::SignatureUtf8(_)
         | Error::MissingSignedVersion
         | Error::SignedVersionMismatch { .. }
-        | Error::InsecureTransportProtocol => "UPDATE_UNTRUSTED_SOURCE",
-        _ => "UPDATE_INSTALL_FAILED",
+        | Error::InsecureTransportProtocol => "UPDATE_UNTRUSTED_SOURCE".into(),
+        Error::Io(io) => format!("{}: {error}", crate::macos_install::io_code(io)),
+        _ => format!("UPDATE_INSTALL_FAILED: {error}"),
     }
+}
+
+fn download_error(error: &tauri_plugin_updater::Error) -> String {
+    use tauri_plugin_updater::Error;
+    match error {
+        Error::Reqwest(_) | Error::Network(_) => format!("UPDATE_DOWNLOAD_FAILED: {error}"),
+        _ => install_error(error),
+    }
+}
+
+/// The app shows a plain message; the full cause stays on this Mac, in
+/// ~/Library/Logs/local.hindsight.desktop.tauri/updates.log.
+fn record_failure(app: &tauri::AppHandle, version: &str, error: &str) {
+    use std::io::Write;
+    use tauri::Manager;
+    let Ok(folder) = app.path().app_log_dir() else {
+        return;
+    };
+    let seconds = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs())
+        .unwrap_or_default();
+    let line = format!(
+        "{} {} -> {version}: {error}\n",
+        utc_timestamp(seconds),
+        app.package_info().version
+    );
+    let _ = std::fs::create_dir_all(&folder).and_then(|()| {
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(folder.join("updates.log"))?
+            .write_all(line.as_bytes())
+    });
+}
+
+/// RFC 3339 UTC time without a date library (civil-from-days, H. Hinnant).
+fn utc_timestamp(seconds: u64) -> String {
+    let days = (seconds / 86_400) as i64;
+    let time = seconds % 86_400;
+    let shifted = days + 719_468;
+    let era = shifted.div_euclid(146_097);
+    let day_of_era = shifted.rem_euclid(146_097);
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_index = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_index + 2) / 5 + 1;
+    let month = if month_index < 10 { month_index + 3 } else { month_index - 9 };
+    let year = year_of_era + era * 400 + i64::from(month <= 2);
+    format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z",
+        time / 3_600,
+        time % 3_600 / 60,
+        time % 60
+    )
 }
 
 #[cfg(test)]
@@ -250,6 +322,34 @@ mod tests {
         assert!(update.verify(b"test").is_ok());
         let error = update.install(b"tampered payload").unwrap_err();
         assert_eq!(install_error(&error), "UPDATE_UNTRUSTED_SOURCE");
+    }
+
+    #[test]
+    fn failures_name_their_cause_and_keep_the_detail_for_the_log() {
+        use tauri_plugin_updater::Error;
+        let offline = download_error(&Error::Network("Download request failed with status: 503".into()));
+        assert!(offline.starts_with("UPDATE_DOWNLOAD_FAILED: "), "{offline}");
+        assert!(offline.ends_with("503`"), "{offline}");
+        let denied = install_error(&Error::Io(std::io::ErrorKind::PermissionDenied.into()));
+        assert!(denied.starts_with("UPDATE_PERMISSION_DENIED: "), "{denied}");
+        let full = install_error(&Error::Io(std::io::Error::from_raw_os_error(28)));
+        assert!(full.starts_with("UPDATE_DISK_FULL: "), "{full}");
+        let other = install_error(&Error::Io(std::io::Error::other("unexpected archive layout")));
+        assert_eq!(other, "UPDATE_INSTALL_FAILED: unexpected archive layout");
+        // Copies run as commands report the errno only in their message.
+        for (message, code) in [
+            ("stage bundle: ditto: No space left on device", "UPDATE_DISK_FULL"),
+            ("stage bundle: ditto: Operation not permitted", "UPDATE_PERMISSION_DENIED"),
+        ] {
+            assert_eq!(crate::macos_install::io_code(&std::io::Error::other(message)), code);
+        }
+    }
+
+    #[test]
+    fn update_log_times_are_readable_utc() {
+        assert_eq!(utc_timestamp(0), "1970-01-01T00:00:00Z");
+        assert_eq!(utc_timestamp(951_782_400), "2000-02-29T00:00:00Z");
+        assert_eq!(utc_timestamp(1_794_095_892), "2026-11-07T23:58:12Z");
     }
 
     #[test]

@@ -216,6 +216,50 @@ try {
     restartCard.getByRole('button', { name: 'Update and restart', exact: true }),
   ).toHaveCount(0);
 
+  // Each failure cause has its own plain message; the technical detail after the code,
+  // which can hold paths or signed URLs, is never shown.
+  const failures = await nativePage('en');
+  const failureCard = card(failures);
+  const failureCheck = failureCard.getByRole('button', { name: 'Check for updates', exact: true });
+  for (const [index, [error, message]] of [
+    [
+      'UPDATE_DOWNLOAD_FAILED: error sending request for url (https://example.test/a?token=secret)',
+      'The update could not be downloaded.',
+    ],
+    [
+      'UPDATE_PERMISSION_DENIED: replace Contents: Operation not permitted (os error 1)',
+      'macOS did not allow the app to be replaced.',
+    ],
+    ['UPDATE_DISK_FULL: stage bundle: No space left on device', 'not enough disk space'],
+    [
+      'UPDATE_INSTALL_FAILED: replace Contents: /private/example/token=secret',
+      'The update could not be installed.',
+    ],
+  ].entries()) {
+    await failureCheck.click();
+    await expect.poll(() => count(failures, 'release_update_check')).toBe(index + 1);
+    await failures.evaluate(() => window.__updaterFixture.finish({ version: '0.1.4' }));
+    await failureCard.getByRole('button', { name: 'Update and restart', exact: true }).click();
+    await expect.poll(() => count(failures, 'release_update_install')).toBe(index + 1);
+    await failures.evaluate((value) => window.__updaterFixture.fail(value), error);
+    await expect(failureCard.getByRole('alert')).toContainText(message);
+    await expect(failureCard).not.toContainText('token=secret');
+    await expect(failureCard).not.toContainText('os error');
+  }
+  const frFailures = await nativePage('fr');
+  const frFailureCard = card(frFailures, true);
+  await frFailureCard
+    .getByRole('button', { name: 'Rechercher les mises à jour', exact: true })
+    .click();
+  await expect.poll(() => count(frFailures, 'release_update_check')).toBe(1);
+  await frFailures.evaluate(() => window.__updaterFixture.finish({ version: '0.1.4' }));
+  await frFailureCard.getByRole('button', { name: 'Mettre à jour et redémarrer' }).click();
+  await expect.poll(() => count(frFailures, 'release_update_install')).toBe(1);
+  await frFailures.evaluate(() => window.__updaterFixture.fail('UPDATE_DOWNLOAD_FAILED: timeout'));
+  await expect(frFailureCard.getByRole('alert')).toContainText(
+    'Le téléchargement de la mise à jour a échoué.',
+  );
+
   const demo = await nativePage('en', true);
   await expect(
     card(demo).getByRole('button', { name: 'Check for updates', exact: true }),
@@ -230,7 +274,7 @@ try {
   ).toBeDisabled();
   if (errors.length) throw new Error(errors.join('\n'));
   console.log(
-    'Release updates verified: explicit checks, current/available/error/retry states, one install per click, busy protection, English/French and disabled demo/browser actions.',
+    'Release updates verified: explicit checks, current/available/error/retry states, a plain message per failure cause without technical details, one install per click, busy protection, English/French and disabled demo/browser actions.',
   );
 } finally {
   await browser?.close();
