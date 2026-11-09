@@ -22,7 +22,16 @@ pub fn restart(app: &tauri::AppHandle) -> Result<(), String> {
         .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null()).process_group(0)
         .spawn().map_err(|_| "UPDATE_RESTART_FAILED")?;
-    app.exit(0);
+    // Quitting inside the command could drop its reply: the page would then report a failed
+    // installation although the new version is in place. Answer first, then quit; the helper
+    // reopens the app only once this process is gone, so a stalled exit is forced.
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        handle.exit(0);
+        std::thread::sleep(std::time::Duration::from_secs(5));
+        std::process::exit(0);
+    });
     Ok(())
 }
 

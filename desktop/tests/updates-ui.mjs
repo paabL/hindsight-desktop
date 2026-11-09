@@ -235,6 +235,9 @@ try {
       'UPDATE_INSTALL_FAILED: replace Contents: /private/example/token=secret',
       'The update could not be installed.',
     ],
+    // An answer without a code was lost (the shell may already have replaced the app):
+    // the page never claims that the installation failed.
+    ['IPC connection closed', 'The update did not confirm.'],
   ].entries()) {
     await failureCheck.click();
     await expect.poll(() => count(failures, 'release_update_check')).toBe(index + 1);

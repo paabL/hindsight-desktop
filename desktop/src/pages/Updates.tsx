@@ -77,7 +77,9 @@ export default function Updates({
       await invoke('release_update_install', { version: offer.version });
       setPhase('restarting');
     } catch (error) {
-      setReleaseError(releaseErrorCode(error, 'UPDATE_INSTALL_FAILED'));
+      // The shell answers every failure with a code; anything else means its answer was lost
+      // (the app may already be replaced), so the page does not claim the installation failed.
+      setReleaseError(releaseErrorCode(error, 'UPDATE_ANSWER_LOST'));
       setOffer(null);
       setPhase('idle');
       releaseLock.current = false;
@@ -127,6 +129,11 @@ export default function Updates({
         return t(
           'L’installation n’a pas abouti. Réessayez ou téléchargez l’app depuis « Voir les versions ».',
           'The update could not be installed. Try again or download the app from View releases.',
+        );
+      case 'UPDATE_ANSWER_LOST':
+        return t(
+          'La mise à jour ne s’est pas confirmée. Quittez puis rouvrez Hindsight Desktop : la version installée s’affichera ici.',
+          'The update did not confirm. Quit and reopen Hindsight Desktop; the installed version will show here.',
         );
       case 'UPDATE_RESTART_FAILED':
         return t(
