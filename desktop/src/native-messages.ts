@@ -227,6 +227,7 @@ const exact: Record<string, string> = {
   'Lien non autorisé.': 'Link is not allowed.',
   'Entité inconnue ; rechargez les filtres.': 'Unknown entity; reload the filters.',
   'Pièce jointe inconnue.': 'Unknown attachment.',
+  'Période inconnue.': 'Unknown period.',
   'Cette pièce jointe dépasse 12 Mo.': 'This attachment exceeds 12 MB.',
   'Connaissance inconnue.': 'Unknown knowledge item.',
   'Opération inconnue.': 'Unknown operation.',
@@ -602,6 +603,9 @@ const dashboardParts: Record<string, string> = {
   tags: 'tags',
   échecs: 'failures',
   configuration: 'settings',
+  portées: 'scopes',
+  consolidations: 'consolidations',
+  changements: 'changes',
 };
 const serverActions: Record<string, string> = {
   démarré: 'Server started',
@@ -838,9 +842,9 @@ const engineRules: Rule[] = [
     (detail) => `Failed: ${detail}. Check both memory banks before trying again.`,
   ],
   [
-    /^Fusion terminée(?: \(([^)]*)\))?(?: ; « (.*?) » (?:mène désormais à « (.*?) »|supprimée))?\.(?: ([\d\s,.]+) faits? (?:attend|attendent) la consolidation de « (.*) » : lancez-la depuis « Activité › Traitements »\.)?$/,
+    /^Fusion terminée(?: \(([^)]*)\))?(?: ; « (.*?) » (?:mène désormais à « (.*?) »|supprimée))?\.(?: ([\d\s,.]+) faits? (?:attend|attendent) la consolidation de « (.*) » : lancez-la depuis « Mémoire › Consolidation »\.)?$/,
     (counts, source, aliasTarget, waiting, target) =>
-      `Merge complete${counts ? ` (${mergeCounts(counts)})` : ''}${source ? (aliasTarget ? `; “${source}” now leads to “${aliasTarget}”` : `; “${source}” deleted`) : ''}.${waiting ? ` ${count(waiting, 'fact')} ${waiting.replace(/\D/g, '') === '1' ? 'is' : 'are'} waiting for consolidation in “${target}”. Run it from Activity › Processing.` : ''}`,
+      `Merge complete${counts ? ` (${mergeCounts(counts)})` : ''}${source ? (aliasTarget ? `; “${source}” now leads to “${aliasTarget}”` : `; “${source}” deleted`) : ''}.${waiting ? ` ${count(waiting, 'fact')} ${waiting.replace(/\D/g, '') === '1' ? 'is' : 'are'} waiting for consolidation in “${target}”. Run it from Memory › Consolidation.` : ''}`,
   ],
   [
     /^Fusion terminée(?: \(([^)]*)\))?\. « (.*) » est CONSERVÉE : (?:([\d\s,.]+) documents ignorés n'existent|(1) document ignoré n'existe) que dans la source\. Vérifiez, puis supprimez-la depuis « Réglages › Banque »\.$/,
@@ -1121,7 +1125,7 @@ const engineRules: Rule[] = [
       `${count(removed, 'document')} of ${total.trim()} removed from “${bank}”.${failures ? ` Failures: ${failures}` : ''}`,
   ],
   [
-    /^(version|entités|série temporelle|documents|tags|échecs|configuration) : ([\s\S]*)$/,
+    /^(version|entités|série temporelle|documents|tags|échecs|configuration|portées|consolidations|changements) : ([\s\S]*)$/,
     (part, detail) => `${dashboardParts[part]}: ${detail}`,
   ],
 ];

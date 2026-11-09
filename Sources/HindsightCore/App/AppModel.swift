@@ -237,6 +237,7 @@ public final class AppModel {
         // La suppression de la banque remplace cette session : son message passe par la gestion des banques.
         s.admin.onAppMessage = { [weak self] text in self?.bankManagement.message = text }
         s.operations.pauseGate = pause.gate
+        s.consolidation.pauseGate = pause.gate
         s.operations.workerOff = { [weak self] in self?.pause.serverWorkerOff ?? false }
         s.memoryDesign.pauseCutAutoConsolidation = { [weak self] in self?.pause.cutAutoConsolidation(id) ?? false }
         s.memoryDesign.onConfigReset = { [weak self] bank in await self?.pause.bankConfigWasReset(bank) }
@@ -374,10 +375,10 @@ public final class AppModel {
             Task { await session.operations.reload() }
         case .recoverConsolidation:
             selectedSection = .operations
-            session.operations.requestRecoverConsolidation()
+            session.consolidation.requestRecoverConsolidation()
         case .runConsolidation:
             selectedSection = .operations
-            session.operations.requestConsolidation()
+            session.consolidation.requestConsolidation()
         case .openDocuments:
             selectedSection = .documents
         case .testLLM:

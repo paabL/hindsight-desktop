@@ -18,6 +18,7 @@ const routes = [
   { id: 'dashboard', group: 'Overview' },
   { id: 'facts', group: 'Memory', list: 'Memory views', tab: 'Facts' },
   { id: 'documents', group: 'Memory', list: 'Memory views', tab: 'Documents' },
+  { id: 'consolidation', group: 'Memory', list: 'Memory views', tab: 'Consolidation' },
   { id: 'timeline', group: 'Memory', list: 'Memory views', tab: 'Timeline' },
   { id: 'graph', group: 'Memory', list: 'Memory views', tab: 'Graph' },
   { id: 'models', group: 'Knowledge' },
@@ -318,7 +319,7 @@ try {
   await factsPage.close();
   expect(errors).toEqual([]);
   console.log(
-    'Navigation verified: seven groups, sixteen deep links and the former Tracked folders link, contextual tabs, history, remembered tabs, shortcuts and both languages.',
+    'Navigation verified: seven groups, seventeen deep links and the former Tracked folders link, contextual tabs, history, remembered tabs, shortcuts and both languages.',
   );
 } finally {
   await browser?.close();

@@ -227,7 +227,7 @@ const totalFacts = () => bankFacts.world + bankFacts.experience + bankFacts.obse
 const pendingConsolidation = 18;
 const countOperations = (status: string) =>
   operations.filter((operation) => operation.status === status).length;
-// Consolidation de l’exemple : même état dans la Vue d’ensemble et dans Traitements.
+// Consolidation de l’exemple : même état dans la Vue d’ensemble et dans la vue Consolidation.
 function consolidationData(): Row {
   const consolidations = (status: string) =>
     operations.filter(
@@ -587,6 +587,157 @@ function bankSectionData(section: Section): Row {
   if (section === 'timeline') base.total = totalFacts();
   return base;
 }
+// Consolidation de l’exemple : état, rythme, portées et changements. Les différences de texte sont
+// calculées ici, sur les textes dans la langue de l’exemple, comme le moteur le fait sur le serveur.
+let consolidationPeriod = 'day';
+function wordDiff(before: string, after: string): Row[] {
+  const a = before.match(/\S+\s*/g) || [];
+  const b = after.match(/\S+\s*/g) || [];
+  const key = (word: string) => word.trim();
+  const table = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
+  for (let i = a.length - 1; i >= 0; i--)
+    for (let j = b.length - 1; j >= 0; j--)
+      table[i][j] =
+        key(a[i]) === key(b[j])
+          ? table[i + 1][j + 1] + 1
+          : Math.max(table[i + 1][j], table[i][j + 1]);
+  const out: Row[] = [];
+  const push = (kind: string, text: string) => {
+    const last = out.at(-1);
+    if (last?.kind === kind) last.text += text;
+    else out.push({ kind, text });
+  };
+  let i = 0,
+    j = 0;
+  while (i < a.length && j < b.length) {
+    if (key(a[i]) === key(b[j])) (push('same', b[j++]), i++);
+    else if (table[i + 1][j] >= table[i][j + 1]) push('removed', a[i++]);
+    else push('added', b[j++]);
+  }
+  while (i < a.length) push('removed', a[i++]);
+  while (j < b.length) push('added', b[j++]);
+  return out;
+}
+function consolidationSectionData(): Row {
+  const status = consolidationData();
+  const raw = bankFacts.world + bankFacts.experience;
+  const observations = bankFacts.observation || 0;
+  const scale = consolidationPeriod === 'hour' ? 0.15 : consolidationPeriod === 'week' ? 6 : 1;
+  const source = (i: number, type: string, text = facts[i % facts.length].text) => ({
+    id: `fact-${i}`,
+    text: exampleText(text),
+    type,
+  });
+  const changed = (
+    id: string,
+    before: string,
+    after: string,
+    minutesAgo: number,
+    removedValues: string[] = [],
+    added = source(1, 'world'),
+  ) => {
+    const previousText = exampleText(before);
+    const text = exampleText(after);
+    return {
+      id,
+      kind: 'updated',
+      text,
+      previousText,
+      textChanged: true,
+      diff: wordDiff(previousText, text),
+      removedValues,
+      updates: 1,
+      newSources: [added],
+      newSourceCount: 1,
+      proofCount: 3,
+      sourceCount: 3,
+      tags: ['projet:horizon'],
+      updatedAt: new Date(Date.parse(timestamp) - minutesAgo * 60_000).toISOString(),
+    };
+  };
+  const changes = [
+    {
+      id: 'obs-created',
+      kind: 'created',
+      text: exampleText(facts[0].text),
+      updates: 0,
+      textChanged: false,
+      newSources: [],
+      newSourceCount: 0,
+      removedValues: [],
+      proofCount: 2,
+      sourceCount: 2,
+      tags: ['projet:horizon'],
+      updatedAt: new Date(Date.parse(timestamp) - 4 * 60_000).toISOString(),
+    },
+    changed(
+      'obs-rewritten',
+      'Les sources sont collectées dans une archive avant leur traitement.',
+      'Les sources sont collectées dans une archive commune avant tout traitement par Hindsight.',
+      9,
+    ),
+    changed(
+      'obs-values',
+      'Le prototype a été testé avec 12 participants le 2026-10-14 ; la recherche aboutit en moins de 30 secondes.',
+      'Le prototype a été testé avec des participants ; la recherche aboutit rapidement.',
+      17,
+      ['12', '2026-10-14', '30'],
+      // Le fait source arrivé est plus vague : la réécriture perd les valeurs précises, que le badge signale.
+      source(
+        7,
+        'experience',
+        'Lors du test du prototype, les participants ont trouvé rapidement ce qu’ils cherchaient.',
+      ),
+    ),
+    {
+      id: 'obs-confirmed',
+      kind: 'updated',
+      text: exampleText(facts[2].text),
+      previousText: exampleText(facts[2].text),
+      textChanged: false,
+      updates: 1,
+      newSources: [source(6, 'experience')],
+      newSourceCount: 1,
+      removedValues: [],
+      proofCount: 4,
+      sourceCount: 4,
+      tags: ['projet:horizon'],
+      updatedAt: new Date(Date.parse(timestamp) - 26 * 60_000).toISOString(),
+    },
+  ];
+  const scopeParts: [string[], number][] = [
+    [['projet:horizon'], 0.58],
+    [[], 0.24],
+    [['projet:horizon', 'équipe:design'], 0.11],
+    [['projet:horizon', 'équipe:recherche'], 0.05],
+  ];
+  return {
+    loaded: true,
+    status,
+    rawFacts: raw,
+    consolidatedFacts: raw - status.pendingFacts - status.failedFacts,
+    lastConsolidatedAt: timestamp,
+    observationTotal: observations,
+    pace: status.pendingFacts
+      ? {
+          factsPerHour: 42,
+          measuredSeconds: 3600,
+          remainingSeconds: (status.pendingFacts / 42) * 3600,
+        }
+      : null,
+    scopes: {
+      scopes: scopeParts.map(([tags, part]) => ({ tags, count: Math.round(observations * part) })),
+      total: 6,
+      limit: 6,
+      offset: 0,
+    },
+    period: consolidationPeriod,
+    counts: { created: Math.round(14 * scale), updated: Math.round(9 * scale) },
+    changes: consolidationPeriod === 'hour' ? changes.slice(0, 2) : changes,
+    canLoadMore: false,
+    partialErrors: [],
+  };
+}
 // Serveur de l’exemple : ses libellés passent par la traduction des messages du moteur ; seuls ses
 // journaux fictifs sont traduits ici.
 function serverData(): Row {
@@ -624,9 +775,11 @@ export function exampleSnapshot(section: Section): Snapshot {
                   ? operationsData()
                   : section === 'facts'
                     ? factsData()
-                    : section === 'sources'
-                      ? sourcesData()
-                      : bankSectionData(section),
+                    : section === 'consolidation'
+                      ? consolidationSectionData()
+                      : section === 'sources'
+                        ? sourcesData()
+                        : bankSectionData(section),
             ),
           ),
     messages: [],
@@ -655,6 +808,9 @@ export async function exampleRequest(command: string, args: Row, section: Sectio
   if (command === 'section' && args.section === 'operations' && typeof args.status === 'string')
     operationStatus = args.status;
   if (command === 'section' && args.section === 'graph' && args.mode) graphMode = args.mode;
+  if (command === 'section' && args.section === 'consolidation' && typeof args.period === 'string')
+    consolidationPeriod = ['hour', 'day', 'week'].includes(args.period) ? args.period : 'day';
+  if (command === 'bank.select') consolidationPeriod = 'day';
   if (command === 'section' && args.section === 'facts') {
     factQuery = typeof args.query === 'string' ? args.query : '';
     factType = ['world', 'experience', 'observation'].includes(args.type) ? args.type : 'all';
@@ -683,6 +839,14 @@ export async function exampleRequest(command: string, args: Row, section: Sectio
       // Le document compte plus de faits que les trois montrés : le lecteur dit « 3 sur N ».
       factsTotal: documents.find((d) => d.id === args.id)?.memory_unit_count ?? 3,
       history: [],
+    });
+  if (command === 'consolidation.sources')
+    return localizeExample({
+      sources: [facts[0], facts[3]].map((fact, i) => ({
+        id: fact.id,
+        text: fact.text,
+        type: i ? 'experience' : 'world',
+      })),
     });
   if (command === 'operation.open')
     return localizeExample(operations.find((o) => o.id === args.id));

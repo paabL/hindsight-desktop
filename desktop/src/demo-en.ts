@@ -75,6 +75,15 @@ const english: Record<string, string> = {
   // Réponse de la recherche.
   'Le projet privilégie une **architecture simple**, une navigation claire et une provenance consultable pour chaque connaissance. Les sources sont rassemblées avant leur traitement, ce qui permet de garder une archive lisible et durable.\n\nLes prochaines étapes consistent à vérifier le parcours de bout en bout et à évaluer la qualité des résultats sur des cas représentatifs.':
     'The project favors a **simple architecture**, clear navigation and visible provenance for every piece of knowledge. Sources are gathered before processing, which keeps the archive readable and lasting.\n\nThe next steps are to check the journey end to end and to evaluate result quality on representative cases.',
+  // Consolidation : textes d’observations avant et après une mise à jour.
+  'Les sources sont collectées dans une archive avant leur traitement.':
+    'Sources are collected into an archive before processing.',
+  'Le prototype a été testé avec 12 participants le 2026-10-14 ; la recherche aboutit en moins de 30 secondes.':
+    'The prototype was tested with 12 participants on 2026-10-14; search succeeds in under 30 seconds.',
+  'Le prototype a été testé avec des participants ; la recherche aboutit rapidement.':
+    'The prototype was tested with participants; search succeeds quickly.',
+  'Lors du test du prototype, les participants ont trouvé rapidement ce qu’ils cherchaient.':
+    'During the prototype test, participants quickly found what they were looking for.',
   // Serveur de l’exemple.
   'Exemple : le serveur est prêt.': 'Example: the server is ready.',
   'Exemple : 3 questions, 412 tokens, 180 ms': 'Example: 3 questions, 412 tokens, 180 ms',

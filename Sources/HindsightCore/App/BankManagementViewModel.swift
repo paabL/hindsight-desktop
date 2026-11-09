@@ -273,7 +273,7 @@ public final class BankManagementViewModel {
             !ConsolidationStatus.consolidatesAfterExtraction(config, serverObservations: nil),
             let pending = try? await client.bankStats(target, refresh: true).pendingConsolidation, pending > 0
         else { return "" }
-        return " \(Format.count(pending, "fait")) \(pending > 1 ? "attendent" : "attend") la consolidation de « \(target) » : lancez-la depuis « Activité › Traitements »."
+        return " \(Format.count(pending, "fait")) \(pending > 1 ? "attendent" : "attend") la consolidation de « \(target) » : lancez-la depuis « Mémoire › Consolidation »."
     }
 
     func merge(source: String, into target: String, conflict: Conflict, after: AfterMerge) async {

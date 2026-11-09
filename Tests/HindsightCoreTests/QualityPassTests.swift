@@ -141,7 +141,7 @@ final class MergeSafetyTests: XCTestCase {
         await vm.requestMerge(source: "scratch", into: testBank)
         XCTAssertTrue(vm.confirmation?.message.contains("attendront que vous lanciez la consolidation") == true)
         await vm.confirmation?.perform()
-        XCTAssertEqual(vm.message, "Fusion terminée (1 document ajouté). 12 faits attendent la consolidation de « \(testBank) » : lancez-la depuis « Activité › Traitements ».")
+        XCTAssertEqual(vm.message, "Fusion terminée (1 document ajouté). 12 faits attendent la consolidation de « \(testBank) » : lancez-la depuis « Mémoire › Consolidation ».")
     }
 
     func testAliasFailureAfterDeleteIsReportedTruthfully() async throws {

@@ -111,17 +111,27 @@ models, which follow a question you ask. Each card names its kind.
 **Processing** carries the pause: **Pause** or **Resume processing** for the
 selected bank. **More processing options** (⋯) applies the pause to all banks,
 freezes the server queue or clears pending operations. **Retry failed operations**
-and **Reconsolidate** appear only when there is something to retry.
+appears only when there is something to retry.
 
-**Consolidation** has one state, computed by the engine and shown the same way
-in the Overview and Processing: turned off, running, *n* facts to consolidate, or
-up to date, with the date of the last consolidation that actually processed facts.
-**Consolidate** appears only when facts are waiting and no consolidation is
-running. A bank that does not create observations cannot consolidate (the server
-would accept the request and finish it without doing anything), so Processing
-says so and opens **Create observations** in Memory behavior instead. The
-Overview's queue counters are the live counts shown in Processing, not the
-server's cached statistics.
+**Consolidation** has its own view, Memory › Consolidation, the only place that
+starts it; the Overview's consolidation line leads there. It has one state,
+computed by the engine and shown the same way in both places: turned off,
+running, *n* facts to consolidate, or up to date, with the date of the last
+consolidation that actually processed facts. **Consolidate** appears only when
+facts are waiting and no consolidation is running, **Reconsolidate** only when
+facts failed to consolidate. A bank that does not create observations cannot
+consolidate (the server would accept the request and finish it without doing
+anything), so the view says so and opens **Create observations** in Memory
+behavior instead. The view also shows progress over the whole bank, the pace of
+the last hour with the time left at that pace, the observation scopes (one scope
+consolidates batch after batch; separate scopes progress in parallel) and **What
+consolidation changed**: observations created or updated in the last hour,
+24 hours or 7 days, with their source facts, a word-by-word comparison when the
+text changed, and the **values removed** (numbers, dates or identifiers present
+before and missing from the new text). The observation's history and its source
+facts still hold them; the badge marks what to check. The Overview's queue
+counters are the live counts shown in Processing, not the server's cached
+statistics.
 
 Processing keeps its selected status during automatic refreshes and preserves
 opened pages. Large lists render in groups of 100 with **Show more**; this does
@@ -211,6 +221,12 @@ synonym in a new view.
 | `reflect` | Réponses | Answers |
 | mental models | Connaissances: page de connaissance, modèle mental | Knowledge: knowledge page, mental model |
 
+Consolidation uses the server's words: an observation is **created** or
+**updated** (« Créée », « Mise à jour »; `observations_created`,
+`observations_updated`) from its **source facts** (« faits sources »;
+`source_facts`), within its **observation scope** (« portée »;
+`observation_scopes`).
+
 A fact is any memory unit counted by the server's `fact_count`, observations
 included. A link (« lien ») is an edge of the graph between two entities or facts.
 Counts always agree with their noun: « 0 fait », « 1 fait », « 2 faits » in French;
@@ -222,6 +238,7 @@ Counts always agree with their noun: « 0 fait », « 1 fait », « 2 faits » i
 | Run the folder collector | Collecter | Collect | Updates this Mac's catalog only |
 | Send sources | Envoyer | Upload | Starts fact extraction in Hindsight |
 | Start consolidation | Consolider | Consolidate | LLM calls; facts become observations |
+| Requeue facts that failed to consolidate | Reconsolider | Reconsolidate | LLM calls at the next consolidation |
 | Rewrite a knowledge item | Régénérer | Regenerate | LLM call |
 | Extract one document again | Retraiter | Reprocess | LLM calls |
 | Requeue failed work | Relancer | Retry | May use LLM calls |

@@ -380,8 +380,8 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
                         'Has no effect while “Create observations” is off.',
                       )
                     : t(
-                        'Après chaque extraction, le serveur consolide les nouveaux faits (appels LLM). Désactivé, lancez la consolidation depuis Activité › Traitements.',
-                        'After each extraction, the server consolidates new facts (LLM calls). When off, run consolidation from Activity › Processing.',
+                        'Après chaque extraction, le serveur consolide les nouveaux faits (appels LLM). Désactivé, lancez la consolidation depuis Mémoire › Consolidation.',
+                        'After each extraction, the server consolidates new facts (LLM calls). When off, run consolidation from Memory › Consolidation.',
                       ),
                 pauseCut || draft.enableObservations === false,
               )}

@@ -117,14 +117,18 @@ final class OperationStateStressTests: XCTestCase {
         XCTAssertFalse(vm.canLoadMore)
     }
 
-    func testFailedStatisticsDoesNotHideTheOperationsList() async {
+    func testOperationsListNeverWaitsOnBankStatistics() async {
+        // `/stats` relit toute la banque : Traitements, qui sonde, ne lit que les listes d'opérations. La
+        // consolidation (statistiques, réglages, consolidations actives) se lit dans sa vue.
         let mock = MockTransport(); mock.installStandardRoutes()
         mock.on("GET", bankPath + "/stats", json: "{}", status: 503)
         let vm = OperationsViewModel(client: makeClient(mock), bank: testBank)
         await vm.reload()
+        await vm.reload(silently: true)
         XCTAssertFalse(vm.rows.isEmpty)
         XCTAssertNil(vm.state.errorMessage)
-        XCTAssertNil(vm.stats)
+        XCTAssertFalse(mock.requests.contains { $0.path.hasSuffix("/stats") || $0.path.hasSuffix("/config") })
+        XCTAssertFalse(mock.requests.contains { $0.queryValue("type") == "consolidation" })
     }
 
     func testCancelAndDeleteRefusalsAreNotReportedAsSuccess() async throws {

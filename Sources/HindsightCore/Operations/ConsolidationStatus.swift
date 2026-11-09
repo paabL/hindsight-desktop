@@ -2,7 +2,7 @@ import Foundation
 import HindsightAPI
 
 /// État de la consolidation d'une banque, calculé ici pour toutes les vues : la Vue d'ensemble,
-/// Traitements et la confirmation de « Consolider » disent la même chose.
+/// la vue Consolidation et la confirmation de « Consolider » disent la même chose.
 ///
 /// Quand la banque ne crée pas d'observations (`enable_observations` faux), le serveur accepte une
 /// consolidation et la termine aussitôt sans rien traiter : il ne faut donc ni la proposer, ni

@@ -5,6 +5,7 @@ import {
   ArrowRight,
   CalendarDays,
   CheckCircle2,
+  ChevronRight,
   CircleDot,
   FileText,
   FolderPlus,
@@ -168,7 +169,7 @@ export function Dashboard({ data, navigate, run, busy }: PageProps) {
               </Button>
             }
           />
-          {/* Mêmes compteurs que Traitements (lus en direct), même état de consolidation. */}
+          {/* Mêmes compteurs que Traitements (lus en direct), même état de consolidation que sa vue. */}
           <div className="queue-overview">
             <div>
               <span className="status-dot warning" />
@@ -187,7 +188,11 @@ export function Dashboard({ data, navigate, run, busy }: PageProps) {
               <span>{t('En échec', 'Failed')}</span>
               <strong>{number(operationCounts?.failed ?? stats.failed_operations)}</strong>
             </div>
-            <ConsolidationLine status={data.snapshot.consolidation} stats={stats} />
+            <ConsolidationLine
+              status={data.snapshot.consolidation}
+              stats={stats}
+              onOpen={() => navigate('consolidation')}
+            />
           </div>
         </section>
       </div>
@@ -231,7 +236,7 @@ export function Dashboard({ data, navigate, run, busy }: PageProps) {
   );
 }
 
-/** État de la consolidation, le même que dans Traitements : désactivée, en cours, faits à consolider
+/** État de la consolidation, le même que dans sa vue (Mémoire › Consolidation) : désactivée, en cours, faits à consolider
  * ou à jour, avec la date de la dernière consolidation qui a réellement traité des faits. */
 export function consolidationSummary(status: Row | undefined): {
   value: string;
@@ -259,7 +264,15 @@ export function consolidationSummary(status: Row | undefined): {
   }
 }
 
-function ConsolidationLine({ status, stats }: { status?: Row; stats: Row }) {
+function ConsolidationLine({
+  status,
+  stats,
+  onOpen,
+}: {
+  status?: Row;
+  stats: Row;
+  onOpen: () => void;
+}) {
   const last = status ? status.lastConsolidatedAt : stats.last_consolidated_at;
   if (!status)
     return (
@@ -270,8 +283,14 @@ function ConsolidationLine({ status, stats }: { status?: Row; stats: Row }) {
       </div>
     );
   const { value, tone } = consolidationSummary(status);
+  // La consolidation a sa vue (Mémoire › Consolidation) : la ligne y mène.
   return (
-    <div>
+    <button
+      type="button"
+      className="queue-row-link"
+      onClick={onOpen}
+      title={t('Voir la consolidation', 'View consolidation')}
+    >
       <span className={`status-dot ${tone}`} />
       <span className="queue-label">
         {t('Consolidation', 'Consolidation')}
@@ -282,7 +301,8 @@ function ConsolidationLine({ status, stats }: { status?: Row; stats: Row }) {
         </small>
       </span>
       <strong className="small-value">{value}</strong>
-    </div>
+      <ChevronRight size={14} />
+    </button>
   );
 }
 

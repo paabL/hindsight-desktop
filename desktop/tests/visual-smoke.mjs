@@ -94,6 +94,7 @@ try {
     'operations',
     'audit',
     'timeline',
+    'consolidation',
     'server',
     'admin',
     'facts',
@@ -149,7 +150,7 @@ try {
     throw new Error('Le renderer doit rester isolé de Node.');
   if (errors.length) throw new Error(errors.join('\n'));
   console.log(
-    'Vérification visuelle réussie : 16 vues, sources par banque, recherche, lecture, filtres, graphe, raccourcis et thème sombre.',
+    'Vérification visuelle réussie : 17 vues, sources par banque, recherche, lecture, filtres, graphe, raccourcis et thème sombre.',
   );
 } finally {
   await browser?.close();

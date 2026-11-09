@@ -464,11 +464,11 @@ final class ConsumptionTests: XCTestCase {
     func testGatedActionsRefuseWhileBankIsPaused() async throws {
         let (c, t, _) = pauseFixture()
         await c.pause(bank: testBank, reason: nil)
-        let ops = OperationsViewModel(client: makeClient(t), bank: testBank)
-        ops.pauseGate = c.gate
-        ops.requestConsolidation()
-        XCTAssertNil(ops.confirmation)
-        XCTAssertEqual(ops.actionMessage, c.blockReason(testBank))
+        let consolidation = ConsolidationViewModel(client: makeClient(t), bank: testBank)
+        consolidation.pauseGate = c.gate
+        consolidation.requestConsolidation()
+        XCTAssertNil(consolidation.confirmation)
+        XCTAssertEqual(consolidation.actionMessage, c.blockReason(testBank))
 
         let coverage = FileCoverageViewModel(settings: InMemorySettingsStore(), client: { makeClient(t) }, bank: { testBank })
         coverage.pauseGate = c.gate

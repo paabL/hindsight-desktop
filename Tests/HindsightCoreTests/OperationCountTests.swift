@@ -32,12 +32,10 @@ final class OperationCountTests: XCTestCase {
         let vm = OperationsViewModel(client: makeClient(mock), bank: testBank)
         vm.statusFilter = .failed
         await vm.reload()
-        XCTAssertEqual(vm.stats?.operationsByStatus?["failed"], 1, "The aggregate remains cached on the server")
         XCTAssertTrue(vm.rows.isEmpty)
         XCTAssertEqual(vm.operationCounts, ["failed": 0, "pending": 1, "processing": 2])
-        XCTAssertTrue(mock.requests.filter { $0.path.hasSuffix("/stats") }.allSatisfy { $0.queryValue("refresh") == nil })
-        // L'état de consolidation se lit à part (type « consolidation ») : hors des compteurs.
-        let reads = mock.requests.filter { $0.path.hasSuffix("/operations") && $0.queryValue("type") != "consolidation" }
+        XCTAssertFalse(mock.requests.contains { $0.path.hasSuffix("/stats") }, "The cached aggregate is never read")
+        let reads = mock.requests.filter { $0.path.hasSuffix("/operations") }
         XCTAssertEqual(reads.count, 3)
         XCTAssertEqual(reads.filter { $0.queryValue("status") == "failed" }.count, 1, "Reuse the displayed filter's total")
         XCTAssertTrue(reads.filter { $0.queryValue("status") != "failed" }.allSatisfy { $0.queryValue("limit") == "1" })
@@ -55,7 +53,7 @@ final class OperationCountTests: XCTestCase {
         XCTAssertEqual(vm.operationCounts?["pending"], 1)
         XCTAssertEqual(vm.operationCounts?["processing"], 1)
         XCTAssertEqual(vm.operationCounts?["failed"], 3)
-        XCTAssertEqual(mock.requests.filter { $0.path.hasSuffix("/operations") && $0.queryValue("type") != "consolidation" }.count, 1)
+        XCTAssertEqual(mock.requests.filter { $0.path.hasSuffix("/operations") }.count, 1)
     }
 
     func testFilteredPaginationUsesFullTotalAndPreservesGlobalScope() async {
@@ -97,9 +95,7 @@ final class OperationCountTests: XCTestCase {
         XCTAssertEqual(vm.rows.count, 2)
         XCTAssertEqual(vm.operationCounts, ["failed": 9, "pending": 5, "processing": 3])
         // Les deux lectures de l'état de consolidation (type « consolidation ») ne sont pas des compteurs.
-        let counters = mock.requests.filter {
-            $0.path.hasSuffix("/operations") && $0.queryValue("limit") == "1" && $0.queryValue("type") != "consolidation"
-        }
+        let counters = mock.requests.filter { $0.path.hasSuffix("/operations") && $0.queryValue("limit") == "1" }
         XCTAssertEqual(counters.count, 3)
         XCTAssertTrue(counters.allSatisfy { $0.queryValue("type") == nil && $0.queryValue("exclude_parents") == "true" })
     }
@@ -116,7 +112,6 @@ final class OperationCountTests: XCTestCase {
         XCTAssertEqual(vm.rows.count, 1)
         XCTAssertNil(vm.operationCounts, "The UI explicitly falls back to counts among loaded operations")
         XCTAssertNil(vm.state.errorMessage)
-        XCTAssertNotNil(vm.stats)
     }
 
     func testRetryWithNoRemainingFailuresRefreshesTheVisibleStateWithoutWriting() async {

@@ -48,6 +48,7 @@ opens explicitly labeled fictional data. Native file and server access uses Taur
 | Search | Recall, exact text and confirmed reflect; filters and links to original documents |
 | Models | Every model setting: diagram with selectors, decision switches and tooltips; accounts; all roles; installation and services |
 | Memory → Documents | Stored text, facts, history, attachments, tags, scopes, reprocessing and deletion |
+| Memory → Consolidation | State, progress, pace and time left; the confirmed **Consolidate** and **Reconsolidate** actions; observation scopes; observations created or updated, with word-level changes, source facts and values removed |
 | Sources → a folder | File comparison with the bank, **Upload all** or a selection, confirmed uploads; automatic folder sync is suspended |
 | Activity → Processing | Queued and completed work, errors, pause and resume, and confirmed processing controls |
 | Activity → Usage | Traces, costs, token rates, price lists and limits |

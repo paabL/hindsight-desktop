@@ -2,7 +2,8 @@ import Foundation
 import HindsightAPI
 import Observation
 
-/// Suivi des opérations asynchrones d'une banque : file d'attente, échecs, consolidation, relance.
+/// Suivi des opérations asynchrones d'une banque : file d'attente, échecs, relance.
+/// La consolidation (état, lancement, changements) a sa propre vue : `ConsolidationViewModel`.
 @MainActor
 @Observable
 public final class OperationsViewModel {
@@ -19,24 +20,8 @@ public final class OperationsViewModel {
     public private(set) var state: LoadState<Void> = .idle
     public private(set) var rows: [OperationRow] = []
     public private(set) var total = 0
-    public private(set) var stats: BankStatsResponse?
     /// Live bank-wide totals. `/stats` caches its operation counts alongside expensive memory aggregates.
     public private(set) var operationCounts: [String: Int]?
-    /// Réglages résolus de la banque : rechargés à chaque ouverture de l'écran, gardés pendant les sondages.
-    public private(set) var bankConfig: BankConfigResponse?
-    /// Consolidations en cours et en attente (lu à chaque rechargement, une ligne par statut).
-    public private(set) var activeConsolidations: ActiveConsolidations?
-    /// Drapeau `features.observations` du serveur (réglé par `BankSession`).
-    public var serverObservations: Bool?
-
-    /// Même état que la Vue d'ensemble : désactivée, en cours, faits à consolider ou à jour.
-    public var consolidation: ConsolidationStatus? {
-        stats.map {
-            ConsolidationStatus(
-                stats: $0, config: bankConfig, serverObservations: serverObservations,
-                operations: activeConsolidations ?? ActiveConsolidations())
-        }
-    }
     public private(set) var selectedDetail: LoadState<OperationStatusResponse> = .idle
     public private(set) var selectedID: String?
     public private(set) var isLoadingMore = false
@@ -109,18 +94,11 @@ public final class OperationsViewModel {
         if !silently { state = .loading }
         do {
             let visibleCount = silently ? max(100, nextOffset) : 100
+            // Seules les listes d'opérations : `/stats` relit toute la banque, trop cher pour un écran qui sonde.
             async let list = fetchWindow(requested, visibleCount: visibleCount)
-            async let st = try? client.bankStats(bank)
             async let mode = try? client.isConsultationOnly()
-            // Un réglage change dans un autre écran : relu à chaque ouverture, pas à chaque sondage.
-            let readConfig = !silently || bankConfig == nil
-            async let cfg = Self.readConfig(client, bank, when: readConfig)
-            async let consolidating = ConsolidationStatus.activeOperations(client, bank)
             let l = try await list
-            let statistics = await st
             let isConsultation = await mode
-            let config = await cfg
-            let active = await consolidating
             try Task.checkCancellation()
             guard revision == listRevision, requested == query else { return }
             consultationOnly = isConsultation ?? consultationOnly
@@ -128,9 +106,6 @@ public final class OperationsViewModel {
             nextOffset = l.nextOffset
             total = l.total
             exhausted = l.exhausted
-            stats = statistics
-            if let config { bankConfig = config }
-            activeConsolidations = active
             operationCounts = l.counts
             state = .loaded(())
             if let id = selectedID { await refreshDetail(id, silently: true) }
@@ -208,10 +183,6 @@ public final class OperationsViewModel {
             for try await result in group { counts[result.status] = result.total }
             return counts
         }
-    }
-    private static func readConfig(_ client: HindsightClient, _ bank: String, when read: Bool) async -> BankConfigResponse? {
-        guard read else { return nil }
-        return try? await client.bankConfig(bank)
     }
     private func matches(_ row: OperationResponse, _ query: Query) -> Bool {
         query.status == .all || OperationStatusKind(row.status).rawValue == query.status.rawValue
@@ -316,8 +287,7 @@ public final class OperationsViewModel {
     // MARK: Suivi automatique
 
     /// Rafraîchit périodiquement tant que la vue est visible : toutes les `seconds` secondes quand des
-    /// opérations sont actives, `idleFactor` fois moins souvent sinon (la liste et `/stats` coûtent sur une
-    /// grosse banque).
+    /// opérations sont actives, `idleFactor` fois moins souvent sinon (les listes coûtent sur une grosse banque).
     public func startAutoRefresh(every seconds: Double = 4, idleFactor: Double = 5) {
         stopAutoRefresh()
         pollTask = Task { [weak self] in
@@ -471,54 +441,6 @@ public final class OperationsViewModel {
                 let r = try await c.deleteOperation(b, id: row.id)
                 guard r.success else { throw HindsightError.refused(r.message) }
                 return ""
-            }
-        }
-    }
-
-    /// Refusée sans confirmation quand elle ne peut rien faire : banque sans observations (le serveur
-    /// terminerait l'opération aussitôt, sans rien traiter), consolidation déjà en cours, rien à consolider.
-    public func requestConsolidation() {
-        guard !consultationOnly, !blockedByPause() else { return }
-        if let refusal = consolidation?.refusal { actionMessage = refusal; return }
-        let pending = stats?.pendingConsolidation ?? 0
-        confirmation = ConfirmationRequest(
-            title: "Consolider les faits ?",
-            message: Self.consolidationMessage(pending: pending)
-                + (estimate?(.consolidation(facts: pending)).map { "\n\n" + $0.summary } ?? ""),
-            confirmTitle: "Consolider", severity: .normal
-        ) { [weak self] in
-            guard let self, !self.blockedByPause() else { return }
-            if let refusal = self.consolidation?.refusal { self.actionMessage = refusal; return }
-            await self.run("Consolidation mise en file.") { c, b in
-                let r = try await c.triggerConsolidation(b)
-                return r.deduplicated ? "Une consolidation était déjà en file : cette demande l'a rejointe." : "Consolidation mise en file."
-            }
-        }
-    }
-
-    static func consolidationMessage(pending: Int) -> String {
-        let facts = pending == 1 ? "du seul fait pas encore consolidé" : "des \(Format.number(pending)) faits pas encore consolidés"
-        return "Le serveur va créer ou mettre à jour les observations à partir \(facts). Cela appelle le LLM de consolidation."
-            + " Chaque fait rejoint les observations de sa portée (celle de son document)."
-    }
-
-    public func requestRecoverConsolidation() {
-        guard !consultationOnly, !blockedByPause() else { return }
-        // Remis en file, ces faits attendraient une consolidation qui ne vient pas.
-        if consolidation?.enabled == false { actionMessage = ConsolidationStatus.disabledMessage; return }
-        let failed = stats?.failedConsolidation ?? 0
-        guard failed > 0 else { actionMessage = "Aucun fait en échec de consolidation."; return }
-        confirmation = ConfirmationRequest(
-            title: "Reconsolider les faits en échec ?",
-            message: failed == 1
-                ? "Le fait en échec de consolidation sera remis dans la file. Aucune observation n'est supprimée."
-                : "Les \(Format.number(failed)) faits en échec de consolidation seront remis dans la file. Aucune observation n'est supprimée.",
-            confirmTitle: "Reconsolider", severity: .normal
-        ) { [weak self] in
-            guard let self, !self.blockedByPause() else { return }
-            await self.run("Faits remis en file.") { c, b in
-                let r = try await c.recoverConsolidation(b)
-                return "\(Format.count(r.retriedCount, "fait")) remis en file."
             }
         }
     }

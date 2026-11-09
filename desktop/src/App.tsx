@@ -18,6 +18,7 @@ import {
   ChevronDown,
   ChevronRight,
   CircleHelp,
+  Combine,
   Command,
   Cpu,
   Database,
@@ -82,6 +83,7 @@ const ServerSettings = lazy(() =>
   import('./pages/Manage').then((m) => ({ default: m.ServerSettings })),
 );
 const ModelChoices = lazy(() => import('./pages/ModelChoices'));
+const Consolidation = lazy(() => import('./pages/Consolidation'));
 
 // Vues de la banque choisie, puis, sous un trait, ce qui vaut pour tout le serveur (⌘1…7 dans cet ordre).
 const basePrimary = [
@@ -101,6 +103,7 @@ const baseSections = [
   { id: 'search', label: 'Recherche', icon: Search },
   { id: 'sources', label: 'Sources', icon: Folder },
   { id: 'documents', label: 'Documents', icon: FileText },
+  { id: 'consolidation', label: 'Consolidation', icon: Combine },
   { id: 'operations', label: 'Traitements', icon: ListTodo },
   { id: 'consumption', label: 'Consommation', icon: BarChart3 },
   { id: 'audit', label: 'Journaux', icon: Activity },
@@ -120,6 +123,7 @@ const englishLabels: Record<Section, string> = {
   search: 'Search',
   consumption: 'Usage',
   documents: 'Documents',
+  consolidation: 'Consolidation',
   dashboard: 'Overview',
   memory: 'Memory behavior',
   operations: 'Processing',
@@ -145,7 +149,7 @@ const viewGroups: Partial<
   memory: {
     label: 'Vues de la mémoire',
     english: 'Memory views',
-    views: ['facts', 'documents', 'timeline', 'graph'],
+    views: ['facts', 'documents', 'consolidation', 'timeline', 'graph'],
   },
   activity: {
     label: 'Vues de l’activité',
@@ -159,7 +163,8 @@ const viewGroups: Partial<
   },
 };
 function groupFor(section: Section): NavigationGroup {
-  if (['facts', 'documents', 'timeline', 'graph'].includes(section)) return 'memory';
+  if (['facts', 'documents', 'consolidation', 'timeline', 'graph'].includes(section))
+    return 'memory';
   if (section === 'sources') return 'sources';
   if (['operations', 'consumption', 'audit'].includes(section)) return 'activity';
   if (['settings', 'admin', 'memory', 'server'].includes(section)) return 'settings';
@@ -482,7 +487,7 @@ export default function App() {
       ? 0.3
       : route === 'settings' || serverWork
         ? 2
-        : route === 'operations'
+        : route === 'operations' || route === 'consolidation'
           ? 20
           : route === 'consumption'
             ? 30
@@ -683,6 +688,8 @@ export default function App() {
         return <SearchPage {...props} />;
       case 'documents':
         return <Documents {...props} />;
+      case 'consolidation':
+        return <Consolidation {...props} />;
       case 'consumption':
         return <Consumption {...props} />;
       case 'dashboard':

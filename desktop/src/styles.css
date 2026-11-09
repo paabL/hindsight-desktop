@@ -2474,6 +2474,72 @@ tbody tr:hover {
 .queue-overview strong.small-value {
   font-size: 12px;
 }
+.observation-scopes .scope-bar {
+  display: flex;
+  gap: 2px;
+  height: 8px;
+  margin: 2px 24px 6px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--neutral-light);
+}
+.observation-scopes .scope-bar > span {
+  min-width: 3px;
+  flex-basis: 0;
+}
+.observation-scopes .scope-bar > .color-0 {
+  background: var(--accent);
+}
+.observation-scopes .scope-bar > .color-1 {
+  background: var(--sage);
+}
+.observation-scopes .scope-bar > .color-2 {
+  background: var(--lavender);
+}
+.observation-scopes .scope-bar > .color-3 {
+  background: var(--blue);
+}
+.observation-scopes .rest {
+  background: var(--line-strong);
+}
+.scope-legend {
+  list-style: none;
+  margin: 0;
+  padding: 6px 24px 14px;
+}
+.scope-legend li {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 0;
+  border-top: 1px solid var(--line-soft);
+  font-size: 11px;
+}
+.scope-legend li:first-child {
+  border-top: 0;
+}
+.scope-legend .scope-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+}
+.scope-legend .scope-name.untagged {
+  color: var(--secondary);
+}
+.scope-legend .scope-share {
+  font-size: 10px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.scope-legend strong {
+  min-width: 52px;
+  text-align: right;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
 .timeline-toolbar {
   display: flex;
   gap: 14px;
@@ -5245,6 +5311,216 @@ button.folder-row > svg:last-child {
 .fact-row .icon-button {
   margin-top: -3px;
 }
+/* Mémoire › Consolidation */
+.consolidation-progress {
+  padding: 20px 24px 18px;
+}
+.consolidation-headline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.consolidation-headline strong {
+  font-size: 15px;
+  font-weight: 550;
+  color: var(--ink);
+}
+.consolidation-last {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--faint);
+}
+.consolidation-advance {
+  margin-top: 16px;
+}
+.consolidation-advance .progress-track {
+  height: 6px;
+}
+.consolidation-advance p {
+  margin: 9px 0 0;
+  font-size: 11px;
+  color: var(--secondary);
+  font-variant-numeric: tabular-nums;
+}
+.consolidation-advance p.consolidation-pace {
+  margin-top: 4px;
+  color: var(--faint);
+}
+.consolidation-failed {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-soft);
+  font-size: 11px;
+  color: var(--secondary);
+}
+.consolidation-failed .button {
+  margin-left: auto;
+}
+.change-rows {
+  padding: 2px 0 4px;
+}
+.change-row {
+  border-top: 1px solid var(--line-soft);
+}
+.change-row:first-child {
+  border-top: 0;
+}
+.change-row-head {
+  display: grid;
+  grid-template-columns: 16px 136px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  width: 100%;
+  padding: 12px 22px 12px 18px;
+  background: none;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+.change-row.open {
+  background: var(--surface-subtle);
+}
+.change-row-head:hover {
+  background: var(--hover);
+}
+.change-row-head > svg {
+  margin-top: 3px;
+  color: var(--faint);
+}
+.change-row-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding-top: 1px;
+}
+.change-row-main .change-text {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.change-row.open .change-row-main .change-text {
+  display: block;
+}
+.change-row-main small {
+  display: block;
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--faint);
+}
+.change-row-date {
+  padding-top: 3px;
+  font-size: 10px;
+  color: var(--faint);
+  white-space: nowrap;
+}
+.change-detail {
+  padding: 4px 22px 16px 182px;
+}
+.change-detail h3 {
+  margin: 12px 0 6px;
+  font-size: 10px;
+  font-weight: 550;
+  letter-spacing: 0.2px;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.text-diff {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--secondary);
+  white-space: pre-wrap;
+}
+.text-diff .diff-removed {
+  color: var(--red);
+  background: var(--red-light);
+  text-decoration: line-through;
+  border-radius: 3px;
+}
+.text-diff .diff-added {
+  color: var(--sage-ink);
+  background: var(--sage-light);
+  border-radius: 3px;
+}
+.change-detail .notice.removed-values {
+  margin: 12px 0 0;
+}
+.change-sources {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.change-sources li {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 6px 0;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--ink);
+}
+.change-sources small {
+  display: block;
+  font-size: 10px;
+  color: var(--faint);
+}
+.change-empty {
+  margin: 4px 0 0;
+  font-size: 10.5px;
+  color: var(--faint);
+}
+.queue-overview > button.queue-row-link {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 15px 0;
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--line-soft);
+  font: inherit;
+  font-size: 11px;
+  color: var(--secondary);
+  text-align: left;
+  cursor: pointer;
+}
+.queue-overview > button.queue-row-link strong {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.queue-overview > button.queue-row-link > svg {
+  color: var(--faint);
+}
+.queue-overview > button.queue-row-link:hover strong,
+.queue-overview > button.queue-row-link:hover > svg {
+  color: var(--accent-strong);
+}
+@media (max-width: 860px) {
+  .change-row-head {
+    grid-template-columns: 16px minmax(0, 1fr);
+  }
+  .change-row-badges,
+  .change-row-date {
+    grid-column: 2;
+  }
+  .change-detail {
+    padding-left: 46px;
+  }
+}
 .timeline-facts {
   margin-bottom: 15px;
 }
@@ -5406,7 +5682,7 @@ button.folder-row > svg:last-child {
   margin-top: 18px;
 }
 
-/* Consolidation : même état dans la Vue d'ensemble et dans Traitements. */
+/* Consolidation : même état dans la Vue d'ensemble et dans sa vue. */
 .queue-overview .queue-label {
   display: flex;
   flex-direction: column;
@@ -5415,9 +5691,6 @@ button.folder-row > svg:last-child {
 .queue-overview .queue-label small {
   font-size: 10px;
   color: var(--faint);
-}
-.operations-summary .consolidation-state strong {
-  font-size: 12px;
 }
 .notice.consolidation-off {
   align-items: center;

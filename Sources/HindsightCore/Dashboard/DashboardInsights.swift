@@ -15,7 +15,7 @@ public struct DashboardSnapshot: Sendable {
     /// Totaux vivants des opérations (en attente, en cours, en échec), lus comme dans Traitements :
     /// `/stats` met ses compteurs d'opérations en cache avec ses agrégats coûteux.
     public var operationCounts: [String: Int]?
-    /// Même état de consolidation que Traitements.
+    /// Même état de consolidation que la vue Consolidation.
     public var consolidation: ConsolidationStatus?
     public var config: BankConfigResponse?
     /// Totaux lus en direct, comme les pages Faits et Documents : `/stats` sert des agrégats en cache.

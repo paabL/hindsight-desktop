@@ -5,6 +5,7 @@ export type Section =
   | 'model-settings'
   | 'search'
   | 'facts'
+  | 'consolidation'
   | 'documents'
   | 'consumption'
   | 'dashboard'

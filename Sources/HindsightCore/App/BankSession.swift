@@ -13,6 +13,7 @@ public final class BankSession {
     public let dashboard: DashboardViewModel
     public let documents: DocumentsViewModel
     public let operations: OperationsViewModel
+    public let consolidation: ConsolidationViewModel
     public let search: SearchViewModel
     public let timeline: TimelineViewModel
     public let graph: GraphViewModel
@@ -33,6 +34,7 @@ public final class BankSession {
         self.dashboard = DashboardViewModel(client: client, bank: bank)
         self.documents = DocumentsViewModel(client: client, bank: bank, attachmentLoader: loader)
         self.operations = OperationsViewModel(client: client, bank: bank)
+        self.consolidation = ConsolidationViewModel(client: client, bank: bank)
         self.search = SearchViewModel(client: client, bank: bank)
         self.timeline = TimelineViewModel(client: client, bank: bank)
         self.graph = GraphViewModel(client: client, bank: bank)
@@ -46,7 +48,7 @@ public final class BankSession {
         self.memoryDesign = MemoryDesignViewModel(client: client, bank: bank, estimator: services?.estimator)
         let is110 = ServerCapabilities.is110(apiVersion)
         self.operations.serverIs110 = is110
-        self.operations.serverObservations = features?.observations
+        self.consolidation.serverObservations = features?.observations
         self.documents.serverIs110 = is110
         self.memoryDesign.serverIs110 = is110
         let configWritable = ServerCapabilities.bankConfigWritable(features)
@@ -68,6 +70,7 @@ public final class BankSession {
         self.memoryDesign.onConfigChanged = configChanged
         self.admin.onConfigChanged = configChanged
         self.operations.estimate = estimate
+        self.consolidation.estimate = estimate
         self.documents.estimate = estimate
         self.search.estimate = estimate
         self.admin.estimate = estimate

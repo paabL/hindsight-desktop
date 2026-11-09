@@ -131,9 +131,9 @@ test('les messages d’état composés du moteur sont traduits sans toucher aux 
   );
   assert.equal(
     nativeSystemMessage(
-      'Fusion terminée (1 document ajouté). 12 faits attendent la consolidation de « équipe » : lancez-la depuis « Activité › Traitements ».',
+      'Fusion terminée (1 document ajouté). 12 faits attendent la consolidation de « équipe » : lancez-la depuis « Mémoire › Consolidation ».',
     ),
-    'Merge complete (1 document added). 12 facts are waiting for consolidation in “équipe”. Run it from Activity › Processing.',
+    'Merge complete (1 document added). 12 facts are waiting for consolidation in “équipe”. Run it from Memory › Consolidation.',
   );
   assert.equal(
     nativeSystemMessage(

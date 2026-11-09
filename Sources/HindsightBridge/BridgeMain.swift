@@ -345,8 +345,10 @@ final class DesktopBridge {
             default: operations.requestDelete(row)
             }
         case "operations.retryFailed": await (try session()).operations.requestRetryAllFailed()
-        case "operations.consolidate": (try session()).operations.requestConsolidation()
-        case "operations.recover": (try session()).operations.requestRecoverConsolidation()
+        case "consolidation.consolidate": (try session()).consolidation.requestConsolidation()
+        case "consolidation.recover": (try session()).consolidation.requestRecoverConsolidation()
+        case "consolidation.more": await (try session()).consolidation.loadMore()
+        case "consolidation.sources": return ["sources": wire(try await (try session()).consolidation.sources(of: str("id")))]
         case "pause.pause", "pause.resume":
             let bank = p["all"] as? Bool == true ? nil : try session().bank
             let pausing = command == "pause.pause"
@@ -668,6 +670,12 @@ final class DesktopBridge {
             s.graph.minCount = 1
             await s.graph.reload(layout: false)
         case "audit": await s.audit.reload(); await s.reads.reload()
+        case "consolidation":
+            if let raw = p["period"] as? String {
+                guard let period = ConsolidationViewModel.Period(rawValue: raw) else { throw BridgeFailure("Période inconnue.") }
+                if period != s.consolidation.period { await s.consolidation.setPeriod(period); break }
+            }
+            await s.consolidation.reload(silently: p["polling"] as? Bool == true)
         case "memory": await s.memoryDesign.reload()
         case "search":
             await s.catalog.loadIfNeeded()
@@ -684,7 +692,7 @@ final class DesktopBridge {
         return [workspace.confirmation, updater.confirmation, ownConfirmation, app.confirmation, app.memoryFolder.confirmation, app.service.confirmation,
                 app.pause.confirmation, app.coverage.confirmation,
                 app.serverSettings.confirmation, app.localDecision.confirmation, app.bankManagement.confirmation,
-                s?.operations.confirmation, s?.admin.confirmation, s?.memoryDesign.confirmation,
+                s?.operations.confirmation, s?.consolidation.confirmation, s?.admin.confirmation, s?.memoryDesign.confirmation,
                 s?.documents.reader?.confirmation, s?.audit.confirmation].compactMap { $0 }
     }
 
@@ -696,7 +704,7 @@ final class DesktopBridge {
         app.service.confirmation = nil; app.pause.confirmation = nil; app.coverage.confirmation = nil
         app.serverSettings.confirmation = nil; app.localDecision.confirmation = nil
         app.bankManagement.confirmation = nil
-        app.session?.operations.confirmation = nil; app.session?.admin.confirmation = nil
+        app.session?.operations.confirmation = nil; app.session?.consolidation.confirmation = nil; app.session?.admin.confirmation = nil
         app.session?.memoryDesign.confirmation = nil; app.session?.documents.reader?.confirmation = nil
         app.session?.audit.confirmation = nil
     }
@@ -718,7 +726,7 @@ final class DesktopBridge {
                     "version": wire(app.connection.version), "banks": wire(app.banks), "bank": wire(app.selectedBankID),
                     "folder": wire(openFolder?.catalog == true ? app.memoryFolder.repository?.path : nil), "pause": pauseSnapshot(),
                     // Mode consultation (en-tête `X-Hindsight-Mode`) : lu avec la Vue d'ensemble ou Traitements, dit partout.
-                    "consultationOnly": app.session.map { $0.operations.consultationOnly || $0.dashboard.snapshot?.consultationOnly == true } ?? false],
+                    "consultationOnly": app.session.map { $0.operations.consultationOnly || $0.consolidation.consultationOnly || $0.dashboard.snapshot?.consultationOnly == true } ?? false],
             "serviceBusy": serviceTask != nil || app.service.isBusy,
             "updates": updateSnapshot(),
             "section": section, "data": sectionData(sourceRevision: sourceRevision), "messages": messages.map { SecretMasker.mask($0) },
@@ -740,7 +748,7 @@ final class DesktopBridge {
     func currentMessages() -> [String] {
         [note, app.bannerError, app.pause.message, app.bankManagement.message,
          app.service.message, app.serverSettings.actionMessage, app.coverage.actionMessage,
-         app.session?.admin.actionMessage, app.session?.operations.actionMessage,
+         app.session?.admin.actionMessage, app.session?.operations.actionMessage, app.session?.consolidation.actionMessage,
          app.session?.memoryDesign.actionMessage, app.session?.documents.reader?.actionMessage,
          app.session?.audit.actionMessage, app.memoryFolder.importSummary].compactMap { $0 }
     }
@@ -759,6 +767,7 @@ final class DesktopBridge {
         if let s = app.session {
             if emitted(s.admin.actionMessage) { s.admin.actionMessage = nil }
             if emitted(s.operations.actionMessage) { s.operations.actionMessage = nil }
+            if emitted(s.consolidation.actionMessage) { s.consolidation.actionMessage = nil }
             if emitted(s.memoryDesign.actionMessage) { s.memoryDesign.actionMessage = nil }
             if emitted(s.audit.actionMessage) { s.audit.actionMessage = nil }
             if let reader = s.documents.reader, emitted(reader.actionMessage) { reader.actionMessage = nil }
@@ -841,10 +850,17 @@ final class DesktopBridge {
                     "canLoadMore": s?.operations.canLoadMore ?? false, "error": wire(s?.operations.state.errorMessage),
                     "consultationOnly": s?.operations.consultationOnly ?? false,
                     // « Exécuter maintenant » n'est proposé que là où le moteur l'accepte (serveur 1.1, prochaine tentative à venir).
-                    "runNowIDs": s.map { s in s.operations.rows.filter { s.operations.canRunNow($0) }.map(\.id) } ?? [],
-                    "failedConsolidation": wire(s?.operations.stats?.failedConsolidation),
-                    // Même état que la Vue d'ensemble : « Consolider » n'est proposé que s'il peut agir.
-                    "consolidation": wire(s?.operations.consolidation)]
+                    // La consolidation (état, lancement, changements) a sa vue : Mémoire › Consolidation.
+                    "runNowIDs": s.map { s in s.operations.rows.filter { s.operations.canRunNow($0) }.map(\.id) } ?? []]
+        case "consolidation":
+            let c = s?.consolidation
+            return ["status": wire(c?.status), "rawFacts": wire(c?.rawFacts), "consolidatedFacts": wire(c?.consolidatedFacts),
+                    "lastConsolidatedAt": wire(c?.stats?.lastConsolidatedAt), "pace": wire(c?.pace), "scopes": wire(c?.scopes),
+                    "observationTotal": wire(c?.stats.map { $0.nodesByFactType["observation"] ?? $0.totalObservations }),
+                    "period": c?.period.rawValue ?? "day", "counts": wire(c?.counts), "changes": wire(c?.changes ?? []),
+                    "canLoadMore": c?.canLoadMore ?? false, "loadingMore": c?.isLoadingMore ?? false,
+                    "consultationOnly": c?.consultationOnly ?? false, "busy": c?.isBusy ?? false,
+                    "loaded": c?.state.value != nil, "error": wire(c?.state.errorMessage), "partialErrors": wire(c?.partialErrors ?? [])]
         case "consumption":
             let m = app.consumption!
             // Totaux, histogramme et répartition calculés par le moteur sur tout l'historique suivi : la page ne
