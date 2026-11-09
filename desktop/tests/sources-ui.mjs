@@ -155,7 +155,7 @@ try {
   await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible();
   await page.evaluate(() => (window.__sourceTest.slow = 800));
   const back = Date.now();
-  await nav.getByRole('button', { name: /^Sources/ }).click();
+  await nav.getByRole('button', { name: /^Documents/ }).click();
   await expect(page.locator('.source-row').first()).toBeVisible({ timeout: 500 });
   const reopenMs = Date.now() - back;
   await expect(page.getByRole('button', { name: 'Collect sources', exact: true })).toBeEnabled();

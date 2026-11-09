@@ -24,7 +24,6 @@ import {
   Database,
   Eye,
   FileText,
-  Folder,
   Gauge,
   GitBranch,
   Layers3,
@@ -67,7 +66,7 @@ import {
 import Sources from './pages/Sources';
 import { mergeSourceSnapshot } from './source-snapshot';
 import Updates from './pages/Updates';
-import { Documents, Models, SearchPage } from './pages/Library';
+import { Models, SearchPage } from './pages/Library';
 import Consumption from './pages/Consumption';
 const Audit = lazy(() => import('./pages/Explore').then((m) => ({ default: m.Audit })));
 const Dashboard = lazy(() => import('./pages/Explore').then((m) => ({ default: m.Dashboard })));
@@ -91,7 +90,7 @@ const basePrimary = [
   { id: 'facts', label: 'Mémoire', english: 'Memory', icon: Layers3 },
   { id: 'models', label: 'Connaissances', english: 'Knowledge', icon: BookOpen },
   { id: 'search', label: 'Recherche', icon: Search },
-  { id: 'sources', label: 'Sources', english: 'Sources', icon: Folder },
+  { id: 'sources', label: 'Documents', english: 'Documents', icon: FileText },
   { id: 'operations', label: 'Activité', english: 'Activity', icon: Activity },
   { id: 'model-settings', label: 'Modèles', english: 'Models', icon: Cpu },
 ] as const;
@@ -101,8 +100,7 @@ const baseSections = [
   { id: 'facts', label: 'Faits', icon: Layers3 },
   { id: 'models', label: 'Connaissances', icon: BookOpen },
   { id: 'search', label: 'Recherche', icon: Search },
-  { id: 'sources', label: 'Sources', icon: Folder },
-  { id: 'documents', label: 'Documents', icon: FileText },
+  { id: 'sources', label: 'Documents', icon: FileText },
   { id: 'consolidation', label: 'Consolidation', icon: Combine },
   { id: 'operations', label: 'Traitements', icon: ListTodo },
   { id: 'consumption', label: 'Consommation', icon: BarChart3 },
@@ -116,7 +114,7 @@ const baseSections = [
   { id: 'settings', label: 'Application', icon: Settings2 },
 ] as const;
 const englishLabels: Record<Section, string> = {
-  sources: 'Sources',
+  sources: 'Documents',
   facts: 'Facts',
   models: 'Knowledge',
   'model-settings': 'Models',
@@ -149,7 +147,7 @@ const viewGroups: Partial<
   memory: {
     label: 'Vues de la mémoire',
     english: 'Memory views',
-    views: ['facts', 'documents', 'consolidation', 'timeline', 'graph'],
+    views: ['facts', 'consolidation', 'timeline', 'graph'],
   },
   activity: {
     label: 'Vues de l’activité',
@@ -163,9 +161,8 @@ const viewGroups: Partial<
   },
 };
 function groupFor(section: Section): NavigationGroup {
-  if (['facts', 'documents', 'consolidation', 'timeline', 'graph'].includes(section))
-    return 'memory';
-  if (section === 'sources') return 'sources';
+  if (['facts', 'consolidation', 'timeline', 'graph'].includes(section)) return 'memory';
+  if (section === 'sources' || section === 'documents') return 'sources';
   if (['operations', 'consumption', 'audit'].includes(section)) return 'activity';
   if (['settings', 'admin', 'memory', 'server'].includes(section)) return 'settings';
   if (section === 'models') return 'knowledge';
@@ -182,8 +179,10 @@ const initial: Snapshot = {
 };
 function initialRoute(): Section {
   const id = location.hash.slice(1);
-  // Ancien lien « Dossiers suivis » : les dossiers de la banque sont désormais dans Sources.
+  // Ancien lien « Dossiers suivis » : les dossiers de la banque sont désormais dans Documents.
   if (id === 'coverage') return 'sources';
+  // Les documents de la banque et les dossiers qui les fournissent ont une seule page : Documents.
+  if (id === 'documents') return 'sources';
   return baseSections.some((s) => s.id === id) ? (id as Section) : 'dashboard';
 }
 
@@ -397,7 +396,9 @@ export default function App() {
     },
     [run],
   );
-  function navigate(section: Section) {
+  function navigate(target: Section) {
+    // Une seule page Documents : l’ancien onglet Mémoire › Documents y mène.
+    const section: Section = target === 'documents' ? 'sources' : target;
     viewArgs.current = {};
     routeRef.current = section;
     setRoute(section);
@@ -686,8 +687,6 @@ export default function App() {
         return <Facts {...props} />;
       case 'search':
         return <SearchPage {...props} />;
-      case 'documents':
-        return <Documents {...props} />;
       case 'consolidation':
         return <Consolidation {...props} />;
       case 'consumption':

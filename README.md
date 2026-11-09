@@ -39,7 +39,7 @@ For the everyday workflow, see the short [user guide](docs/USER_GUIDE.md).
 4. Open **Models** to choose the model behind each memory function. Accounts,
    every role and installation are on the same page, under the diagram. Save
    prepared changes, then restart the server separately when ready.
-5. Open **Sources** and add the folders on this Mac that should feed the bank.
+5. Open **Documents** and add the folders on this Mac that should feed the bank.
    Each bank has its own folders, still listed without a server. Open a folder to
    compare its files with the bank, then confirm what to upload. A folder with a
    catalog shows its collected sources first while version checks and collection

@@ -138,7 +138,7 @@ try {
   await banner.getByRole('button', { name: 'Switch to “Orchard”' }).click();
   await expect(banner).toHaveCount(0);
   // Dans sa banque, le dossier figure parmi les sources, avec son catalogue.
-  await expect(page.getByRole('heading', { name: 'Sources', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Documents', exact: true })).toBeVisible();
   await expect(page.locator('.folder-row')).toContainText('orchard-archive');
   await expect(page.locator('.folder-row')).toContainText('40 collected sources');
   const switched = await page.evaluate(() =>

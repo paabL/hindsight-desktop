@@ -36,7 +36,7 @@ Every view follows the same rules. Check a new screen or setting against them:
 ## Navigation and language
 
 The sidebar has seven primary groups. The first six show the selected bank:
-**Overview**, **Memory**, **Knowledge**, **Search**, **Sources** and **Activity**.
+**Overview**, **Memory**, **Knowledge**, **Search**, **Documents** and **Activity**.
 **Models** concerns the server rather than one bank, so it sits below a thin line
 at the bottom of the sidebar, next to Settings. Overview is the initial view. All
 views are visible through these groups; there is no Advanced navigation section.
@@ -44,18 +44,18 @@ views are visible through these groups; there is no Advanced navigation section.
 | Group | Views |
 | --- | --- |
 | Overview | Bank statistics, processing status and recent documents |
-| Memory | Facts, Documents, Timeline, Graph |
+| Memory | Facts, Consolidation, Timeline, Graph |
 | Knowledge | Knowledge pages and mental models |
 | Search | Recall, exact text and confirmed reflect |
 | Models | The model behind each memory function: diagram, accounts, every role and installation |
-| Sources | The folders on this Mac that feed the selected bank |
+| Documents | The bank's documents, under the folders on this Mac that provide them |
 | Activity | Processing, Usage, Logs |
 | Settings | Application, Memory bank, Memory behavior, Server |
 
 Groups with several views show a named tab bar above the page heading. A group
 click returns to its last selected tab. The Settings shortcut opens Application. Existing hash links remain valid; in
 particular, `#memory` still opens Memory behavior, while `#facts` opens the
-bank's facts. `#model-settings` opens Models without requiring a bank; `#models` still opens Knowledge. Browser back and forward update the view and active group together.
+bank's facts; `#sources` and `#documents` both open Documents. `#model-settings` opens Models without requiring a bank; `#models` still opens Knowledge. Browser back and forward update the view and active group together.
 The command palette lists every view and searches group and view names without
 requiring accents.
 
@@ -66,9 +66,12 @@ The public interface defaults to English. French is an explicit choice in
 Settings → Application → Language. Documents, source text, and content returned
 by the server keep their original language.
 
-**Memory** presents knowledge stored in the selected Hindsight bank. **Sources**
-lists the folders on this Mac that feed that bank, each with a one-line summary,
-and a single **Add a folder** action. Each bank has its own list; the same folder
+**Memory** presents what the selected Hindsight bank derived from its documents:
+facts, consolidation, timeline and graph. **Documents** is the one place for the
+documents themselves: the folders on this Mac that provide them, each with a
+one-line summary, then the documents the bank keeps (search, sort and reader),
+with a single **Add a folder** action. The documents of the bank appear here once;
+a folder's own page compares its files with them. Each bank has its own list; the same folder
 can feed several banks, each with its own status. Without a server, the list of
 the last selected bank stays readable. Clicking a folder opens it:
 
@@ -86,7 +89,7 @@ the last selected bank stays readable. Clicking a folder opens it:
 
 Opening a folder, switching banks or removing the open folder returns to the
 list. A folder that disappeared from the Mac cannot be opened; it can only stop
-being tracked. Sources never tracks, collects or uploads a folder on navigation.
+being tracked. Documents never tracks, collects or uploads a folder on navigation.
 
 A catalog first displays its manifest with unchecked, locked entries, then compares
 the existing files with the bank in the background. Cached navigation keeps the
@@ -254,7 +257,7 @@ Counts always agree with their noun: « 0 fait », « 1 fait », « 2 faits » i
 - Focus stays inside dialogs; Escape closes the topmost dialog.
 - Reduced-motion preferences are respected.
 - `⌘K`: quick navigation; `⌘R`: refresh; `⌘,`: settings; `⌘1…7`: Overview, Memory, Knowledge,
-  Search, Sources, Activity and Models.
+  Search, Documents, Activity and Models.
 
 Example mode is explicitly enabled and visibly marks its data as fictional. It
 does not replace error states from a real connection.
@@ -263,7 +266,7 @@ does not replace error states from a real connection.
 
 Run `npm run docs:screenshots` from `desktop/` to capture the current frontend with
 a mocked native host and fictional data. The README shows Models in the dark
-theme; the guide shows Sources and account indicators in the light theme.
+theme; the guide shows Documents and account indicators in the light theme.
 The capture script cannot access a native bridge and blocks external page requests.
 Language/layout regression checks write separate images under `desktop/screenshots/`
 so they cannot silently replace the public README image.

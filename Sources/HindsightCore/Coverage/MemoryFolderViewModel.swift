@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-/// Le dossier à catalogue ouvert dans Sources. Le lire ne contacte jamais Hindsight ; le choix n'est pas
+/// Le dossier à catalogue ouvert dans Documents. Le lire ne contacte jamais Hindsight ; le choix n'est pas
 /// enregistré : chaque banque retrouve ses dossiers dans ses propres Sources (voir `SourceFolders`).
 @MainActor
 @Observable

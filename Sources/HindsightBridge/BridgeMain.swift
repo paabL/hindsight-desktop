@@ -118,7 +118,7 @@ final class DesktopBridge {
     var graphMode = GraphViewModel.Mode.entities
     var graphLimit = 300
     var catalogCache: (stamp: [String], header: Any)?
-    /// Dossier ouvert dans Sources (catalogue ou dossier ordinaire) ; nil : la liste des dossiers de la banque.
+    /// Dossier ouvert dans Documents (catalogue ou dossier ordinaire) ; nil : la liste des dossiers de la banque.
     var openFolder: (path: String, catalog: Bool)?
     /// Résumé de chaque catalogue pour la liste des dossiers, relu quand son fichier change.
     var catalogSummaries: [String: (stamp: [String], summary: [String: Any])] = [:]
@@ -623,6 +623,12 @@ final class DesktopBridge {
                 // Liste et dossier ordinaire : comparaison des fichiers avec la banque (les catalogues ont la leur).
                 await app.coverage.reload()
             }
+            // Documents : sans dossier ouvert, la page montre aussi les documents de la banque.
+            if openFolder == nil, let s = app.session {
+                if let query = p["query"] as? String { s.documents.query = query }
+                if let tags = p["tags"] as? [String] { s.documents.selectedTags = tags }
+                await s.documents.reload()
+            }
             return
         }
         if name == "consumption" {
@@ -807,6 +813,7 @@ final class DesktopBridge {
         switch section {
         case "sources":
             var data = foldersData()
+            if openFolder == nil, let s { data["documents"] = documentsData(s) }
             guard openFolder?.catalog == true else { return data }
             let folder = app.memoryFolder!
             let revision = workspace.revision.uuidString
@@ -847,10 +854,7 @@ final class DesktopBridge {
                     "entities": wire(s?.catalog.entities ?? []), "tags": wire(s?.catalog.plainTags ?? []), "tasks": wire(s?.catalog.tasks ?? []),
                     "serverIs120": s?.search.serverIs120 ?? false]
         case "documents":
-            return ["items": wire(s?.documents.sortedItems ?? []), "total": s?.documents.total ?? 0,
-                    "totalIsEstimate": s?.documents.totalIsEstimate ?? false,
-                    "canLoadMore": s?.documents.canLoadMore ?? false, "error": wire(s?.documents.state.errorMessage),
-                    "query": s?.documents.query ?? ""]
+            return s.map(documentsData) ?? [:]
         case "operations":
             return ["items": wire(s?.operations.rows.map(\.raw) ?? []), "total": s?.operations.total ?? 0,
                     "statusFilter": s?.operations.statusFilter.rawValue ?? "all", "refreshing": s?.operations.isRefreshing ?? false,
@@ -924,6 +928,14 @@ final class DesktopBridge {
         case "server", "model-settings": return serverSnapshot()
         default: return [:]
         }
+    }
+
+    /// Les documents de la banque, sous les dossiers de ce Mac dans la page Documents.
+    func documentsData(_ s: BankSession) -> [String: Any] {
+        ["items": wire(s.documents.sortedItems), "total": s.documents.total,
+         "totalIsEstimate": s.documents.totalIsEstimate,
+         "canLoadMore": s.documents.canLoadMore, "error": wire(s.documents.state.errorMessage),
+         "query": s.documents.query]
     }
 
     /// Sources : les dossiers de la banque et, pour un dossier ordinaire ouvert, ses fichiers comparés à la banque.

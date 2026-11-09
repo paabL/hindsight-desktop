@@ -536,7 +536,8 @@ function sourcesData(): Row {
   if (open?.kind === 'catalog')
     return { ...data.sources, ...base, folder: open.path, boundBank: selectedBank };
   if (open) return { ...base, items: exampleFiles[open.path] || [], compared: true };
-  return base;
+  // Page Documents : sous les dossiers, les documents de la banque.
+  return { ...base, documents: bankSectionData('documents') };
 }
 let factQuery = '';
 let factType = 'all';

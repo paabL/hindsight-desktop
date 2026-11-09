@@ -68,7 +68,7 @@ export function Dashboard({ data, navigate, run, busy }: PageProps) {
       actions={
         empty ? (
           <Button kind="primary" icon={FolderPlus} onClick={() => navigate('sources')}>
-            {t('Ajouter des sources', 'Add sources')}
+            {t('Ajouter des documents', 'Add documents')}
           </Button>
         ) : undefined
       }

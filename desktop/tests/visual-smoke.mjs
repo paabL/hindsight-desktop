@@ -44,8 +44,13 @@ try {
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Vue d’ensemble', exact: true })).toBeVisible();
   await page.keyboard.press('Meta+5');
-  await expect(page.getByRole('heading', { name: 'Sources', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Documents', exact: true })).toBeVisible();
   await expect(page.locator('.folder-row')).toHaveCount(2);
+  // Une seule page : les dossiers de ce Mac, puis les documents de la banque.
+  await expect(
+    page.getByRole('heading', { name: 'Dossiers de ce Mac', exact: true }),
+  ).toBeVisible();
+  await expect(page.locator('.bank-documents tbody tr')).toHaveCount(12);
   await page.screenshot({ path: path.join(root, 'screenshots/00-sources.png') });
   await page.locator('.folder-row', { hasText: 'horizon-memory' }).click();
   await expect(page.getByRole('heading', { name: 'horizon-memory', exact: true })).toBeVisible();
@@ -109,7 +114,7 @@ try {
       throw new Error(`Échec de rendu : ${route}`);
   }
   await page.getByRole('button', { name: 'Activer le thème clair' }).click();
-  // Sources rouvre le dossier laissé ouvert : le catalogue de l’exemple.
+  // Documents rouvre le dossier laissé ouvert : le catalogue de l’exemple.
   await page.keyboard.press('Meta+5');
   await expect(page.locator('.source-row')).toHaveCount(12);
   await page.screenshot({ path: path.join(root, 'screenshots/06-clair.png') });
@@ -117,21 +122,23 @@ try {
   await expect(page.getByRole('dialog', { name: 'Un raccourci vers votre mémoire' })).toBeVisible();
   await page.getByRole('textbox', { name: 'Rechercher une vue' }).fill('Documents');
   await page.locator('.command-list button').first().click();
-  await expect(page.locator('tbody tr')).toHaveCount(12);
+  await page.getByRole('button', { name: 'Tous les documents', exact: true }).click();
+  await expect(page.locator('.bank-documents tbody tr')).toHaveCount(12);
   await page.locator('.document-cell').first().click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.getByRole('textbox', { name: 'Rechercher dans le document' }).fill('décisions');
   await expect(page.locator('.markdown mark')).not.toHaveCount(0);
   await page.getByRole('button', { name: 'Fermer', exact: true }).click();
   await page.keyboard.press('Meta+5');
-  await page.getByRole('button', { name: 'Toutes les sources', exact: true }).click();
   await page.locator('.folder-row', { hasText: 'horizon-app' }).click();
   await expect(
     page.getByRole('heading', { name: 'horizon-app', level: 1, exact: true }),
   ).toBeVisible();
   await expect(page.locator('tbody tr')).toHaveCount(4);
-  await page.getByRole('button', { name: 'Toutes les sources', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Sources', level: 1, exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Tous les documents', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Documents', level: 1, exact: true }),
+  ).toBeVisible();
   await page
     .getByRole('button', { name: /Réglages/ })
     .first()
@@ -150,7 +157,7 @@ try {
     throw new Error('Le renderer doit rester isolé de Node.');
   if (errors.length) throw new Error(errors.join('\n'));
   console.log(
-    'Vérification visuelle réussie : 17 vues, sources par banque, recherche, lecture, filtres, graphe, raccourcis et thème sombre.',
+    'Vérification visuelle réussie : 16 vues, documents et dossiers par banque, recherche, lecture, filtres, graphe, raccourcis et thème sombre.',
   );
 } finally {
   await browser?.close();

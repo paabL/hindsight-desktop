@@ -9,7 +9,7 @@ The app uses **Tauri 2 + React / TypeScript** on macOS 15 or newer. React is the
 only frontend. The existing `HindsightCore` engine is reused through a private
 Swift bridge; the Rust shell provides the native connection and file dialogs.
 The interface offers English and French, light and dark themes. Overview is the
-initial view. Memory, Knowledge, Search, Models, Sources and Activity are visible in the
+initial view. Memory, Knowledge, Search, Documents, Activity and Models are visible in the
 sidebar; contextual tabs organize related views, and Settings stays at the bottom.
 
 ## Development
@@ -44,12 +44,12 @@ opens explicitly labeled fictional data. Native file and server access uses Taur
 | Overview | Bank statistics, processing status and recent documents; initial view |
 | Memory → Facts | Stored bank facts and links to their original documents |
 | Knowledge | Read, create, refresh and delete knowledge pages and mental models, and edit their name and question, with confirmation |
-| Sources | The folders that feed the selected bank; a catalog folder shows its sources, collection and upload previews |
+| Documents | The bank's documents (search, sort, reader) under the folders on this Mac that provide them; a catalog folder shows its sources, collection and upload previews |
 | Search | Recall, exact text and confirmed reflect; filters and links to original documents |
 | Models | Every model setting: diagram with selectors, decision switches and tooltips; accounts; all roles; installation and services |
-| Memory → Documents | Stored text, facts, history, attachments, tags, scopes, reprocessing and deletion |
+| Documents → a document | Stored text, facts, history, attachments, tags, scopes, reprocessing and deletion |
 | Memory → Consolidation | State, progress, pace and time left; the confirmed **Consolidate** and **Reconsolidate** actions; observation scopes; observations created or updated, with word-level changes, source facts and values removed |
-| Sources → a folder | File comparison with the bank, **Upload all** or a selection, confirmed uploads; automatic folder sync is suspended |
+| Documents → a folder | File comparison with the bank, **Upload all** or a selection, confirmed uploads; automatic folder sync is suspended |
 | Activity → Processing | Queued and completed work, errors, pause and resume, and confirmed processing controls |
 | Activity → Usage | Traces, costs, token rates, price lists and limits |
 | Memory → Timeline | Event or mention dates, search and source documents, up to 20,000 facts |
@@ -143,14 +143,14 @@ if replacement fails. Downloaded source code runs with the user's permissions.
 
 Each bank lists its own source folders; nothing is tracked until you add a folder.
 Settings remain accessible without a connected Hindsight server. Overview summarizes
-the selected bank; Sources keeps local files separate from stored memory. A folder
+the selected bank; Documents shows the bank's documents under the folders that provide them, and a folder keeps local files separate from stored memory. A folder
 with a catalog opens on that catalog in the bank named by its `memory-policy.json`.
 Optional collection is driven by a separately configured `collect.py` and
 `projects.toml`. Filters cover project, repository, source type
 and text, including original identifiers and provenance.
 
 The manifest is displayed immediately with unchecked, locked source states.
-Inventory comparison then runs in the background. Reopening Sources reuses its
+Inventory comparison then runs in the background. Reopening Documents reuses its
 displayed catalog while checking it again; initial display is not proof that the
 comparison has finished. `⌘R` refreshes this comparison without collecting.
 Loads and cached display data are scoped to server, bank and folder; late results

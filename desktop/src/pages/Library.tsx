@@ -1084,7 +1084,16 @@ export function SearchPage({ data, run, busy, notify }: PageProps) {
 // Au-delà, trier toute la banque demanderait trop de pages : le tri porte sur ce qui est chargé, et le dit.
 const sortLoadLimit = 2000;
 
-export function Documents({ data, run, busy, refresh, navigate }: PageProps) {
+/**
+ * Les documents de la banque, dans la page Documents sous les dossiers de ce Mac qui les fournissent :
+ * recherche, tri, lecteur. Le chargement suit la page (section « sources »).
+ */
+export function BankDocuments({
+  data,
+  run,
+  busy,
+  refresh,
+}: Pick<PageProps, 'data' | 'run' | 'busy' | 'refresh'>) {
   const { t } = useI18n();
   const [query, setQuery] = useState('');
   const [reader, setReader] = useState<Row | null>(null);
@@ -1107,15 +1116,14 @@ export function Documents({ data, run, busy, refresh, navigate }: PageProps) {
   const tagLabel = (tag: string) => tag.replace(/^[^:\s]+:/, '');
   return (
     <>
-      <PageHeader
-        eyebrow={t('La mémoire et ses origines', 'Memory and its sources')}
-        title="Documents"
-        description={t(
-          'Les documents conservés par la banque, et les faits qui en ont été extraits.',
-          'The documents kept by the bank, and the facts extracted from them.',
-        )}
-      />
-      <section className="card">
+      <section className="card bank-documents">
+        <CardHeader
+          title={t('Dans la banque', 'In the memory bank')}
+          subtitle={t(
+            'Les documents conservés par la banque, et les faits qui en ont été extraits.',
+            'The documents kept by the bank, and the facts extracted from them.',
+          )}
+        />
         <form
           className="list-toolbar"
           onSubmit={(e) => {
@@ -1252,17 +1260,11 @@ export function Documents({ data, run, busy, refresh, navigate }: PageProps) {
           />
         ) : (
           <Empty
-            title={t('La bibliothèque est vide', 'The library is empty')}
+            title={t('Aucun document dans la banque', 'No documents in the memory bank yet')}
             description={t(
-              'Ajoutez un dossier dans Sources pour comparer vos fichiers à la mémoire, puis choisissez ce que vous souhaitez envoyer.',
-              'Add a folder in Sources to compare files with memory, then choose what to upload.',
+              'Les documents envoyés depuis un dossier de ce Mac, ou par un autre client, apparaîtront ici.',
+              'Documents uploaded from a folder on this Mac, or by another client, will appear here.',
             )}
-            action={
-              <Button icon={FolderPlus} onClick={() => navigate('sources')}>
-                {' '}
-                {t('Ajouter des sources', 'Add sources')}
-              </Button>
-            }
           />
         )}
         {data.canLoadMore && (

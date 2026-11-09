@@ -1633,9 +1633,9 @@ const messageRules: Array<[RegExp, Rule]> = [
   [
     /^Annuler [\d\s,.]+ opérations? en attente \?$/,
     [
-      /^([\d\s,.]+) opérations? en attente dans ([\d\s,.]+) banques? (?:sera annulée|seront annulées) : extractions, consolidations, régénérations\.\nC'est définitif : un document dont l'extraction est annulée devra être renvoyé depuis « Sources »\.\nUne opération déjà commencée quand vous confirmez est interrompue à sa prochaine étape ; les faits déjà extraits ne sont pas touchés\.$/,
+      /^([\d\s,.]+) opérations? en attente dans ([\d\s,.]+) banques? (?:sera annulée|seront annulées) : extractions, consolidations, régénérations\.\nC'est définitif : un document dont l'extraction est annulée devra être renvoyé depuis « Documents »\.\nUne opération déjà commencée quand vous confirmez est interrompue à sa prochaine étape ; les faits déjà extraits ne sont pas touchés\.$/,
       (n, banks) =>
-        `${count(n, 'pending operation')} in ${count(banks, 'memory bank')} will be cancelled: extractions, consolidations, regenerations.\nThis is final: a document whose extraction is cancelled must be uploaded again from Sources.\nAn operation that has already started when you confirm will be interrupted at its next stage. Previously extracted facts are kept.`,
+        `${count(n, 'pending operation')} in ${count(banks, 'memory bank')} will be cancelled: extractions, consolidations, regenerations.\nThis is final: a document whose extraction is cancelled must be uploaded again from Documents.\nAn operation that has already started when you confirm will be interrupted at its next stage. Previously extracted facts are kept.`,
     ],
   ],
   [

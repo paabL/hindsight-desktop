@@ -551,7 +551,7 @@ public final class PauseController {
             title: "Annuler \(Format.count(ops.count, "opération")) en attente ?",
             message: [
                 "\(Format.count(ops.count, "opération")) en attente dans \(Format.count(banks.count, "banque")) \(one ? "sera annulée" : "seront annulées") : extractions, consolidations, régénérations.",
-                "C'est définitif : un document dont l'extraction est annulée devra être renvoyé depuis « Sources ».",
+                "C'est définitif : un document dont l'extraction est annulée devra être renvoyé depuis « Documents ».",
                 "Une opération déjà commencée quand vous confirmez est interrompue à sa prochaine étape ; les faits déjà extraits ne sont pas touchés.",
             ].joined(separator: "\n"),
             // Au-delà de dix, on fait retaper la banque (ou le nombre d'opérations pour toutes) : rien de propre à une langue.

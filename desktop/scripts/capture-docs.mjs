@@ -131,7 +131,7 @@ try {
 
   await page
     .getByRole('navigation', { name: 'Main navigation' })
-    .getByRole('button', { name: /^Sources/ })
+    .getByRole('button', { name: /^Documents/ })
     .click();
   await expect(page.locator('.folder-row')).toHaveCount(2);
   await page.getByRole('button', { name: 'Use light theme', exact: true }).click();
@@ -161,7 +161,7 @@ try {
     .screenshot({ path: path.join(output, 'hindsight-accounts.png'), animations: 'disabled' });
   if (errors.length) throw new Error(errors.join('\n'));
   console.log(
-    'Documentation screenshots updated: Models, Sources, a catalog, account status. Fictional data only.',
+    'Documentation screenshots updated: Models, Documents, a catalog, account status. Fictional data only.',
   );
 } finally {
   await browser?.close();

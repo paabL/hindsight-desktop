@@ -48,11 +48,13 @@ try {
   await expect(page.getByText('Exemple · données fictives', { exact: true })).toBeVisible();
   await page
     .getByRole('navigation', { name: 'Navigation principale' })
-    .getByRole('button', { name: /^Sources/ })
+    .getByRole('button', { name: /^Documents/ })
     .click();
-  await expect(page.getByRole('heading', { name: 'Sources', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Documents', exact: true })).toBeVisible();
   await expect(
-    page.getByText('Les dossiers de ce Mac qui alimentent « Projet Horizon ».'),
+    page.getByText(
+      'Les documents de « Projet Horizon », et les dossiers de ce Mac qui les fournissent.',
+    ),
   ).toBeVisible();
   await page.locator('.folder-row', { hasText: 'horizon-memory' }).click();
   await expect(page.getByRole('heading', { name: 'horizon-memory', exact: true })).toBeVisible();
@@ -65,7 +67,7 @@ try {
   await expect(page.getByRole('navigation', { name: 'Main navigation' })).toContainText('Memory');
   await page
     .getByRole('navigation', { name: 'Main navigation' })
-    .getByRole('button', { name: /^Sources/ })
+    .getByRole('button', { name: /^Documents/ })
     .click();
   await page.locator('.source-row').first().click();
   await expect(page.locator('.modal .markdown')).toBeVisible();

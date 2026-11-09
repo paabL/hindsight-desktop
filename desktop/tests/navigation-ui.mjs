@@ -17,14 +17,15 @@ const errors = [];
 const routes = [
   { id: 'dashboard', group: 'Overview' },
   { id: 'facts', group: 'Memory', list: 'Memory views', tab: 'Facts' },
-  { id: 'documents', group: 'Memory', list: 'Memory views', tab: 'Documents' },
+  // Mémoire › Documents a rejoint la page Documents : l’ancien lien y mène.
+  { id: 'documents', route: 'sources', group: 'Documents' },
   { id: 'consolidation', group: 'Memory', list: 'Memory views', tab: 'Consolidation' },
   { id: 'timeline', group: 'Memory', list: 'Memory views', tab: 'Timeline' },
   { id: 'graph', group: 'Memory', list: 'Memory views', tab: 'Graph' },
   { id: 'models', group: 'Knowledge' },
   { id: 'search', group: 'Search' },
   { id: 'model-settings', group: 'Models' },
-  { id: 'sources', group: 'Sources' },
+  { id: 'sources', group: 'Documents' },
   { id: 'operations', group: 'Activity', list: 'Activity views', tab: 'Processing' },
   { id: 'consumption', group: 'Activity', list: 'Activity views', tab: 'Usage' },
   { id: 'audit', group: 'Activity', list: 'Activity views', tab: 'Logs' },
@@ -77,7 +78,8 @@ try {
   await expect(nav).toContainText('Memory');
   await expect(nav).toContainText('Knowledge');
   await expect(nav).toContainText('Search');
-  await expect(nav).toContainText('Sources');
+  await expect(nav).toContainText('Documents');
+  await expect(nav).not.toContainText('Sources');
   await expect(nav).toContainText('Activity');
   await expect(nav).not.toContainText('Models');
   const general = page.getByRole('navigation', { name: 'Server and app settings' });
@@ -90,7 +92,7 @@ try {
   // Every existing deep link keeps its destination and reveals the owning group.
   for (const route of routes) {
     await page.goto(`${base}/?demo=1#${route.id}`);
-    await hasRoute(page, route.id);
+    await hasRoute(page, route.route || route.id);
     await selectedGroup(page, route.group);
     if (route.list) {
       const tabs = page.getByRole('tablist', { name: route.list, exact: true });
@@ -113,13 +115,13 @@ try {
   await hasRoute(page, 'search');
   await page.keyboard.press('Meta+2');
   await hasRoute(page, 'graph');
-  // Sources n'a qu'une vue : les dossiers de la banque. L'ancien lien « Dossiers suivis » y mène.
-  await nav.getByRole('button', { name: /^Sources/ }).click();
+  // Documents n'a qu'une vue : les dossiers de la banque et ses documents. L'ancien lien « Dossiers suivis » y mène.
+  await nav.getByRole('button', { name: /^Documents/ }).click();
   await hasRoute(page, 'sources');
   await expect(page.getByRole('tablist', { name: 'Source views' })).toHaveCount(0);
   await page.goto(`${base}/?demo=1#coverage`);
   await hasRoute(page, 'sources');
-  await selectedGroup(page, 'Sources');
+  await selectedGroup(page, 'Documents');
   await page.goto(`${base}/?demo=1#graph`);
   await hasRoute(page, 'graph');
   // Activity's last tab is Logs: the deep links above opened it after Processing and Usage.
@@ -182,7 +184,9 @@ try {
   await selectedGroup(page, 'Activity');
 
   await page.keyboard.press('Meta+k');
-  await expect(page.locator('.command-list button')).toHaveCount(routes.length);
+  await expect(page.locator('.command-list button')).toHaveCount(
+    routes.filter((route) => !route.route).length,
+  );
   await page.keyboard.press('Escape');
   await page.goto(`${base}/?demo=1#memory`);
   await page.reload();
@@ -319,7 +323,7 @@ try {
   await factsPage.close();
   expect(errors).toEqual([]);
   console.log(
-    'Navigation verified: seven groups, seventeen deep links and the former Tracked folders link, contextual tabs, history, remembered tabs, shortcuts and both languages.',
+    'Navigation verified: seven groups, seventeen deep links (Documents and the former Memory › Documents lead to one page) and the former Tracked folders link, contextual tabs, history, remembered tabs, shortcuts and both languages.',
   );
 } finally {
   await browser?.close();

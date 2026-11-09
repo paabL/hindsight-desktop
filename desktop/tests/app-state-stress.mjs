@@ -183,7 +183,7 @@ try {
   await folderRows.click();
   await expect(page.getByRole('heading', { name: 'b-notes', exact: true })).toBeVisible();
   await expect(page.getByRole('checkbox', { name: 'Select note.md' })).toBeVisible();
-  await page.getByRole('button', { name: 'All sources', exact: true }).click();
+  await page.getByRole('button', { name: 'All documents', exact: true }).click();
   await expect(folderRows).toHaveCount(1);
 
   // Switching bank from an open folder closes it and lists only the other bank's folders.

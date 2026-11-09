@@ -56,6 +56,7 @@ import {
 import { nativeSourceReason } from '../native-messages';
 import { sharedFileStates } from '../file-states';
 import { pickDirectory, pickDocuments } from '../transport';
+import { BankDocuments } from './Library';
 
 type SourcesProps = PageProps & {
   serverConnected: boolean;
@@ -82,14 +83,14 @@ function BackToSources({ run, busy }: { run: PageProps['run']; busy: boolean }) 
   return (
     <button className="back-link" disabled={busy} onClick={() => void run('folder.close')}>
       <ArrowLeft size={14} />
-      {t('Toutes les sources', 'All sources')}
+      {t('Tous les documents', 'All documents')}
     </button>
   );
 }
 
 /**
- * Sources : les dossiers de ce Mac qui alimentent la banque choisie. Un dossier ordinaire montre ses fichiers
- * comparés à la banque ; un dossier à catalogue (collect.py) montre son catalogue.
+ * Documents : les documents de la banque choisie et les dossiers de ce Mac qui les fournissent. Un dossier
+ * ordinaire montre ses fichiers comparés à la banque ; un dossier à catalogue (collect.py), son catalogue.
  */
 export default function Sources(props: SourcesProps) {
   useI18n();
@@ -524,7 +525,7 @@ function CatalogFolder({
               </Button>
             )}
             <Button icon={ArrowLeft} disabled={busy} onClick={() => void run('folder.close')}>
-              {t('Toutes les sources', 'All sources')}
+              {t('Tous les documents', 'All documents')}
             </Button>
           </div>
         </section>
@@ -1346,6 +1347,7 @@ function FolderList({
   busy,
   demo,
   navigate,
+  refresh,
   serverConnected,
   banks = [],
   onExploreExample,
@@ -1393,10 +1395,10 @@ function FolderList({
     return (
       <>
         <PageHeader
-          title={t('Sources', 'Sources')}
+          title="Documents"
           description={t(
-            'Les dossiers de ce Mac qui alimentent une banque Hindsight.',
-            'The folders on this Mac that feed a Hindsight memory bank.',
+            'Les documents d’une banque Hindsight, et les dossiers de ce Mac qui les fournissent.',
+            'The documents of a Hindsight memory bank, and the folders on this Mac that provide them.',
           )}
         />
         <section className="card">
@@ -1437,10 +1439,10 @@ function FolderList({
   return (
     <>
       <PageHeader
-        title={t('Sources', 'Sources')}
+        title="Documents"
         description={t(
-          `Les dossiers de ce Mac qui alimentent « ${bankName(listBank)} ».`,
-          `The folders on this Mac that feed “${bankName(listBank)}”.`,
+          `Les documents de « ${bankName(listBank)} », et les dossiers de ce Mac qui les fournissent.`,
+          `The documents of “${bankName(listBank)}”, and the folders on this Mac that provide them.`,
         )}
         actions={
           <Button
@@ -1464,6 +1466,7 @@ function FolderList({
       <ErrorNotice message={data.foldersError} />
       <ErrorNotice message={actionError} />
       <section className="card source-folders">
+        <CardHeader title={t('Dossiers de ce Mac', 'Folders on this Mac')} />
         {folders.length ? (
           <div className="folder-rows">
             {folders.map((folder) => {
@@ -1530,13 +1533,6 @@ function FolderList({
               'Ajoutez un dossier de ce Mac : ses fichiers seront comparés aux documents de la banque, puis vous choisirez ce qu’il faut envoyer.',
               'Add a folder from this Mac: its files are compared with the bank’s documents, then you choose what to upload.',
             )}
-            action={
-              data.bank || demo ? (
-                <Button icon={FolderPlus} disabled={busy} onClick={() => void add()}>
-                  {t('Ajouter un dossier', 'Add a folder')}
-                </Button>
-              ) : undefined
-            }
           />
         )}
       </section>
@@ -1557,6 +1553,9 @@ function FolderList({
           {warning}
         </div>
       ))}
+      {data.documents && (
+        <BankDocuments data={data.documents} run={run} busy={busy} refresh={refresh} />
+      )}
     </>
   );
 }

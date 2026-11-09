@@ -84,7 +84,7 @@ try {
   await expect(page.getByRole('button', { name: 'Prepare upload to Hindsight' })).toHaveCount(0);
   await expect(page.getByRole('alert')).toHaveCount(0);
   if (process.env.SCREENSHOT) await page.screenshot({ path: process.env.SCREENSHOT });
-  await page.getByRole('button', { name: 'All sources', exact: true }).click();
+  await page.getByRole('button', { name: 'All documents', exact: true }).click();
   const row = page.locator('.folder-row');
   await expect(row).toContainText('Notes');
   await expect(row).toContainText('2 files · 2 to upload');
