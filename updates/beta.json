@@ -1,11 +1,15 @@
 {
-  "version": "0.2.1",
-  "notes": "Hindsight Desktop 0.2.1 community beta.",
-  "pub_date": "2026-11-09T01:01:58.102Z",
+  "version": "0.2.2",
+  "notes": "Hindsight Desktop 0.2.2 community beta.",
+  "pub_date": "2026-11-09T01:07:30.747Z",
   "platforms": {
     "darwin-aarch64": {
-      "url": "https://github.com/paabL/hindsight-desktop/releases/download/v0.2.1/Hindsight-Desktop_0.2.1_macOS-Apple-Silicon.app.tar.gz",
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTWDFNTFRDcUlTTFZuSm9XU2FJbGxhTFRaa1dkU200bGIzWm1VcC9pcjd2UmE5VmlIajd2WGVNWlpncmNkdDNId2kyN0h4NS9rWW5wVVh2QlRTTWdVYXFvdlpSOEdBalFVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MTg2MTE4CWZpbGU6SGluZHNpZ2h0LURlc2t0b3BfMC4yLjFfbWFjT1MtQXBwbGUtU2lsaWNvbi5hcHAudGFyLmd6CXZlcnNpb246MC4yLjEKOFJSejlFNVBWdW5CRGRBMjJtNU4yZkNraGVkQ3VBWFBGVWZMUDFackZGK3YwKzJtYlhjRlltTms3MlArUE1zbDVzNnV2N29wODhNZU9FWTZvOStjQVE9PQo="
+      "url": "https://github.com/paabL/hindsight-desktop/releases/download/v0.2.2/Hindsight-Desktop_0.2.2_macOS-Apple-Silicon.app.tar.gz",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTWDFNTFRDcUlTTGVlOWkvNXNMRk5EZFNBZTFPeGkyTGZMT0xuOSthaU0zY1dGNlRMWUd5ZWM3aEszN3hoN1FoOVd1SVRUVzd0OWY3M053bEsxcG1ya3ptWWhRL1FHVlFrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MTg2NDUwCWZpbGU6SGluZHNpZ2h0LURlc2t0b3BfMC4yLjJfbWFjT1MtQXBwbGUtU2lsaWNvbi5hcHAudGFyLmd6CXZlcnNpb246MC4yLjIKTWhnUHFmblEwWm9COGZUdEFNWHFtMHFvNWFCZDI0ZWhPNUYyU1J1b2dvbGYzeEVVS1Ftd2E3TWFabU1hVTNDMjZ3QnpGSzBZOTU5SHdPeUNZV29zQUE9PQo="
+    },
+    "darwin": {
+      "url": "https://github.com/paabL/hindsight-desktop/releases/download/v0.2.2/Hindsight-Desktop_0.2.2_macOS-Apple-Silicon.app.tar.gz",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTWDFNTFRDcUlTTGVlOWkvNXNMRk5EZFNBZTFPeGkyTGZMT0xuOSthaU0zY1dGNlRMWUd5ZWM3aEszN3hoN1FoOVd1SVRUVzd0OWY3M053bEsxcG1ya3ptWWhRL1FHVlFrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MTg2NDUwCWZpbGU6SGluZHNpZ2h0LURlc2t0b3BfMC4yLjJfbWFjT1MtQXBwbGUtU2lsaWNvbi5hcHAudGFyLmd6CXZlcnNpb246MC4yLjIKTWhnUHFmblEwWm9COGZUdEFNWHFtMHFvNWFCZDI0ZWhPNUYyU1J1b2dvbGYzeEVVS1Ftd2E3TWFabU1hVTNDMjZ3QnpGSzBZOTU5SHdPeUNZV29zQUE9PQo="
     }
   }
 }
