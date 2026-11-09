@@ -678,6 +678,7 @@ const memoryLabels: Record<string, string> = {
   'Réordonner les résultats': 'Rerank results',
   'Écarter les faits inutiles': 'Remove irrelevant facts',
   'Retirer les doublons': 'Remove duplicates',
+  'Préférer les observations': 'Prefer observations',
 };
 /** Ce qui est retiré, dit en tête du dialogue de retrait (« 3 éléments choisis », « Documents sans fichier »). */
 function removalTarget(what: string) {

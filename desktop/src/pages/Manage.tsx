@@ -83,6 +83,7 @@ const memoryFields = {
   mentalModelDeltaUseDecisionModel: 'mental_model_delta_use_decision_model',
   recallDecisionModelPrune: 'recall_decision_model_prune',
   recallDecisionModelDedup: 'recall_decision_model_dedup',
+  recallPreferObservations: 'recall_prefer_observations',
 } as const;
 
 export function MemoryDesign({ data, run, busy, notify }: PageProps) {
@@ -559,6 +560,18 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
                 t('Réordonner les résultats', 'Rerank results'),
                 t('Affiner la pertinence après la recherche.', 'Refine relevance after searching.'),
               )}
+              {toggle(
+                'recallPreferObservations',
+                t('Préférer les observations', 'Prefer observations'),
+                t(
+                  'Quand une observation qui résume un fait est trouvée, le fait est retiré des résultats. Les faits pas encore consolidés restent.',
+                  'When an observation that sums up a fact is found, the fact is removed from the results. Facts not yet consolidated stay.',
+                ),
+              )}
+              <SearchPool
+                pool={data.searchPool}
+                preferred={Boolean(draft.recallPreferObservations)}
+              />
               {data.serverIs120 &&
                 advancedSection(
                   ['recallDecisionModelPrune', 'recallDecisionModelDedup'],
@@ -2194,4 +2207,47 @@ function templateEffect(dry: Row) {
         'Ce gabarit ne change rien à cette banque.',
         'This template changes nothing in this memory bank.',
       );
+}
+
+/** Ce dans quoi la recherche puise, selon « Préférer les observations » : le choix en cours est mis en avant. */
+function SearchPool({ pool, preferred }: { pool?: Row; preferred: boolean }) {
+  const { t } = useI18n();
+  if (!pool) return null;
+  const facts = Number(pool.facts) || 0;
+  const observations = Number(pool.observations) || 0;
+  const pending = Number(pool.notYetConsolidated) || 0;
+  const plural = (n: number, fr: [string, string], en: [string, string]) =>
+    `${number(n)} ${t(n > 1 ? fr[1] : fr[0], n === 1 ? en[0] : en[1])}`;
+  const factsLabel = (n: number) => plural(n, ['fait', 'faits'], ['fact', 'facts']);
+  const observationsLabel = plural(
+    observations,
+    ['observation', 'observations'],
+    ['observation', 'observations'],
+  );
+  const pendingLabel = plural(
+    pending,
+    ['fait pas encore consolidé', 'faits pas encore consolidés'],
+    ['fact not yet consolidated', 'facts not yet consolidated'],
+  );
+  return (
+    <div
+      className="search-pool"
+      aria-label={t('Ce dans quoi la recherche puise', 'What search draws from')}
+    >
+      <div className={preferred ? '' : 'is-current'}>
+        <span>{t('Sans', 'Off')}</span>
+        <strong>{number(facts + observations)}</strong>
+        <small>
+          {factsLabel(facts)} + {observationsLabel}
+        </small>
+      </div>
+      <div className={preferred ? 'is-current' : ''}>
+        <span>{t('Avec', 'On')}</span>
+        <strong>{number(observations + pending)}</strong>
+        <small>
+          {observationsLabel} + {pendingLabel}
+        </small>
+      </div>
+    </div>
+  );
 }

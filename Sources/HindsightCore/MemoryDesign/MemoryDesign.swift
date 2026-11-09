@@ -119,6 +119,8 @@ public struct MemoryDesign: Sendable, Hashable {
     /// Défauts de recall quand la requête ne dit rien (serveur 1.2.0).
     public var recallDecisionModelPrune = false
     public var recallDecisionModelDedup = false
+    /// Un fait déjà résumé par une observation présente dans les mêmes résultats en est retiré.
+    public var recallPreferObservations = false
     // Avancé (JSON brut ; vide = aucun)
     public var retainStrategies = ""
     public var retainDefaultStrategy = ""
@@ -162,6 +164,7 @@ public struct MemoryDesign: Sendable, Hashable {
         mentalModelDeltaUseDecisionModel = bool("mental_model_delta_use_decision_model") ?? true
         recallDecisionModelPrune = bool("recall_decision_model_prune") ?? false
         recallDecisionModelDedup = bool("recall_decision_model_dedup") ?? false
+        recallPreferObservations = bool("recall_prefer_observations") ?? false
         retainStrategies = json("retain_strategies")
         retainDefaultStrategy = str("retain_default_strategy") ?? ""
         consolidationStrategies = json("consolidation_strategies")
@@ -209,6 +212,7 @@ public struct MemoryDesign: Sendable, Hashable {
             "mental_model_delta_use_decision_model": .bool(mentalModelDeltaUseDecisionModel),
             "recall_decision_model_prune": .bool(recallDecisionModelPrune),
             "recall_decision_model_dedup": .bool(recallDecisionModelDedup),
+            "recall_prefer_observations": .bool(recallPreferObservations),
             "retain_strategies": rs,
             "retain_default_strategy": text(retainDefaultStrategy),
             "consolidation_strategies": cs,
@@ -251,6 +255,7 @@ public struct MemoryDesign: Sendable, Hashable {
         "enable_reranking": "Réordonner les résultats",
         "recall_decision_model_prune": "Écarter les faits inutiles",
         "recall_decision_model_dedup": "Retirer les doublons",
+        "recall_prefer_observations": "Préférer les observations",
     ]
 
     /// Clés de configuration que cette structure relit et enregistre ; une autre clé y serait ignorée.

@@ -917,6 +917,7 @@ final class DesktopBridge {
                     "auditStatus": auditStatus, "canToggleAudit": s?.audit.canToggleAudit ?? false,
                     "auditTotal": s?.audit.auditTotal ?? 0, "traceTotal": s?.audit.llmTotal ?? 0]
         case "memory": return ["draft": wire(s?.memoryDesign.draft), "configWritable": s?.memoryDesign.configWritable ?? true, "config": wire(s?.admin.config.value), "error": wire(s?.memoryDesign.state.errorMessage), "trial": wire(s?.memoryDesign.trial.value), "trialError": wire(s?.memoryDesign.trial.errorMessage), "problems": s?.memoryDesign.problems ?? [], "serverIs120": s?.memoryDesign.serverIs120 ?? false,
+                           "searchPool": wire(s?.memoryDesign.searchPool),
                            // Clés propres à la banque : la page les signale, « Revenir aux réglages du serveur » les supprime toutes.
                            "overridden": (s?.memoryDesign.overriddenKeys).map { Array($0).sorted() } ?? [],
                            "pauseCutAutoConsolidation": s.map { app.pause.cutAutoConsolidation($0.bank) } ?? false]

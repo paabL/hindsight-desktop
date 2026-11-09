@@ -36,6 +36,9 @@ public final class MemoryDesignViewModel {
     public var serverIs110 = false
     /// Serveur 1.2.0 : défauts prune/dedup de recall (réglé par `BankSession`).
     public var serverIs120 = false
+    /// Ce dans quoi la recherche puise, selon « Préférer les observations » (nil tant que non lu ou illisible).
+    public private(set) var searchPool: SearchPool?
+
     /// Faux quand le serveur refuse les réglages par banque (`bank_config_api`) : rien n'est proposé à l'écriture.
     public var configWritable = true
 
@@ -52,10 +55,13 @@ public final class MemoryDesignViewModel {
     public func reload() async {
         state = .loading
         do {
+            async let poolReq = SearchPool.load(client, bank)
             let r = try await client.bankConfig(bank)
             loaded = MemoryDesign(config: r.config)
             draft = loaded
             overriddenKeys = Set(r.overrides.keys)
+            // Les comptes sont un repère : un échec ne bloque pas la page.
+            searchPool = await poolReq
             state = .loaded(())
         } catch is CancellationError {
         } catch {
@@ -215,3 +221,34 @@ public final class MemoryDesignViewModel {
         }
     }
 }
+
+/// Ce dans quoi la recherche puise : les faits (monde et expérience), les observations, et les faits
+/// qu'aucune observation ne résume encore (en attente de consolidation, ou dont la consolidation a échoué).
+/// Avec « Préférer les observations », un fait déjà résumé par une observation présente dans les mêmes
+/// résultats en est retiré : la recherche rend alors surtout des observations, plus les faits non encore résumés.
+public struct SearchPool: Sendable, Hashable, Encodable {
+    public var facts: Int
+    public var observations: Int
+    public var notYetConsolidated: Int
+
+    /// Tout : faits et observations.
+    public var withoutPreference: Int { facts + observations }
+    /// Sans les faits déjà résumés : observations et faits qu'aucune observation ne couvre encore.
+    public var withPreference: Int { observations + notYetConsolidated }
+
+    static func load(_ client: HindsightClient, _ bank: String) async -> SearchPool? {
+        func total(_ q: MemoryListQuery) async throws -> Int { try await client.listMemories(bank, q).total }
+        do {
+            async let world = total(MemoryListQuery(type: "world", limit: 1))
+            async let experience = total(MemoryListQuery(type: "experience", limit: 1))
+            async let observation = total(MemoryListQuery(type: "observation", limit: 1))
+            async let pending = total(MemoryListQuery(consolidationState: "pending", limit: 1))
+            async let failed = total(MemoryListQuery(consolidationState: "failed", limit: 1))
+            return SearchPool(facts: try await world + experience, observations: try await observation,
+                              notYetConsolidated: try await pending + failed)
+        } catch {
+            return nil
+        }
+    }
+}
+

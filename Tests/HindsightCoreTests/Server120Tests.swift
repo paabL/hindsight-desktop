@@ -39,6 +39,46 @@ final class Server120Tests: XCTestCase {
         XCTAssertEqual(updates, ["recall_decision_model_prune": true, "mental_model_delta_use_decision_model": false])
     }
 
+    func testPreferObservationsIsReadAndSentOnlyWhenChanged() throws {
+        let before = MemoryDesign(config: [:])
+        XCTAssertFalse(before.recallPreferObservations, "défaut du serveur")
+        XCTAssertTrue(MemoryDesign(config: ["recall_prefer_observations": true]).recallPreferObservations)
+        var after = before
+        XCTAssertNil(after.updates(from: before)?["recall_prefer_observations"], "inchangée : jamais envoyée")
+        after.recallPreferObservations = true
+        XCTAssertEqual(try XCTUnwrap(after.updates(from: before)), ["recall_prefer_observations": true])
+        XCTAssertEqual(MemoryDesign.labels["recall_prefer_observations"], "Préférer les observations")
+    }
+
+    func testSearchPoolCountsWhatSearchDrawsFromWithAndWithoutPreference() async throws {
+        let t = MockTransport()
+        t.on("GET", "\(bankPath)/config", json: #"{"bank_id":"\#(testBank)","config":{"recall_prefer_observations":false},"overrides":{}}"#)
+        t.on("GET", "\(bankPath)/memories/list") { request in
+            let total: Int
+            switch (request.queryValue("type"), request.queryValue("consolidation_state")) {
+            case ("world"?, nil): total = 2500
+            case ("experience"?, nil): total = 31
+            case ("observation"?, nil): total = 3709
+            case (nil, "pending"?): total = 250
+            case (nil, "failed"?): total = 8
+            default: total = -1
+            }
+            return .json(#"{"items":[],"total":\#(total),"limit":1,"offset":0}"#)
+        }
+        let vm = MemoryDesignViewModel(client: makeClient(t), bank: testBank, estimator: nil)
+        await vm.reload()
+        let pool = try XCTUnwrap(vm.searchPool)
+        XCTAssertEqual(pool, SearchPool(facts: 2531, observations: 3709, notYetConsolidated: 258))
+        XCTAssertEqual(pool.withoutPreference, 6240)
+        XCTAssertEqual(pool.withPreference, 3967)
+
+        // Les comptes sont un repère : sans eux, la page des réglages s'affiche quand même.
+        t.on("GET", "\(bankPath)/memories/list", json: #"{"detail":"trop lent"}"#, status: 504)
+        await vm.reload()
+        XCTAssertNil(vm.searchPool)
+        XCTAssertNil(vm.state.errorMessage)
+    }
+
     func testRecallSendsRerankOnlyOn120WhenAsked() async throws {
         let t = MockTransport()
         t.on("POST", "\(bankPath)/memories/recall", json: Fixture.string("recall"))

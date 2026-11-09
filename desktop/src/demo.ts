@@ -349,6 +349,8 @@ const data: Partial<Record<Section, Row>> = {
   },
   memory: {
     serverIs120: true,
+    // Ce dans quoi la recherche puise, avec ou sans « Préférer les observations ».
+    searchPool: { facts: 2462, observations: 186, notYetConsolidated: 37 },
     draft: {
       retainMission: 'Conserver les décisions, leur contexte et les raisons de nos choix.',
       extractionMode: 'concise',
@@ -370,6 +372,7 @@ const data: Partial<Record<Section, Row>> = {
       mentalModelDeltaUseDecisionModel: true,
       recallDecisionModelPrune: false,
       recallDecisionModelDedup: false,
+      recallPreferObservations: false,
       storeDocumentText: true,
       entitiesAllowFreeForm: true,
     },

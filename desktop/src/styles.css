@@ -2556,6 +2556,47 @@ tbody tr:hover {
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
+.search-pool {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: -4px 0 14px;
+}
+.search-pool > div {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  column-gap: 10px;
+  row-gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  color: var(--secondary);
+}
+.search-pool > div.is-current {
+  border-color: var(--line-strong);
+  background: var(--neutral-light);
+  color: var(--ink);
+}
+.search-pool span {
+  font-size: 10px;
+  color: var(--faint);
+}
+.search-pool strong {
+  font-size: 15px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.search-pool small {
+  grid-column: 1 / -1;
+  font-size: 10px;
+  color: var(--faint);
+}
+@media (max-width: 640px) {
+  .search-pool {
+    grid-template-columns: 1fr;
+  }
+}
 .timeline-toolbar {
   display: flex;
   gap: 14px;
