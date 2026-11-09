@@ -331,14 +331,14 @@ public enum HelpTopic: String, CaseIterable, Sendable, Identifiable {
                 """)
         case .pause:
             return (
-                "Pause, gel et vidage",
+                "Pause et vidage",
                 """
-                L'API n'a pas de pause : trois niveaux s'en approchent.
+                L'API n'a pas de pause : l'app s'appuie sur ce qui existe, sans jamais redémarrer le serveur.
                 • **Pause** (une banque ou toutes) : l'app n'envoie plus rien et coupe la consolidation automatique \
-                (`enable_auto_consolidation`, rétablie à la reprise). La file existante continue d'être traitée.
-                • **Geler la file** : le service redémarre le serveur avec `HINDSIGHT_API_WORKER_ENABLED=false` \
-                (environnement du service, pas votre script) ; l'API et les lectures restent disponibles, les \
-                opérations attendent. Serveur lancé par l'app seulement.
+                (`enable_auto_consolidation`, rétablie à la reprise). Les consolidations et les régénérations de \
+                connaissances en cours ou en attente sont annulées : celle en cours finit son lot puis s'arrête, rien \
+                n'est perdu. À la reprise, la consolidation arrêtée repart sur les faits restants. Les extractions \
+                déjà en file continuent.
                 • **Vider la file** : annule les opérations en attente ; leur contenu devra être renvoyé.
                 Au-delà, « Arrêter le serveur » coupe tout, lectures comprises.
                 Les recherches avec reflect et les essais à blanc restent possibles : ils ne consomment qu'à votre \

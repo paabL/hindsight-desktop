@@ -119,17 +119,12 @@ export default function Operations({
         )}
         actions={<PauseTools run={run} busy={busy} pause={pause} bank={bank} readOnly={readOnly} />}
       />
-      {(pause?.frozen || pause?.workerOff) && (
+      {pause?.workerOff && (
         <div className="notice">
-          {pause?.frozen
-            ? t(
-                'La file du serveur est gelée : les opérations attendent jusqu’au dégel (⋯ › Dégeler).',
-                'The server queue is frozen: operations wait until it is unfrozen (⋯ › Unfreeze).',
-              )
-            : t(
-                'Le worker du serveur est arrêté par sa configuration : les opérations attendent.',
-                'The server worker is turned off by its configuration: operations wait.',
-              )}
+          {t(
+            'Le worker du serveur est arrêté : les opérations attendent. Redémarrez le serveur depuis Réglages › Serveur.',
+            'The server worker is off: operations wait. Restart the server from Settings › Server.',
+          )}
         </div>
       )}
       <div className="operations-summary">
@@ -230,7 +225,8 @@ export default function Operations({
                   {item.progress && (
                     <small>
                       {[
-                        stageLabel(item),
+                        // Une opération terminée ou annulée ne « consolide » plus : son étape n'est montrée qu'en cours.
+                        active ? stageLabel(item) : '',
                         item.progress.total != null
                           ? `${number(item.progress.processed)} / ${number(item.progress.total)}`
                           : '',
@@ -258,9 +254,9 @@ export default function Operations({
                       onClick={() => void run('operation.retry', { id: item.id })}
                     />
                   )}
-                  {item.status === 'pending' && (
+                  {active && (
                     <>
-                      {runNow.has(item.id) && (
+                      {item.status === 'pending' && runNow.has(item.id) && (
                         <IconButton
                           icon={Sparkles}
                           label={t('Exécuter maintenant', 'Run now')}

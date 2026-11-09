@@ -37,7 +37,7 @@ export type Snapshot = {
     connectionError?: string | null;
     serverURLNotice?: string | null;
     version?: Row;
-    /** État réel de la pause : toutes les banques, banques une à une, consolidation pas encore coupée, file gelée. */
+    /** État réel de la pause : toutes les banques, banques une à une, consolidation pas encore coupée, worker du serveur arrêté. */
     pause?: PauseState;
     consultationOnly?: boolean;
   };
@@ -53,9 +53,7 @@ export type PauseState = {
   banks: string[];
   uncut?: string[];
   unreleased?: string[];
-  frozen?: boolean;
   workerOff?: boolean;
-  canFreeze?: boolean;
 };
 export type Request = (command: string, args?: Row) => Promise<any>;
 export type PageProps = {

@@ -251,8 +251,8 @@ export default function App() {
     `${app.serverURL}|${app.bank || ''}|${app.folder || ''}`;
   const notify = useCallback((message: string) => setToast(message), []);
   const busy = busyCount > 0;
-  // Bandeau : ce que la pause suspend vraiment (envois, consolidation automatique, régénérations), la file
-  // gelée à part, et les banques dont la consolidation automatique n'a pas encore pu être coupée.
+  // Bandeau : ce que la pause suspend vraiment (envois, consolidations, régénérations), un worker serveur
+  // arrêté à part, et les banques dont la consolidation automatique n'a pas encore pu être coupée.
   const pauseState = snapshot.app.pause;
   const pausedBankName = (id: string) =>
     bankLabel(snapshot.app.banks.find((b) => b.bank_id === id)) || id;
@@ -287,14 +287,7 @@ export default function App() {
       parts.push(
         `${t('Consolidation automatique pas encore rétablie :', 'Automatic consolidation not restored yet:')} ${pauseState.unreleased.map(pausedBankName).join(', ')}.`,
       );
-    if (pauseState.frozen)
-      parts.push(
-        t(
-          'File du serveur gelée : aucune opération n’est traitée.',
-          'Server queue frozen: no operations are processed.',
-        ),
-      );
-    else if (pauseState.workerOff)
+    if (pauseState.workerOff)
       parts.push(
         t(
           'Worker du serveur arrêté : les opérations attendent.',

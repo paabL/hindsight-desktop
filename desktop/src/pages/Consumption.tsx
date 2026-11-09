@@ -11,7 +11,6 @@ import {
   Play,
   Settings2,
   ShieldCheck,
-  Snowflake,
   Trash2,
   Zap,
 } from 'lucide-react';
@@ -51,7 +50,6 @@ export function PauseTools({
   const bankPaused = !!bank && !!pause?.banks?.includes(bank);
   // Ce que la portée choisie dans les options permet : mettre en pause ou reprendre, jamais les deux.
   const scopePaused = all ? allPaused : bankPaused;
-  const frozen = !!pause?.frozen;
   const disabled = busy || readOnly;
   return (
     <>
@@ -109,12 +107,12 @@ export function PauseTools({
                 <p>
                   {scopePaused
                     ? t(
-                        'Les envois reprennent et la consolidation automatique retrouve son réglage d’avant la pause.',
-                        'Uploads resume and automatic consolidation returns to its setting from before the pause.',
+                        'Les envois reprennent, la consolidation arrêtée par la pause repart sur les faits restants et la consolidation automatique retrouve son réglage d’avant.',
+                        'Uploads resume, the consolidation stopped by the pause picks up the remaining facts and automatic consolidation returns to its setting from before.',
                       )
                     : t(
-                        'Suspend les envois de cette app, la consolidation automatique et les régénérations de connaissances. Les opérations déjà en file continuent.',
-                        'Pause uploads from this app, automatic consolidation and knowledge regenerations. Operations already queued keep running.',
+                        'Suspend les envois de cette app et la consolidation automatique. La consolidation en cours s’arrête après son lot et les régénérations de connaissances sont annulées, sans rien perdre. Les extractions déjà en file continuent.',
+                        'Pause uploads from this app and automatic consolidation. The running consolidation stops after its batch and knowledge regenerations are cancelled, with nothing lost. Extractions already queued keep running.',
                       )}
                 </p>
                 <div className="action-row">
@@ -129,48 +127,6 @@ export function PauseTools({
                   ) : (
                     <Button disabled={disabled} onClick={() => void run('pause.pause', { all })}>
                       {t('Mettre en pause', 'Pause')}
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </article>
-            <article>
-              <span className="category-icon lavender">
-                <Snowflake size={21} />
-              </span>
-              <div>
-                <h3>
-                  {frozen
-                    ? t('Dégeler la file du serveur', 'Unfreeze the server queue')
-                    : t('Geler la file du serveur', 'Freeze the server queue')}
-                </h3>
-                <p>
-                  {!pause?.canFreeze && !frozen
-                    ? t(
-                        'Possible seulement pour un serveur lancé par le service de l’app (Réglages › Serveur).',
-                        'Only available for a server started by the app’s service (Settings › Server).',
-                      )
-                    : frozen
-                      ? t(
-                          'Le serveur redémarre avec son traitement en arrière-plan : les opérations en attente seront traitées.',
-                          'The server restarts with background processing: pending operations will be processed.',
-                        )
-                      : t(
-                          'Redémarre le serveur avec son traitement en arrière-plan suspendu. Toutes les banques sont concernées.',
-                          'Restart the server with background processing suspended. All banks are affected.',
-                        )}
-                </p>
-                <div className="action-row">
-                  {frozen ? (
-                    <Button disabled={disabled} onClick={() => void run('pause.unfreeze')}>
-                      {t('Dégeler', 'Unfreeze')}
-                    </Button>
-                  ) : (
-                    <Button
-                      disabled={disabled || !pause?.canFreeze}
-                      onClick={() => void run('pause.freeze')}
-                    >
-                      {t('Geler', 'Freeze')}
                     </Button>
                   )}
                 </div>
@@ -212,7 +168,6 @@ export default function Consumption({ data, run, busy, notify }: PageProps) {
   const [priceText, setPriceText] = useState('');
   const [dollars, setDollars] = useState('');
   const [autoPause, setAutoPause] = useState(false);
-  const [budgetAction, setBudgetAction] = useState('softPause');
   const summary = data.summary || {};
   const today = summary.today || {};
   const events: Row[] = data.events || [];
@@ -280,7 +235,6 @@ export default function Consumption({ data, run, busy, notify }: PageProps) {
   function editBudgets() {
     setDollars(String(data.budgets?.dailyDollars ?? ''));
     setAutoPause(data.budgets?.actionConfirmed || false);
-    setBudgetAction(data.budgets?.action || 'softPause');
     setBudgets(true);
   }
 
@@ -560,7 +514,7 @@ export default function Consumption({ data, run, busy, notify }: PageProps) {
                 budget: {
                   dailyDollars,
                   warnAt: data.budgets?.warnAt ?? 0.8,
-                  action: autoPause ? budgetAction : 'alert',
+                  action: autoPause ? 'softPause' : 'alert',
                   actionConfirmed: autoPause,
                 },
               }).then(() => setBudgets(false));
@@ -584,34 +538,10 @@ export default function Consumption({ data, run, busy, notify }: PageProps) {
                 onChange={(e) => setAutoPause(e.target.checked)}
               />
               {t(
-                'Autoriser une action automatique au dépassement',
-                'Allow an automatic action when a limit is reached',
+                'Mettre toutes les banques en pause au dépassement',
+                'Pause all memory banks when a limit is reached',
               )}
             </label>
-            {autoPause && (
-              <label>
-                {t('Action autorisée', 'Allowed action')}
-                <select value={budgetAction} onChange={(e) => setBudgetAction(e.target.value)}>
-                  <option value="softPause">
-                    {t('Mettre toutes les banques en pause', 'Pause all memory banks')}
-                  </option>
-                  <option value="freezeQueue">
-                    {t(
-                      'Geler la file (redémarre le serveur)',
-                      'Freeze queue (restarts the server)',
-                    )}
-                  </option>
-                </select>
-              </label>
-            )}
-            {autoPause && budgetAction === 'freezeQueue' && data.canFreeze === false && (
-              <p className="form-hint">
-                {t(
-                  'Cette app n’a pas lancé le serveur : elle ne peut pas geler sa file. Au dépassement, toutes les banques seront mises en pause.',
-                  'This app did not start the server, so it cannot freeze its queue. When a limit is reached, all memory banks will be paused.',
-                )}
-              </p>
-            )}
             <p className="form-hint">
               {t(
                 'L’action automatique nécessite de laisser cette application ouverte. Sans elle, un plafond atteint déclenche une alerte.',

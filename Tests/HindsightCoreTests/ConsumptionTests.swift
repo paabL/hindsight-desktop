@@ -109,7 +109,7 @@ final class ConsumptionTests: XCTestCase {
 
     func testBudgetsSurviveSavingAndOlderSettings() async {
         let store = InMemorySettingsStore()
-        let b = ConsumptionBudgets(dailyDollars: 2, action: .freezeQueue, actionConfirmed: true)
+        let b = ConsumptionBudgets(dailyDollars: 2, action: .softPause, actionConfirmed: true)
         b.save(to: store)
         XCTAssertEqual(ConsumptionBudgets.load(from: store), b)
         store.set(#"{"dailyDollars":3}"#, forKey: "consumptionBudgets")
@@ -129,7 +129,8 @@ final class ConsumptionTests: XCTestCase {
             let raw = #"{"dailyDollars":2,"warnAt":0.65,"action":"freezeQueue","actionConfirmed":true,\#(legacy)}"#
             let store = InMemorySettingsStore(["consumptionBudgets": raw])
             let budgets = ConsumptionBudgets.load(from: store)
-            XCTAssertEqual(budgets, ConsumptionBudgets(dailyDollars: 2, warnAt: 0.65, action: .freezeQueue, actionConfirmed: true))
+            // L'ancien « Geler la file » (retiré) devient la pause, qui arrête aussi les consolidations.
+            XCTAssertEqual(budgets, ConsumptionBudgets(dailyDollars: 2, warnAt: 0.65, action: .softPause, actionConfirmed: true))
             XCTAssertFalse(budgets.isEmpty)
             budgets.save(to: store)
             let saved = try XCTUnwrap(store.string(forKey: "consumptionBudgets"))
@@ -221,7 +222,7 @@ final class ConsumptionTests: XCTestCase {
         t.on("GET", "\(bankPath)/config", json: #"{"bank_id":"b","config":{"enable_auto_consolidation":\#(autoConsolidation)},"overrides":\#(overrides)}"#)
         t.on("PATCH", "\(bankPath)/config", json: #"{"bank_id":"b","config":{},"overrides":{}}"#)
         let store = InMemorySettingsStore()
-        let c = PauseController(settings: store, client: { makeClient(t) }, banks: { [testBank] }, service: { nil }, server: { "http://s1" })
+        let c = PauseController(settings: store, client: { makeClient(t) }, banks: { [testBank] }, server: { "http://s1" })
         return (c, t, store)
     }
 
@@ -236,7 +237,7 @@ final class ConsumptionTests: XCTestCase {
         XCTAssertEqual(patch["updates"]?["enable_auto_consolidation"], .bool(false))
 
         // L'état survit au redémarrage de l'app.
-        let reopened = PauseController(settings: store, client: { makeClient(t) }, banks: { [testBank] }, service: { nil })
+        let reopened = PauseController(settings: store, client: { makeClient(t) }, banks: { [testBank] })
         XCTAssertTrue(reopened.isPaused(testBank))
 
         // Une pause globale par-dessus ne mémorise pas une seconde fois l'état d'avant.
@@ -274,7 +275,7 @@ final class ConsumptionTests: XCTestCase {
             up.value ? .json(#"{"bank_id":"b","config":{},"overrides":{}}"#) : .json(#"{"detail":"down"}"#, status: 503)
         }
         let banks = Lock<[String]>([])
-        let c = PauseController(settings: InMemorySettingsStore(), client: { makeClient(t) }, banks: { banks.value }, service: { nil }, server: { "http://s1" })
+        let c = PauseController(settings: InMemorySettingsStore(), client: { makeClient(t) }, banks: { banks.value }, server: { "http://s1" })
         // Lancée serveur injoignable : aucune banque connue.
         await c.pause(bank: nil, reason: nil)
         XCTAssertTrue(c.message?.contains("le bandeau propose de réessayer") == true, c.message ?? "")
@@ -321,9 +322,6 @@ final class ConsumptionTests: XCTestCase {
         XCTAssertEqual(c.blockReason(testBank), "Pause en cours sur toutes les banques : rien n'est envoyé. Reprenez depuis « Activité › Traitements ».")
         await c.resume(bank: nil)
         XCTAssertFalse(c.isPaused(testBank))
-        c.requestUnfreeze()
-        XCTAssertNil(c.confirmation)
-        XCTAssertEqual(c.message, "La file du serveur n'est pas gelée.")
         XCTAssertEqual(t.requests.filter { $0.method == "PATCH" }.count, 2, "une coupure, un rétablissement")
     }
 
@@ -343,7 +341,7 @@ final class ConsumptionTests: XCTestCase {
     func testHeldBanksBelongToTheirServer() async {
         let (c, _, store) = pauseFixture()
         await c.pause(bank: testBank, reason: nil)
-        let other = PauseController(settings: store, client: { makeClient(MockTransport()) }, banks: { [testBank] }, service: { nil }, server: { "http://s2" })
+        let other = PauseController(settings: store, client: { makeClient(MockTransport()) }, banks: { [testBank] }, server: { "http://s2" })
         XCTAssertTrue(other.heldBanks.isEmpty, "une banque du même nom sur un autre serveur n'est pas concernée")
         XCTAssertEqual(c.heldBanks, [testBank])
     }
@@ -415,13 +413,59 @@ final class ConsumptionTests: XCTestCase {
         XCTAssertTrue(c.message?.contains("4 régénérations de connaissances annulées") == true, c.message ?? "")
 
         // Pendant la pause, ce qui arrive est annulé à son tour ; après la reprise, plus rien n'est touché.
-        let again = await c.sweepRefreshes()
-        XCTAssertEqual(again, 4)
+        let again = await c.sweepPausedWork()
+        XCTAssertEqual(again.refreshes, 4)
+        XCTAssertEqual(again.consolidations, 0)
         await c.resume(bank: testBank)
+        XCTAssertFalse(t.requests.contains { $0.method == "POST" }, "aucune consolidation arrêtée : rien à relancer")
         let before = t.requests.count
-        let after = await c.sweepRefreshes()
-        XCTAssertEqual(after, 0)
+        let after = await c.sweepPausedWork()
+        XCTAssertEqual(after.refreshes, 0)
         XCTAssertEqual(t.requests.count, before)
+    }
+
+    func testPauseStopsConsolidationAndResumeRestartsIt() async throws {
+        let (c, t, store) = pauseFixture()
+        // Une consolidation lancée à la main en cours, et la tranche suivante déjà en file.
+        let queue = Lock([
+            (status: "processing", json: #"{"id":"c1","task_type":"consolidation","items_count":0,"status":"processing","created_at":"2026-11-08T21:00:00Z"}"#),
+            (status: "pending", json: #"{"id":"c2","task_type":"consolidation","items_count":0,"status":"pending","created_at":"2026-11-08T21:30:00Z"}"#),
+            (status: "pending", json: #"{"id":"x1","task_type":"batch_retain","items_count":1,"status":"pending","created_at":"2026-11-08T21:00:00Z"}"#),
+        ])
+        t.on("GET", "\(bankPath)/operations") { req in
+            let status = req.queryValue("status"), type = req.queryValue("type")
+            let ops = queue.value.filter { op in
+                op.status == status && (type.map { op.json.contains(#""task_type":"\#($0)""#) } ?? true)
+            }.map(\.json)
+            return .json(#"{"bank_id":"b","total":\#(ops.count),"limit":100,"offset":0,"operations":[\#(ops.joined(separator: ","))]}"#)
+        }
+        t.on("DELETE", "\(bankPath)/operations/*") { req in
+            let id = req.path.split(separator: "/").last.map(String.init) ?? ""
+            queue.value.removeAll { $0.json.contains(#""id":"\#(id)""#) }
+            return .json(#"{"success":true,"message":"ok","operation_id":"x"}"#)
+        }
+        t.on("POST", "\(bankPath)/consolidate", json: #"{"operation_id":"c3","deduplicated":false}"#)
+
+        await c.pause(bank: testBank, reason: nil)
+        let cancelled = t.requests.filter { $0.method == "DELETE" }.compactMap { $0.path.split(separator: "/").last.map(String.init) }
+        XCTAssertEqual(Set(cancelled), ["c1", "c2"], "la consolidation en cours et sa tranche suivante ; l'extraction continue")
+        XCTAssertTrue(c.message?.contains("2 consolidations s'arrêtent après leur lot en cours") == true, c.message ?? "")
+        XCTAssertEqual(c.stoppedConsolidations, [testBank])
+        XCTAssertFalse(t.requests.contains { $0.method == "POST" }, "rien n'est relancé pendant la pause")
+
+        // Mémorisé : la reprise relance même après un redémarrage de l'app.
+        let reopened = PauseController(settings: store, client: { makeClient(t) }, banks: { [testBank] }, server: { "http://s1" })
+        XCTAssertEqual(reopened.stoppedConsolidations, [testBank])
+
+        await c.resume(bank: testBank)
+        XCTAssertEqual(t.requests.filter { $0.method == "POST" && $0.path.hasSuffix("/consolidate") }.count, 1)
+        XCTAssertTrue(c.message?.contains("La consolidation de « \(testBank) » reprend là où la pause l'avait arrêtée.") == true, c.message ?? "")
+        XCTAssertTrue(c.stoppedConsolidations.isEmpty)
+
+        // Une nouvelle pause sans consolidation en cours ne relance rien à la reprise.
+        await c.pause(bank: testBank, reason: nil)
+        await c.resume(bank: testBank)
+        XCTAssertEqual(t.requests.filter { $0.method == "POST" && $0.path.hasSuffix("/consolidate") }.count, 1)
     }
 
     func testDuplicateRefreshesKeepOnePerPageAfterConfirmation() async throws {
@@ -446,19 +490,14 @@ final class ConsumptionTests: XCTestCase {
         XCTAssertEqual(found.pages, 1, "sans page connue, rien n'est compté ni annulé")
     }
 
-    func testAutomaticActionAndFreezeFallback() async {
+    func testAutomaticActionPausesAllBanks() async {
         let (c, t, _) = pauseFixture()
         await c.apply(.alert, reason: "x")
         XCTAssertFalse(c.anyPause)
-        // Sans service géré par l'app, le gel retombe sur la pause.
-        XCTAssertFalse(c.canFreeze)
-        await c.apply(.freezeQueue, reason: "Plafond atteint")
+        await c.apply(.softPause, reason: "Plafond atteint")
         XCTAssertTrue(c.globalPause)
         XCTAssertEqual(c.autoReason, "Plafond atteint")
         XCTAssertTrue(t.requests.contains { $0.method == "PATCH" })
-        c.requestFreeze()
-        XCTAssertNil(c.confirmation)
-        XCTAssertTrue(c.message?.contains("HINDSIGHT_API_WORKER_ENABLED=false") == true)
     }
 
     func testGatedActionsRefuseWhileBankIsPaused() async throws {

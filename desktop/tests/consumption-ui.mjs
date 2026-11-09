@@ -177,7 +177,8 @@ try {
     await expect(daily).toHaveValue('5');
     await daily.fill('12.5');
     await dialog.getByRole('checkbox').check();
-    await dialog.getByRole('combobox').selectOption('freezeQueue');
+    // Une seule action automatique : la pause. Plus de gel de la file.
+    await expect(dialog.getByRole('combobox')).toHaveCount(0);
     await save();
     await expect(dialog).toHaveCount(0);
     let requests = await page.evaluate(() => window.__consumptionFixture.requests);
@@ -188,7 +189,7 @@ try {
           budget: {
             dailyDollars: 12.5,
             warnAt: 0.8,
-            action: 'freezeQueue',
+            action: 'softPause',
             actionConfirmed: true,
           },
         },
@@ -197,7 +198,7 @@ try {
 
     await limits();
     await expect(daily).toHaveValue('12.5');
-    await expect(dialog.getByRole('combobox')).toHaveValue('freezeQueue');
+    await expect(dialog.getByRole('checkbox')).toBeChecked();
     await daily.fill('');
     await dialog.getByRole('checkbox').uncheck();
     await save();

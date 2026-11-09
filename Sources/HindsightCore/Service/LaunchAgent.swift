@@ -12,23 +12,25 @@ public struct LaunchAgentSpec: Sendable, Hashable {
     public var logPath: String
     public var runAtLoad: Bool
     public var path: String
-    /// File gelée : le serveur démarre sans son worker (`HINDSIGHT_API_WORKER_ENABLED=false`) ; l'API répond,
-    /// les opérations restent en attente. Posé dans l'environnement du service, pas dans le script de l'utilisateur.
-    public var workerPaused: Bool
 
-    public static let workerEnabledVariable = "HINDSIGHT_API_WORKER_ENABLED"
+    /// Posée par l'ancien « Geler la file » (retiré) : un agent qui la porte encore est réécrit sans elle.
+    static let legacyWorkerVariable = "HINDSIGHT_API_WORKER_ENABLED"
 
-    public init(scriptPath: String, logPath: String, runAtLoad: Bool, path: String, workerPaused: Bool = false) {
+    public init(scriptPath: String, logPath: String, runAtLoad: Bool, path: String) {
         self.scriptPath = scriptPath
         self.logPath = logPath
         self.runAtLoad = runAtLoad
         self.path = path
-        self.workerPaused = workerPaused
+    }
+
+    /// L'environnement d'un agent installé n'est pas celui qu'écrit cette version (variable manquante, ou
+    /// worker coupé par l'ancien gel de la file) : il faut le réécrire et le recharger.
+    public static func isOutdated(_ env: [String: String]?) -> Bool {
+        env?["HINDSIGHT_API_ENABLE_BANK_LLM_HEALTH"] == nil || env?[legacyWorkerVariable] != nil
     }
 
     public var plist: [String: Any] {
-        var env = ["PATH": path, "HINDSIGHT_API_ENABLE_BANK_LLM_HEALTH": "true"]
-        if workerPaused { env[Self.workerEnabledVariable] = "false" }
+        let env = ["PATH": path, "HINDSIGHT_API_ENABLE_BANK_LLM_HEALTH": "true"]
         return [
             "Label": Self.label,
             "ProgramArguments": [scriptPath],
@@ -53,7 +55,7 @@ public struct LaunchAgentSpec: Sendable, Hashable {
         let env = d["EnvironmentVariables"] as? [String: String]
         return LaunchAgentSpec(
             scriptPath: script, logPath: d["StandardOutPath"] as? String ?? "", runAtLoad: d["RunAtLoad"] as? Bool ?? false,
-            path: env?["PATH"] ?? "", workerPaused: env?[workerEnabledVariable]?.lowercased() == "false")
+            path: env?["PATH"] ?? "")
     }
 }
 

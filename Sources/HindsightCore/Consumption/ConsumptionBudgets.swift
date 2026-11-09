@@ -7,17 +7,14 @@ public struct ConsumptionBudgets: Codable, Sendable, Hashable {
     public enum Action: String, Codable, CaseIterable, Identifiable, Sendable {
         /// Notification et bandeau seulement.
         case alert
-        /// Pause douce de toutes les banques : plus d'envoi depuis l'app, consolidation automatique coupée.
+        /// Pause de toutes les banques : plus d'envoi depuis l'app, consolidations et régénérations arrêtées.
         case softPause
-        /// Gel de la file : le serveur redémarre sans traiter sa file (lectures toujours possibles).
-        case freezeQueue
 
         public var id: String { rawValue }
         public var title: String {
             switch self {
             case .alert: return "Alerter seulement"
             case .softPause: return "Mettre toutes les banques en pause"
-            case .freezeQueue: return "Geler la file"
             }
         }
     }
@@ -94,11 +91,13 @@ public struct ConsumptionBudgets: Codable, Sendable, Hashable {
     }
 
     // Les anciens champs de quota sont ignorés ; seuls les plafonds en dollars restent actifs.
+    // L'ancienne action « freezeQueue » (gel de la file, retiré) devient la pause : elle arrête aussi les consolidations.
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         dailyDollars = try c.decodeIfPresent(Double.self, forKey: .dailyDollars)
         warnAt = try c.decodeIfPresent(Double.self, forKey: .warnAt) ?? 0.8
-        action = try c.decodeIfPresent(Action.self, forKey: .action) ?? .softPause
+        let raw = try c.decodeIfPresent(String.self, forKey: .action)
+        action = raw.flatMap(Action.init(rawValue:)) ?? .softPause
         actionConfirmed = try c.decodeIfPresent(Bool.self, forKey: .actionConfirmed) ?? false
     }
 }

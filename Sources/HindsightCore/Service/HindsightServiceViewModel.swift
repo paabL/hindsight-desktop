@@ -319,10 +319,8 @@ public final class HindsightServiceViewModel {
         do {
             try ensureExecutable()
             try prepareLog()
-            // Une file gelée le reste après réinstallation : seul « Reprendre la file » la dégèle.
             let spec = LaunchAgentSpec(
-                scriptPath: scriptURL.path, logPath: paths.log.path, runAtLoad: startAtLogin, path: SystemProcessRunner.standardPath(),
-                workerPaused: installed?.workerPaused ?? false)
+                scriptPath: scriptURL.path, logPath: paths.log.path, runAtLoad: startAtLogin, path: SystemProcessRunner.standardPath())
             try await unloadAgent()
             try await waitUntilDown()
             guard let approvedURL = attemptScriptURL, let approvedHash = attemptScriptHash,
@@ -530,11 +528,13 @@ public final class HindsightServiceViewModel {
         return await waitUntilUp(action: "redémarré", replacingPID: previousPID)
     }
 
+    /// Un agent écrit par une version plus ancienne est réécrit puis rechargé avant le démarrage : il lui manque
+    /// une variable, ou il porte encore `HINDSIGHT_API_WORKER_ENABLED=false` de l'ancien « Geler la file », retiré.
     private func loadAgentForStart() async throws -> Bool {
         if let spec = installed,
            let data = try? Data(contentsOf: paths.plist),
            let raw = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
-           (raw["EnvironmentVariables"] as? [String: String])?["HINDSIGHT_API_ENABLE_BANK_LLM_HEALTH"] == nil {
+           LaunchAgentSpec.isOutdated(raw["EnvironmentVariables"] as? [String: String]) {
             try writePlist(spec)
             if try await checkedJobStatus().loaded {
                 try await unloadAgent()
@@ -548,87 +548,6 @@ public final class HindsightServiceViewModel {
             return true
         }
         return false
-    }
-
-    // MARK: Geler la file
-
-    /// Le service démarre le serveur sans worker (file gelée).
-    public var isWorkerPaused: Bool { installed?.workerPaused ?? false }
-
-    /// Le script de lancement fixe lui-même `HINDSIGHT_API_WORKER_ENABLED` : la valeur du service serait écrasée.
-    public var scriptOverridesWorker: Bool {
-        guard let text = try? String(contentsOf: scriptURL, encoding: .utf8) else { return false }
-        return text.split(separator: "\n").contains { line in
-            let l = line.trimmingCharacters(in: .whitespaces)
-            return !l.hasPrefix("#") && l.contains(LaunchAgentSpec.workerEnabledVariable + "=")
-        }
-    }
-
-    /// Gèle ou reprend la file : réécrit l'agent avec (ou sans) `HINDSIGHT_API_WORKER_ENABLED=false`, puis le
-    /// recharge (launchd ne relit l'environnement qu'au chargement) et attend l'API. L'appelant a obtenu la
-    /// confirmation de l'utilisateur, ou applique un plafond qu'il a confirmé.
-    @discardableResult
-    public func setWorkerPaused(_ paused: Bool) async -> Bool {
-        guard !isBusy, requireLocalEndpoint() else { return false }
-        guard var spec = installed else {
-            message = "Le serveur n'est pas lancé par le service de l'app : sa file ne peut pas être gelée d'ici."
-            return false
-        }
-        guard spec.workerPaused != paused else { return true }
-        beginOperation(.stopping)
-        beginAttempt()
-        defer { endOperation() }
-        spec.workerPaused = paused
-        job = await jobStatus()
-        if !job.running && !job.pending {
-            // Serveur arrêté : ne pas le démarrer. L'agent réécrit et déchargé, le prochain démarrage le recharge
-            // (launchd ne relit l'environnement qu'au chargement).
-            do {
-                try await unloadAgent()
-                try writePlist(spec)
-                installed = spec
-                job = await jobStatus()
-                status = computeStatus()
-                return true
-            } catch {
-                fail((paused ? "Gel de la file impossible : " : "Reprise de la file impossible : ") + "\(error)")
-                await refreshOperationState()
-                return false
-            }
-        }
-        guard !pointsToOtherScript else {
-            fail("Le service utilise un autre script. Réinstallez-le avec le script sélectionné avant de modifier sa file.")
-            return false
-        }
-        inspectScript()
-        if let problem = blockingIssues.first {
-            message = "Redémarrage refusé : \(problem)"
-            return false
-        }
-        if scriptChangedSinceApproval {
-            message = "Le script de lancement a changé depuis votre dernière approbation : redémarrez d'abord le serveur depuis Réglages › Serveur."
-            return false
-        }
-        status = .stopping
-        do {
-            try await unloadAgent()
-            try await waitUntilDown()
-            try writePlist(spec)
-            installed = spec
-            try prepareLog()
-            status = .starting
-            try requireAttemptScript()
-            let r = try await runner.run(ProcessInvocation(Self.launchctl, ["bootstrap", domain, paths.plist.path], timeout: 20))
-            guard r.succeeded else { throw ServiceError.launchctl("bootstrap", r.combined) }
-            let k = try await runner.run(ProcessInvocation(Self.launchctl, ["kickstart", target], timeout: 20))
-            guard k.succeeded else { throw ServiceError.launchctl("kickstart", k.combined) }
-        } catch {
-            fail((paused ? "Gel de la file impossible : " : "Reprise de la file impossible : ") + "\(error)")
-            await refreshOperationState()
-            return false
-        }
-        try? await Task.sleep(for: pollInterval)
-        return await waitUntilUp(action: paused ? "redémarré, file gelée" : "redémarré, file reprise")
     }
 
     private func unloadAgent() async throws {

@@ -58,7 +58,6 @@ const exact: Record<string, string> = {
   Cloner: 'Clone',
   Fusionner: 'Merge',
   'Appliquer le gabarit': 'Apply template',
-  'Dégeler la file': 'Unfreeze queue',
   'Exécuter maintenant': 'Run now',
   'Enregistrer les étiquettes': 'Save tags',
   'Mettre toutes les banques en pause': 'Pause all memory banks',
@@ -76,14 +75,6 @@ const exact: Record<string, string> = {
     'Without observations there is no consolidation: search and answers rely on facts only.',
   'Sans texte des documents, le lecteur ne pourra plus afficher les nouveaux documents, et le retraitement sera impossible pour eux.':
     'Without document text, the reader cannot show new documents, and they cannot be reprocessed.',
-  "Le serveur va redémarrer (quelques secondes) sans traiter sa file : HINDSIGHT_API_WORKER_ENABLED=false est ajouté à l'environnement du service, pas à votre script.":
-    'The server will restart (a few seconds) without processing its queue: HINDSIGHT_API_WORKER_ENABLED=false is added to the service environment, not to your script.',
-  "Le serveur est arrêté : il ne traitera pas sa file à son prochain démarrage (HINDSIGHT_API_WORKER_ENABLED=false dans l'environnement du service, pas dans votre script). Il n'est pas démarré pour autant.":
-    'The server is stopped: it will not process its queue at its next start (HINDSIGHT_API_WORKER_ENABLED=false in the service environment, not in your script). This action does not start it.',
-  "L'API, la recherche et les lectures restent disponibles ; les opérations attendent. Celles en cours sont interrompues et reprendront au dégel.":
-    'The API, search and reads stay available; operations wait. Running ones are interrupted and resume when the queue is unfrozen.',
-  "Attention : votre script fixe lui-même HINDSIGHT_API_WORKER_ENABLED ; sa valeur l'emportera.":
-    'Warning: your script sets HINDSIGHT_API_WORKER_ENABLED itself, and its value wins.',
   "Une copie de l'état actuel sera faite à côté du fichier avant l'écriture. Rien ne change pour le serveur tant qu'il n'est pas redémarré.":
     'A copy of the current file is saved next to it before writing. Nothing changes for the server until it restarts.',
   'Le fichier change (voir le diff).': 'The file changes (see the diff).',
@@ -106,7 +97,6 @@ const exact: Record<string, string> = {
   'Remettre en file': 'Requeue',
   'Mettre en pause': 'Pause',
   Reprendre: 'Resume',
-  'Geler la file': 'Freeze queue',
   'Vider la file': 'Clear queue',
   'Annuler les doublons': 'Cancel duplicates',
   Installer: 'Install',
@@ -181,16 +171,8 @@ const exact: Record<string, string> = {
   'Consolidation automatique mise en accord avec la pause.':
     'Automatic consolidation now matches the pause.',
   "Aucune banque n'est en pause.": 'No memory bank is paused.',
-  'La file du serveur est déjà gelée.': 'The server queue is already frozen.',
-  "La file du serveur n'est pas gelée.": 'The server queue is not frozen.',
-  "Le worker du serveur est arrêté par sa propre configuration (HINDSIGHT_API_WORKER_ENABLED dans son script) : l'app ne l'a pas gelé et ne peut pas le relancer.":
-    'The server worker is turned off by its own configuration (HINDSIGHT_API_WORKER_ENABLED in its script). The app did not freeze it and cannot restart it.',
-  'Le serveur a redémarré mais son worker reste arrêté : votre script fixe probablement HINDSIGHT_API_WORKER_ENABLED=false.':
-    'The server restarted but its worker is still off. Your script probably sets HINDSIGHT_API_WORKER_ENABLED=false.',
   'Enregistrer les plafonds ?': 'Save limits?',
   'Modifier la grille tarifaire ?': 'Change the price list?',
-  'Geler la file du serveur ?': 'Freeze the server queue?',
-  'Dégeler la file du serveur ?': 'Unfreeze the server queue?',
   'Tester les modèles du serveur ?': 'Test server models?',
   'Enregistrer le script de lancement ?': 'Save the launch script?',
   'Installer le service Hindsight ?': 'Install the Hindsight service?',
@@ -335,20 +317,6 @@ const exact: Record<string, string> = {
   "Pause en cours sur toutes les banques : rien n'est envoyé. Reprenez depuis « Activité › Traitements ».":
     'All memory banks are paused: nothing is sent. Resume from Activity › Processing.',
   'Toutes les banques sont en pause.': 'All memory banks are paused.',
-  "Le serveur n'est pas lancé par le service de l'app : ajoutez HINDSIGHT_API_WORKER_ENABLED=false à son environnement et redémarrez-le, ou mettez les banques en pause.":
-    'The server is not started by the app’s service: add HINDSIGHT_API_WORKER_ENABLED=false to its environment and restart it, or pause the memory banks.',
-  'Une autre action est en cours (gel, vidage) : réessayez dans un instant.':
-    'Another action is in progress (freeze or clear): try again in a moment.',
-  'File gelée au prochain démarrage du serveur.':
-    'The queue will be frozen when the server next starts.',
-  'File reprise au prochain démarrage du serveur.':
-    'The queue will resume when the server next starts.',
-  'Le serveur a redémarré mais son worker tourne toujours : votre script fixe probablement HINDSIGHT_API_WORKER_ENABLED.':
-    'The server restarted but its worker is still running: your script probably sets HINDSIGHT_API_WORKER_ENABLED.',
-  "File gelée : le serveur répond mais ne traite plus d'opérations.":
-    'Queue frozen: the server responds but no longer processes operations.',
-  'File reprise : le serveur traite à nouveau ses opérations.':
-    'Queue resumed: the server processes operations again.',
   'Aucune opération en attente.': 'No pending operations.',
   "Le modèle installé sur ce Mac nécessite un serveur Hindsight local. Sélectionnez d'abord son adresse locale.":
     'The model installed on this Mac requires a local Hindsight server. Select its local address first.',
@@ -378,8 +346,6 @@ const exact: Record<string, string> = {
     'A server is already responding at this address. Stop it before starting the service.',
   'Vérifiez et approuvez le script du service avant de redémarrer.':
     'Review and approve the service script before restarting.',
-  "Le serveur n'est pas lancé par le service de l'app : sa file ne peut pas être gelée d'ici.":
-    'The server is not started by the app’s service: its queue cannot be frozen from here.',
   "Le script ou l'adresse du serveur a changé pendant l'opération. Vérifiez les réglages et réessayez.":
     'The script or the server address changed during the operation. Check the settings and try again.',
   "Le script a changé pendant l'installation : vérifiez-le à nouveau.":
@@ -604,6 +570,18 @@ function mergeCounts(counts: string): string {
     .join(', ');
 }
 const toRestore = (banks?: string) => (banks ? ` To restore as soon as possible: ${banks}.` : '');
+// Consolidations relancées à la reprise (ou à relancer à la main), insérées avant « À rétablir… ».
+const RESTARTED = String.raw`( La consolidation de « .*? » reprend là où la pause l'avait arrêtée\.| Les consolidations reprennent là où la pause les avait arrêtées : .*?\.)?( Consolidation à relancer depuis Mémoire › Consolidation : .*?\.)?`;
+const restartedText = (restarted?: string, unrestarted?: string) => {
+  let text = '';
+  const one = restarted?.match(/^ La consolidation de « (.*) » reprend/);
+  const many = restarted?.match(/: (.*)\.$/);
+  if (one) text += ` Consolidation of “${one[1]}” picks up where the pause stopped it.`;
+  else if (many) text += ` Consolidations pick up where the pause stopped them: ${many[1]}.`;
+  const failed = unrestarted?.match(/: (.*)\.$/);
+  if (failed) text += ` Consolidation to restart from Memory › Consolidation: ${failed[1]}.`;
+  return text;
+};
 const dashboardParts: Record<string, string> = {
   version: 'version',
   entités: 'entities',
@@ -619,8 +597,6 @@ const dashboardParts: Record<string, string> = {
 const serverActions: Record<string, string> = {
   démarré: 'Server started',
   redémarré: 'Server restarted',
-  'redémarré, file gelée': 'Server restarted, queue frozen',
-  'redémarré, file reprise': 'Server restarted, queue resumed',
 };
 
 // Messages d’état composés par le moteur. Les noms, identifiants, chemins et erreurs du serveur
@@ -886,11 +862,17 @@ const engineRules: Rule[] = [
     (bank) => `Memory bank “${bank}” is paused: nothing is sent to it. Resume it to continue.`,
   ],
   [
-    /^(?:« (.*?) » est en pause|Toutes les banques sont en pause)\.( Rien n'est envoyé\. Serveur injoignable : la consolidation automatique n'est pas encore coupée \(le bandeau propose de réessayer\)\.)?(?: ([\d\s,.]+) régénérations? de connaissances? annulées?\.)?(?: Consolidation automatique pas encore coupée pour (.*) \(le bandeau propose de réessayer\)\.)?$/,
-    (bank, unreachable, cancelled, failures) =>
+    /^(?:« (.*?) » est en pause|Toutes les banques sont en pause)\.( Rien n'est envoyé\. Serveur injoignable : la consolidation automatique n'est pas encore coupée \(le bandeau propose de réessayer\)\.)?( La consolidation s'arrête après le lot en cours ; elle reprendra à la reprise\.)?(?: (\d+) consolidations s'arrêtent après leur lot en cours ; elles reprendront à la reprise\.)?(?: ([\d\s,.]+) régénérations? de connaissances? annulées?\.)?(?: Consolidation automatique pas encore coupée pour (.*) \(le bandeau propose de réessayer\)\.)?$/,
+    (bank, unreachable, oneStopped, manyStopped, cancelled, failures) =>
       (bank ? `“${bank}” is paused.` : 'All memory banks are paused.') +
       (unreachable
         ? ' Nothing is sent. The server is unreachable, so automatic consolidation is not turned off yet (the banner offers to try again).'
+        : '') +
+      (oneStopped
+        ? ' The consolidation stops after its current batch and picks up again on resume.'
+        : '') +
+      (manyStopped
+        ? ` ${manyStopped} consolidations stop after their current batch and pick up again on resume.`
         : '') +
       (cancelled ? ` ${count(cancelled, 'knowledge regeneration')} cancelled.` : '') +
       (failures
@@ -940,18 +922,31 @@ const engineRules: Rule[] = [
   ],
   [/^Reprendre « (.*) » \?$/, (bank) => `Resume “${bank}”?`],
   [
-    /^« (.*?) » reprend : sa consolidation automatique retrouve son réglage d'avant la pause\.(?: À rétablir dès que possible : (.*)\.)?$/,
-    (bank, restore) =>
-      `“${bank}” resumes: automatic consolidation returns to its setting from before the pause.${toRestore(restore)}`,
+    new RegExp(
+      String.raw`^« (.*?) » reprend : sa consolidation automatique retrouve son réglage d'avant la pause\.` +
+        RESTARTED +
+        String.raw`(?: À rétablir dès que possible : (.*)\.)?$`,
+    ),
+    (bank, restarted, unrestarted, restore) =>
+      `“${bank}” resumes: automatic consolidation returns to its setting from before the pause.${restartedText(restarted, unrestarted)}${toRestore(restore)}`,
   ],
   [
-    /^Toutes les banques reprennent : la consolidation automatique retrouve son réglage d'avant la pause\.(?: Restent en pause : (.*?)\.)?(?: À rétablir dès que possible : (.*)\.)?$/,
-    (paused, restore) =>
-      `All memory banks resume: automatic consolidation returns to its setting from before the pause.${paused ? ` Still paused: ${paused}.` : ''}${toRestore(restore)}`,
+    new RegExp(
+      String.raw`^Toutes les banques reprennent : la consolidation automatique retrouve son réglage d'avant la pause\.(?: Restent en pause : (.*?)\.)?` +
+        RESTARTED +
+        String.raw`(?: À rétablir dès que possible : (.*)\.)?$`,
+    ),
+    (paused, restarted, unrestarted, restore) =>
+      `All memory banks resume: automatic consolidation returns to its setting from before the pause.${paused ? ` Still paused: ${paused}.` : ''}${restartedText(restarted, unrestarted)}${toRestore(restore)}`,
   ],
   [
-    /^Toutes les banques reprennent\.(?: À rétablir dès que possible : (.*)\.)?$/,
-    (restore) => `All memory banks resume.${toRestore(restore)}`,
+    new RegExp(
+      String.raw`^Toutes les banques reprennent\.` +
+        RESTARTED +
+        String.raw`(?: À rétablir dès que possible : (.*)\.)?$`,
+    ),
+    (restarted, unrestarted, restore) =>
+      `All memory banks resume.${restartedText(restarted, unrestarted)}${toRestore(restore)}`,
   ],
   [
     /^Aucune opération en attente dans « (.*) »\.$/,
@@ -1001,7 +996,7 @@ const engineRules: Rule[] = [
   ],
   [/^Démarrage refusé : ([\s\S]*)$/, (detail) => `Start refused: ${nativeSystemMessage(detail)}`],
   [
-    /^Serveur (démarré|redémarré|redémarré, file gelée|redémarré, file reprise) : l'API répond\.$/,
+    /^Serveur (démarré|redémarré) : l'API répond\.$/,
     (action) => `${serverActions[action]}: the API is responding.`,
   ],
   [
@@ -1157,14 +1152,6 @@ const rules: Rule[] = [
     (detail) => `Uninstallation failed: ${inner(detail)}`,
   ],
   [/^Arrêt impossible : ([\s\S]*)$/, (detail) => `Stop failed: ${inner(detail)}`],
-  [
-    /^Gel de la file impossible : ([\s\S]*)$/,
-    (detail) => `Could not freeze the queue: ${inner(detail)}`,
-  ],
-  [
-    /^Reprise de la file impossible : ([\s\S]*)$/,
-    (detail) => `Could not resume the queue: ${inner(detail)}`,
-  ],
   [
     /^Le service ne s'est pas arrêté dans les ([\d\s,.]+) s\.$/,
     (n) => `The service did not stop within ${n.trim()} s.`,
@@ -1542,7 +1529,6 @@ const messageRules: Array<[RegExp, Rule]> = [
     [/^([\s\S]*)$/, (body) => memorySaveBody(body)],
   ],
   [/^Enregistrer le script de lancement \?$/, [/^([\s\S]*)$/, (body) => scriptSaveBody(body)]],
-  [/^(Geler|Dégeler) la file du serveur \?$/, [/^([\s\S]*)$/, (body) => lineBody(body)]],
   [
     /^Essai à blanc de l'extraction \?$/,
     [
@@ -1560,7 +1546,6 @@ const messageRules: Array<[RegExp, Rule]> = [
           {
             'Alerter seulement': 'alert only',
             'Mettre toutes les banques en pause': 'pause all memory banks',
-            'Geler la file': 'freeze the queue',
           }[action] ?? action
         }.`,
     ],
@@ -1676,17 +1661,17 @@ const messageRules: Array<[RegExp, Rule]> = [
   [
     /^Mettre (?:« .* »|toutes les banques) en pause \?$/,
     [
-      /^(?:« (.*) »|Toutes les banques) : plus aucun envoi depuis cette app, consolidation automatique coupée, régénérations de connaissances annulées\. Les opérations déjà en file continuent ; pour les arrêter aussi, gelez la file\.$/,
+      /^(?:« (.*) »|Toutes les banques) : plus aucun envoi depuis cette app, consolidation automatique coupée\. La consolidation en cours s'arrête après son lot et les régénérations de connaissances sont annulées ; rien n'est perdu\. Les extractions déjà en file continuent\.$/,
       (bank) =>
-        `${bank ? `“${bank}”` : 'All memory banks'}: no more uploads from this app, automatic consolidation turned off, knowledge regenerations cancelled. Operations already queued keep running. To stop them too, freeze the queue.`,
+        `${bank ? `“${bank}”` : 'All memory banks'}: no more uploads from this app, automatic consolidation turned off. The running consolidation stops after its batch and knowledge regenerations are cancelled; nothing is lost. Extractions already queued keep running.`,
     ],
   ],
   [
     /^Reprendre (?:« .* »|toutes les banques) \?$/,
     [
-      /^(?:« (.*) »|Toutes les banques) : les envois reprennent et la consolidation automatique retrouve son réglage d'avant la pause\.$/,
+      /^(?:« (.*) »|Toutes les banques) : les envois reprennent, la consolidation arrêtée par la pause repart sur les faits restants et la consolidation automatique retrouve son réglage d'avant\.$/,
       (bank) =>
-        `${bank ? `“${bank}”` : 'All memory banks'}: uploads resume and automatic consolidation returns to its setting from before the pause.`,
+        `${bank ? `“${bank}”` : 'All memory banks'}: uploads resume, the consolidation stopped by the pause picks up the remaining facts and automatic consolidation returns to its setting from before.`,
     ],
   ],
   [
@@ -1773,8 +1758,9 @@ const messageRules: Array<[RegExp, Rule]> = [
   [
     /^Annuler cette opération \?$/,
     [
-      /^« ([\s\S]*) » sera interrompue si elle est en attente ou en cours\.$/,
-      (title) => `“${operationTitle(title)}” will be interrupted if it is pending or running.`,
+      /^« ([\s\S]*) » (s'arrête après le lot en cours\. Ce qui est déjà fait est gardé ; rien n'est perdu|ne sera pas traitée)\.$/,
+      (title, what) =>
+        `“${operationTitle(title)}” ${what.startsWith('ne ') ? 'will not be processed' : 'stops after its current batch. What is already done is kept; nothing is lost'}.`,
     ],
   ],
   [

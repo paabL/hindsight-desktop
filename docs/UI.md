@@ -117,9 +117,14 @@ changes through its knowledge-base node, so its name in the tree follows, and th
 server regenerates it itself.
 
 **Processing** carries the pause: **Pause** or **Resume processing** for the
-selected bank. **More processing options** (⋯) applies the pause to all banks,
-freezes the server queue or clears pending operations. **Retry failed operations**
-appears only when there is something to retry.
+selected bank. A pause stops uploads from the app, automatic consolidation,
+consolidations and knowledge regenerations. A running consolidation finishes its
+current batch and stops, and nothing is lost. **Resume** restarts the consolidation
+the pause stopped, on the remaining facts. Extractions already queued keep running.
+The pause never restarts the server. **More processing options** (⋯) applies the
+pause to all banks or clears pending operations. Each pending or running operation
+has its own **Cancel** (×); a running one stops after its current batch. **Retry
+failed operations** appears only when there is something to retry.
 
 **Consolidation** has its own view, Memory › Consolidation, the only place that
 starts it; the Overview's consolidation line leads there. It has one state,

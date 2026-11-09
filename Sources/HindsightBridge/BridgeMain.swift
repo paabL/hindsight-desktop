@@ -363,15 +363,13 @@ final class DesktopBridge {
                 title: pausing ? (bank.map { "Mettre « \($0) » en pause ?" } ?? "Mettre toutes les banques en pause ?")
                     : (bank.map { "Reprendre « \($0) » ?" } ?? "Reprendre toutes les banques ?"),
                 message: pausing
-                    ? "\(scope) : plus aucun envoi depuis cette app, consolidation automatique coupée, régénérations de connaissances annulées. Les opérations déjà en file continuent ; pour les arrêter aussi, gelez la file."
-                    : "\(scope) : les envois reprennent et la consolidation automatique retrouve son réglage d'avant la pause.",
+                    ? "\(scope) : plus aucun envoi depuis cette app, consolidation automatique coupée. La consolidation en cours s'arrête après son lot et les régénérations de connaissances sont annulées ; rien n'est perdu. Les extractions déjà en file continuent."
+                    : "\(scope) : les envois reprennent, la consolidation arrêtée par la pause repart sur les faits restants et la consolidation automatique retrouve son réglage d'avant.",
                 confirmTitle: pausing ? "Mettre en pause" : "Reprendre", severity: .normal) { [app] in
                 if command == "pause.pause" { await app.pause.pause(bank: bank, reason: "Pause manuelle depuis Hindsight Desktop") }
                 else { await app.pause.resume(bank: bank) }
             }
         case "pause.reconcile": await app.pause.retryReconcile()
-        case "pause.freeze": app.pause.requestFreeze()
-        case "pause.unfreeze": app.pause.requestUnfreeze()
         case "pause.drain": await app.pause.requestDrain(bank: p["all"] as? Bool == true ? nil : try session().bank)
         case "budget.save":
             let budget = try decode(ConsumptionBudgets.self, p["budget"] ?? [:])
@@ -753,7 +751,7 @@ final class DesktopBridge {
     func pauseSnapshot() -> [String: Any] {
         let pause: PauseController = app.pause
         return ["all": pause.globalPause, "banks": pause.pausedBanks.sorted(), "uncut": pause.uncutBanks, "unreleased": pause.unreleasedBanks,
-                "frozen": pause.queueFrozen, "workerOff": pause.serverWorkerOff, "canFreeze": pause.canFreeze]
+                "workerOff": pause.serverWorkerOff]
     }
 
     /// Résultats d'action et alertes affichés en bandeau par la coque.
@@ -887,8 +885,6 @@ final class DesktopBridge {
             return ["summary": wire(m.summary), "gauges": wire(m.gauges), "periods": ["day": period(.day), "week": period(.week)],
                     // Traces LLM coupées sur le serveur : rien n'est mesuré, les montants et les plafonds n'ont pas de sens.
                     "tracesOff": app.connection.version?.features.llmTrace == false,
-                    // Le gel automatique ne vaut que pour un serveur lancé par cette app ; sinon la pause le remplace.
-                    "canFreeze": app.pause.canFreeze,
                     "events": wire(Array(m.events.suffix(5000))), "queues": wire(m.queues), "budgets": wire(m.budgets),
                     "prices": wire(app.services.estimator.priceBook), "lastPoll": wire(m.lastPoll), "error": wire(m.pollError),
                     "services": wire(m.services), "servicesError": wire(m.servicesError)]
@@ -1072,7 +1068,7 @@ final class DesktopBridge {
                             "busy": service.isBusy || serviceTask != nil, "phase": serviceTask != nil && !service.isBusy ? "starting" : service.phase,
                             "error": wire(service.failure), "message": wire(service.message), "lastExitCode": wire(service.job.lastExitCode),
                             "canStart": service.canStart, "canStop": service.canStop, "atLogin": service.installed?.runAtLoad ?? false,
-                            "log": service.logTail, "scriptWarning": wire(service.scriptWarning), "frozen": service.isWorkerPaused]]
+                            "log": service.logTail, "scriptWarning": wire(service.scriptWarning)]]
     }
 
     func hindsightModelsSnapshot() -> [String: Any] {

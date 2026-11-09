@@ -50,7 +50,7 @@ public final class AppModel {
     public private(set) var updates: AppUpdateViewModel!
     /// Consommation LLM de toutes les banques, plafonds de coût.
     public private(set) var consumption: ConsumptionMonitor!
-    /// Pause des envois, gel et vidage de la file.
+    /// Pause des envois, des consolidations et des régénérations ; vidage de la file.
     public private(set) var pause: PauseController!
     public let automaticActions: Bool
     public let appInfo: AppInfo
@@ -108,10 +108,9 @@ public final class AppModel {
         self.localDecision = LocalDecisionModel(runner: processRunner, paths: .standard(service: servicePaths))
         self.pause = PauseController(
             settings: settings, client: { [unowned self] in self.client }, banks: { [unowned self] in self.banks.map(\.bankId) },
-            service: { [unowned self] in self.service }, server: { [unowned self] in self.serverURL.absoluteString },
+            server: { [unowned self] in self.serverURL.absoluteString },
             automaticSweeping: automaticActions)
         self.pause.workerEnabled = { @MainActor @Sendable [unowned self] in self.connection.version?.features.worker }
-        self.pause.refreshServerInfo = { @MainActor @Sendable [unowned self] in await self.refreshServerInfo() }
         self.consumption = ConsumptionMonitor(
             settings: settings, client: { [unowned self] in self.client }, banks: { [unowned self] in self.banks.map(\.bankId) },
             ledger: ledger, prices: { [unowned self] in self.services.estimator.priceBook })
@@ -199,13 +198,13 @@ public final class AppModel {
             guard banksRevision == revision, connection == connectionRevision else { return }
             banks = list.banks
             // Rattrape ce que la pause n'a pas pu faire serveur injoignable (couper ou rétablir la consolidation,
-            // annuler les rafraîchissements de pages arrivés entre-temps).
+            // annuler les consolidations et rafraîchissements de pages arrivés entre-temps).
             // Sans actions automatiques (l'app de bureau), rien n'est écrit sans clic : le bandeau de pause
             // signale ce qui reste à couper ou à rétablir et propose « Réessayer ».
             if automaticActions {
                 Task {
                     await pause.reconcile()
-                    await pause.sweepRefreshes()
+                    await pause.sweepPausedWork()
                 }
             }
             let preferred = session?.bank ?? settings.string(forKey: SettingsKey.lastBank)

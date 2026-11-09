@@ -62,7 +62,7 @@ public final class OperationsViewModel {
     @ObservationIgnored public var estimate: (@MainActor (EstimateKind) -> CostEstimate?)?
     /// Refus pendant une pause de la banque (relances et consolidations consomment du LLM).
     @ObservationIgnored public var pauseGate: PauseGate?
-    /// Worker du serveur arrêté (file gelée) : rien ne serait « lancé maintenant ».
+    /// Worker du serveur arrêté (par sa configuration) : rien ne serait « lancé maintenant ».
     @ObservationIgnored public var workerOff: @MainActor () -> Bool = { false }
     public var confirmation: ConfirmationRequest?
     public private(set) var isBusy = false
@@ -421,7 +421,10 @@ public final class OperationsViewModel {
     public func requestCancel(_ row: OperationRow) {
         confirmation = ConfirmationRequest(
             title: "Annuler cette opération ?",
-            message: "« \(row.title) » sera interrompue si elle est en attente ou en cours.", confirmTitle: "Annuler l'opération"
+            message: row.status == .processing
+                ? "« \(row.title) » s'arrête après le lot en cours. Ce qui est déjà fait est gardé ; rien n'est perdu."
+                : "« \(row.title) » ne sera pas traitée.",
+            confirmTitle: "Annuler l'opération"
         ) { [weak self] in
             await self?.run("Opération annulée.") { c, b in
                 let r = try await c.cancelOperation(b, id: row.id)

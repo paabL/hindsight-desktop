@@ -1470,15 +1470,6 @@ export function ServerSettings({
           )}
         </div>
         <ErrorNotice message={service.error} />
-        {service.frozen && (
-          <div className="notice">
-            {' '}
-            {t(
-              'Le traitement de la file est gelé. L’API reste accessible.',
-              'Queue processing is frozen. The API remains available.',
-            )}
-          </div>
-        )}
         <ErrorNotice message={service.scriptWarning} />
       </section>
       <ErrorNotice message={data.error} />

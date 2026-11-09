@@ -569,50 +569,31 @@ final class HindsightServiceTests: XCTestCase {
         XCTAssertEqual(settingsVM.restartState, .succeeded("Serveur redémarré."))
     }
 
-    /// Geler la file : l'agent est réécrit avec HINDSIGHT_API_WORKER_ENABLED=false (pas le script), rechargé, et
-    /// le reste à la réinstallation ; le dégel retire la variable.
-    func testFreezingQueueRewritesAgentEnvironmentAndReloadsIt() async throws {
+    /// L'ancien « Geler la file » (retiré) laissait HINDSIGHT_API_WORKER_ENABLED=false dans l'agent : le
+    /// redémarrage depuis l'app le réécrit sans, puis le recharge (launchd ne relit l'environnement qu'au chargement).
+    func testRestartRemovesTheLegacyQueueFreezeFromTheAgent() async throws {
         let e = make()
         await e.vm.refresh()
         e.vm.requestInstall(startAtLogin: true)
         await e.vm.confirmation!.perform()
         let scriptBefore = try Data(contentsOf: e.script)
-
-        let frozen = await e.vm.setWorkerPaused(true)
-        XCTAssertTrue(frozen)
-        XCTAssertTrue(e.vm.isWorkerPaused)
-        let plist = try XCTUnwrap(PropertyListSerialization.propertyList(from: Data(contentsOf: e.paths.plist), format: nil) as? [String: Any])
-        XCTAssertEqual((plist["EnvironmentVariables"] as? [String: String])?["HINDSIGHT_API_WORKER_ENABLED"], "false")
-        XCTAssertEqual(try Data(contentsOf: e.script), scriptBefore, "le script de l'utilisateur n'est pas touché")
-        let verbs = e.runner.args(of: HindsightServiceViewModel.launchctl).map { $0.first ?? "" }.filter { $0 != "print" }
-        XCTAssertEqual(Array(verbs.suffix(3)), ["bootout", "bootstrap", "kickstart"], "launchd ne relit l'environnement qu'au chargement")
-        XCTAssertEqual(e.vm.status, .running(pid: 42))
-
-        e.vm.requestInstall(startAtLogin: true)
-        await e.vm.confirmation!.perform()
-        XCTAssertTrue(e.vm.isWorkerPaused, "une réinstallation ne dégèle pas la file")
-
-        let resumed = await e.vm.setWorkerPaused(false)
-        XCTAssertTrue(resumed)
-        XCTAssertEqual(LaunchAgentSpec.parse(try Data(contentsOf: e.paths.plist))?.workerPaused, false)
-    }
-
-    /// Un serveur arrêté reste arrêté : le gel ne s'applique qu'à son prochain démarrage.
-    func testFreezingAStoppedServerDoesNotStartIt() async throws {
-        let e = make()
+        var plist = try XCTUnwrap(PropertyListSerialization.propertyList(from: Data(contentsOf: e.paths.plist), format: nil) as? [String: Any])
+        var environment = plist["EnvironmentVariables"] as! [String: String]
+        environment["HINDSIGHT_API_WORKER_ENABLED"] = "false"
+        plist["EnvironmentVariables"] = environment
+        try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0).write(to: e.paths.plist)
         await e.vm.refresh()
-        e.vm.requestInstall(startAtLogin: true)
-        await e.vm.confirmation!.perform()
-        e.vm.requestStop()
-        await e.vm.confirmation!.perform()
-        XCTAssertFalse(e.jobRunning.value)
         let before = e.runner.args(of: HindsightServiceViewModel.launchctl).count
-        let ok = await e.vm.setWorkerPaused(true)
+
+        let ok = await e.vm.restart()
         XCTAssertTrue(ok)
+        let rewritten = try XCTUnwrap(PropertyListSerialization.propertyList(from: Data(contentsOf: e.paths.plist), format: nil) as? [String: Any])
+        XCTAssertNil((rewritten["EnvironmentVariables"] as? [String: String])?["HINDSIGHT_API_WORKER_ENABLED"])
+        XCTAssertEqual(rewritten["RunAtLoad"] as? Bool, true, "le reste de l'agent est gardé")
+        XCTAssertEqual(try Data(contentsOf: e.script), scriptBefore, "le script de l'utilisateur n'est pas touché")
         let verbs = e.runner.args(of: HindsightServiceViewModel.launchctl).dropFirst(before).map { $0.first ?? "" }.filter { $0 != "print" }
-        XCTAssertEqual(verbs, [], "l'arrêt a déjà déchargé l'agent ; le gel ne le recharge et ne le relance pas")
-        XCTAssertFalse(e.jobRunning.value)
-        XCTAssertTrue(e.vm.isWorkerPaused)
+        XCTAssertEqual(verbs, ["bootout", "bootstrap", "kickstart"])
+        XCTAssertFalse(LaunchAgentSpec.isOutdated(rewritten["EnvironmentVariables"] as? [String: String]))
     }
 
     private func clone(_ e: Env, runner: any ProcessRunning) -> HindsightServiceViewModel {
@@ -696,7 +677,7 @@ final class HindsightServiceTests: XCTestCase {
         XCTAssertTrue(e.runner.calls.dropFirst(before).allSatisfy { $0.arguments.first == "print" })
     }
 
-    func testPauseReservesServiceBeforeAwaitAndIgnoresRapidRepeatedControls() async throws {
+    func testRestartReservesServiceBeforeAwaitAndIgnoresRapidRepeatedControls() async throws {
         let e = make()
         e.vm.requestInstall(startAtLogin: false)
         await e.vm.confirmation!.perform()
@@ -704,7 +685,7 @@ final class HindsightServiceTests: XCTestCase {
         let vm = clone(e, runner: gate)
         await vm.refresh()
         await gate.holdNext("print")
-        let pause = Task { await vm.setWorkerPaused(true) }
+        let pending = Task { await vm.restart() }
         for _ in 0..<1000 { if await gate.blocked { break }; await Task.yield() }
         XCTAssertTrue(vm.isBusy)
         let before = e.runner.calls.count
@@ -717,9 +698,8 @@ final class HindsightServiceTests: XCTestCase {
         XCTAssertEqual(e.runner.calls.count, before)
         XCTAssertNil(vm.confirmation)
         await gate.release()
-        let paused = await pause.value
-        XCTAssertTrue(paused)
-        XCTAssertTrue(vm.isWorkerPaused)
+        let first = await pending.value
+        XCTAssertTrue(first)
         XCTAssertFalse(vm.isBusy)
         XCTAssertEqual(LaunchAgentSpec.parse(try Data(contentsOf: e.paths.plist))?.runAtLoad, false)
     }
@@ -803,11 +783,9 @@ final class HindsightServiceTests: XCTestCase {
         XCTAssertTrue(transport.requests.isEmpty)
         let before = e.runner.calls.count
         let restarted = await vm.restart()
-        let paused = await vm.setWorkerPaused(true)
         vm.requestStart()
         vm.requestInstall(startAtLogin: true)
         XCTAssertFalse(restarted)
-        XCTAssertFalse(paused)
         XCTAssertNil(vm.confirmation)
         XCTAssertEqual(e.runner.calls.count, before)
         XCTAssertTrue(vm.message?.contains("adresse locale") == true)
