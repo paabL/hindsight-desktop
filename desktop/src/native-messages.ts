@@ -25,6 +25,7 @@ const exact: Record<string, string> = {
     'This setting must be changed in advanced options.',
   "Valeur d'activation invalide.": 'Invalid activation value.',
   'Fournisseur de décision inconnu.': 'Unknown decision provider.',
+  'Fournisseur de modèle inconnu.': 'Unknown model provider.',
   'Nom de modèle invalide.': 'Invalid model name.',
   "L'adresse du serveur enregistrée a été refusée. Vérifiez son adresse dans les réglages ; le serveur local est utilisé en attendant.":
     'The saved server address was rejected. Check it in Settings; the local server is used in the meantime.',

@@ -375,7 +375,7 @@ final class ServerSettingsViewModelTests: XCTestCase {
         let before = try XCTUnwrap(vm.draft)
         let choices = vm.modelChoices(forRole: "default")
         XCTAssertTrue(choices.contains { $0.id == "claude-sonnet-4-5-20250929" })
-        let haiku = try XCTUnwrap(choices.first { $0.title == "Claude Haiku" })
+        let haiku = try XCTUnwrap(choices.first { $0.title == "Claude Haiku 5.5" })
         XCTAssertEqual(vm.draft, before, "ouvrir le menu ne change pas le modèle")
         XCTAssertFalse(vm.hasChanges)
         vm.setValue("HINDSIGHT_API_LLM_MODEL", haiku.id)

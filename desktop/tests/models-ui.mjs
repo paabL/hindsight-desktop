@@ -80,6 +80,27 @@ try {
     .getByRole('navigation', { name: 'Réglages du serveur et de l’application' })
     .getByRole('button', { name: /^Modèles/ })
     .click();
+  const workflow = page.getByRole('region', { name: 'Choix des modèles' });
+  // Connaissances : régénération complète et mise à jour partielle se règlent chacune de leur côté,
+  // et un mélange voulu n'est pas présenté comme une configuration « à vérifier ».
+  await workflow.getByRole('tab', { name: 'Connaissances', exact: true }).click();
+  const fullRegeneration = workflow.getByRole('switch', {
+    name: 'Décision · Régénération complète',
+  });
+  const partialUpdate = workflow.getByRole('switch', { name: 'Décision · Mise à jour partielle' });
+  await expect(fullRegeneration).toBeChecked();
+  await fullRegeneration.click();
+  await expect(fullRegeneration).not.toBeChecked();
+  await expect(partialUpdate).toBeChecked();
+  await expect(workflow.getByText('À vérifier', { exact: true })).toHaveCount(0);
+  // Un seul menu : modèles au nom complet, groupés par fournisseur ; en choisir un change les deux.
+  await workflow.getByRole('tab', { name: 'Réponses', exact: true }).click();
+  const writing = workflow.getByRole('combobox', { name: 'Modèle · Rédaction', exact: true });
+  await expect(writing.locator('optgroup[label="Claude Code"] option')).toContainText([
+    'Claude Sonnet 5.5',
+  ]);
+  await writing.selectOption({ label: 'GPT-6 Luna' });
+  await expect(workflow.locator('.mw-provider', { hasText: 'ChatGPT / Codex' })).toHaveCount(1);
   await page.getByText('Installation et services des modèles', { exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Modèles Hindsight', exact: true })).toBeVisible();
   await mkdir(path.join(root, 'screenshots'), { recursive: true });

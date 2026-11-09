@@ -15,10 +15,12 @@ public enum LLMModelCatalog {
 
     /// Références vérifiées le 20 octobre 2026 : docs OpenAI Models, Claude Code Model configuration
     /// et Gemini API Models. Les identifiants déjà configurés sont conservés même hors de cette liste.
+    /// Les alias de Claude Code suivent la dernière version de chaque famille (5.5 au 8 novembre 2026) :
+    /// le titre la nomme, l'alias enregistré reste celui qui suit les mises à jour.
     public static func suggestions(for provider: String) -> [Choice] {
         switch provider {
         case "claude-code":
-            return [Choice("sonnet", "Claude Sonnet"), Choice("opus", "Claude Opus"), Choice("haiku", "Claude Haiku")]
+            return [Choice("sonnet", "Claude Sonnet 5.5"), Choice("opus", "Claude Opus 5.5"), Choice("haiku", "Claude Haiku 5.5")]
         case "gemini":
             return [Choice("gemini-3.8-flash", "Gemini 3.8 Flash"), Choice("gemini-3.5-flash-lite", "Gemini 3.5 Flash-Lite"),
                     Choice("gemini-4-argon", "Gemini 4 Argon")]
@@ -35,9 +37,25 @@ public enum LLMModelCatalog {
         let suggestions = ["openai-codex", "chatgpt"].contains(provider) && !codexModels.isEmpty ? codexModels : suggestions(for: provider)
         let titles = Dictionary(suggestions.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
         var seen: Set<String> = []
-        return (configured.map { Choice($0, titles[$0]) } + suggestions).filter {
+        return (configured.map { Choice($0, titles[$0] ?? readableTitle($0)) } + suggestions).filter {
             validID($0.id) && seen.insert($0.id).inserted
         }
+    }
+
+    /// Nom lisible d'un identifiant hors catalogue : « claude-haiku-5-5 » → « Claude Haiku 5.5 »,
+    /// « gpt-6-luna » → « GPT-6 Luna ». Un identifiant inconnu reste tel quel plutôt que d'être deviné.
+    public static func readableTitle(_ id: String) -> String? {
+        let parts = id.lowercased().split(separator: "-").map(String.init)
+        if parts.count >= 4, parts[0] == "claude", Int(parts[2]) != nil, Int(parts[3]) != nil {
+            return "Claude \(parts[1].capitalized) \(parts[2]).\(parts[3])"
+        }
+        if parts.count >= 3, parts[0] == "claude", Int(parts[2]) != nil {
+            return "Claude \(parts[1].capitalized) \(parts[2])"
+        }
+        if parts.count >= 2, parts[0] == "gpt", parts[1].first?.isNumber == true {
+            return (["GPT-\(parts[1])"] + parts.dropFirst(2).map(\.capitalized)).joined(separator: " ")
+        }
+        return nil
     }
 
     /// Lecture du catalogue public local uniquement, jamais d'auth.json ni de config contenant des secrets.

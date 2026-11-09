@@ -6,7 +6,7 @@ final class LLMModelCatalogTests: XCTestCase {
     func testConfiguredModelsRemainSelectableWithoutDuplicatingSuggestions() {
         let choices = LLMModelCatalog.choices(for: "claude-code", configured: ["my-deployment", "sonnet", "my-deployment"])
         XCTAssertEqual(choices.map(\.id), ["my-deployment", "sonnet", "opus", "haiku"])
-        XCTAssertEqual(choices.first { $0.id == "sonnet" }?.title, "Claude Sonnet")
+        XCTAssertEqual(choices.first { $0.id == "sonnet" }?.title, "Claude Sonnet 5.5")
         XCTAssertFalse(choices.contains { $0.id.hasPrefix("gemini-") })
     }
 

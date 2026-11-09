@@ -198,6 +198,10 @@ function Diagram({ nodes, edges }: { nodes: Node[]; edges: Edge[] }) {
   );
 }
 
+/** Séparateur entre fournisseur et modèle dans la valeur d’une option du menu des modèles. */
+const PICK = '\u001f';
+type Op = 'reflect' | 'consolidation' | 'pages' | 'pagesDelta' | 'recall';
+
 export function ModelWorkflowSettings({
   data,
   run,
@@ -235,42 +239,40 @@ export function ModelWorkflowSettings({
   if (!workflow) return null;
   const role = (id: string): Row => data.roles?.find((r: Row) => r.id === id) || {};
   const identity = (id: string): Row => workflow.identities[id] || {};
-  const op = flow === 'retain' ? 'consolidation' : flow;
-  const decision = workflow.decisions[op],
-    recall = workflow.decisions.recall;
+  const decisionOf = (op: Op): Row => workflow.decisions[op] || workflow.decisions.pages || {};
+  const recall = workflow.decisions.recall;
   const is120 = !!data.hindsightModels?.serverIs120;
-  const uncertain = !!decision.uncertain || !!decision.partial;
-  const on = decision.enabled && !uncertain;
   const values: Record<string, string> = workflow.values;
+  const isUncertain = (op: Op) => !!decisionOf(op).uncertain;
+  const isOn = (op: Op) => !!decisionOf(op).enabled && !isUncertain(op);
   function prepare(changes: Record<string, string>) {
     void request('server.models.prepare', { changes, revision: workflow.revision });
-  }
-  function changeToggle(enabled: boolean) {
-    if (flow === 'recall') {
-      const provider =
-        role('decision').fields?.find((f: Row) => f.name === `${P}DECISION_MODEL_PROVIDER`)
-          ?.value || 'none';
-      prepare({ [`${P}RECALL_DECISION_MODEL_PROVIDER`]: enabled ? provider : 'none' });
-    } else if (flow === 'pages')
-      prepare({
-        [`${P}MENTAL_MODEL_REFRESH_USE_DECISION_MODEL`]: String(enabled),
-        [`${P}MENTAL_MODEL_DELTA_USE_DECISION_MODEL`]: String(enabled),
-      });
-    else prepare({ [`${P}${op.toUpperCase()}_USE_DECISION_MODEL`]: String(enabled) });
   }
   const globalProvider = role('decision').fields?.find(
     (f: Row) => f.name === `${P}DECISION_MODEL_PROVIDER`,
   )?.value;
-  const canEnable =
-    flow === 'recall'
-      ? ['hindsight', 'typesafe', 'openai', 'cloudflare'].includes(globalProvider)
-      : decision.configured;
-  const toggleDisabled =
-    locked ||
-    !is120 ||
-    uncertain ||
-    (!on && !canEnable) ||
-    (flow === 'recall' && on && !recall.shared);
+  const recallReady = ['hindsight', 'typesafe', 'openai', 'cloudflare'].includes(globalProvider);
+  function changeToggle(op: Op, enabled: boolean) {
+    if (op === 'recall')
+      prepare({
+        [`${P}RECALL_DECISION_MODEL_PROVIDER`]: enabled ? globalProvider || 'none' : 'none',
+      });
+    else if (op === 'pages')
+      prepare({ [`${P}MENTAL_MODEL_REFRESH_USE_DECISION_MODEL`]: String(enabled) });
+    else if (op === 'pagesDelta')
+      prepare({ [`${P}MENTAL_MODEL_DELTA_USE_DECISION_MODEL`]: String(enabled) });
+    else prepare({ [`${P}${op.toUpperCase()}_USE_DECISION_MODEL`]: String(enabled) });
+  }
+  function toggleDisabled(op: Op) {
+    const canEnable = op === 'recall' ? recallReady : !!decisionOf(op).configured;
+    return (
+      locked ||
+      !is120 ||
+      isUncertain(op) ||
+      (!isOn(op) && !canEnable) ||
+      (op === 'recall' && isOn(op) && !recall.shared)
+    );
+  }
   const labels: Record<Flow, string> = {
     // Mêmes noms de fonctions que la barre latérale, la recherche, le comportement et l’activité.
     reflect: t('Réponses', 'Answers'),
@@ -278,39 +280,82 @@ export function ModelWorkflowSettings({
     pages: t('Connaissances', 'Knowledge'),
     recall: t('Recherche', 'Search'),
   };
+  const providerTitle = (id: string): string =>
+    data.providerChoices?.find((p: Row) => p.id === id)?.title || id;
+  const modelTitle = (provider: string, model: string): string =>
+    data.modelsByProvider?.[provider]?.find((m: Row) => m.id === model)?.title || model;
+  /** Fournisseurs prêts : comptes connectés et fournisseurs déjà réglés dans un usage. */
+  function readyProviders(current: string): string[] {
+    const connected = (data.accounts || [])
+      .filter((a: Row) => a.connected && a.id !== 'hindsight')
+      .map((a: Row) => a.id);
+    const used = Object.values(workflow.identities as Record<string, Row>).map((i) => i.provider);
+    return [...new Set([...connected, ...used, current])].filter(
+      (p) => p && p !== 'none' && !String(p).includes('$'),
+    );
+  }
   function modelSelect(id: string, title: string) {
     const r = role(id),
       current = identity(id),
-      field = r.fields?.find((f: Row) => f.name.endsWith('_MODEL'));
-    if (!field) return <span className="muted">{t('Non configuré', 'Not configured')}</span>;
-    const options = new Map<string, string>(
-      (r.models || []).map((m: Row) => [m.id, m.title || m.id]),
-    );
-    if (field.value) options.set(field.value, field.value);
+      modelField = r.fields?.find((f: Row) => f.name.endsWith('_MODEL')),
+      providerField = r.fields?.find((f: Row) => f.name.endsWith('_PROVIDER'));
+    if (!modelField) return <span className="muted">{t('Non configuré', 'Not configured')}</span>;
+    const own = Boolean(modelField.value || providerField?.value);
+    const selected = own ? `${current.provider}${PICK}${current.model}` : '';
+    const groups = readyProviders(current.provider).map((provider) => {
+      const models: Row[] = [...(data.modelsByProvider?.[provider] || [])];
+      if (provider === current.provider && !models.some((m) => m.id === current.model))
+        models.unshift({ id: current.model, title: current.model });
+      return { provider, models };
+    });
+    const inherited = r.fallback ? identity(r.fallback) : null;
+    function choose(value: string) {
+      if (value === '__other__') return configure(id);
+      if (!value)
+        return prepare({
+          [modelField.name]: '',
+          ...(providerField ? { [providerField.name]: '' } : {}),
+        });
+      const [provider, model] = value.split(PICK);
+      prepare({
+        [modelField.name]: model,
+        ...(providerField ? { [providerField.name]: provider } : {}),
+      });
+    }
     return (
       <div className="mw-choice">
         <select
           aria-label={title}
-          value={field.value || ''}
+          value={selected}
           disabled={locked || current.dynamic}
-          onChange={(e) => prepare({ [field.name]: e.target.value })}
+          onChange={(e) => choose(e.target.value)}
         >
-          <option value="">
-            {current.model
-              ? `${current.model} · ${t('hérité', 'inherited')}`
-              : t('Défaut du serveur', 'Server default')}
-          </option>
-          {[...options].map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
+          {(!own || id !== 'default') && (
+            <option value="">
+              {inherited?.model
+                ? `${t('Comme', 'Same as')} ${modelTitle(inherited.provider, inherited.model)} · ${t('hérité', 'inherited')}`
+                : current.model && !own
+                  ? `${modelTitle(current.provider, current.model)} · ${t('hérité', 'inherited')}`
+                  : t('Défaut du serveur', 'Server default')}
             </option>
+          )}
+          {groups.map(({ provider, models }) => (
+            <optgroup key={provider} label={providerTitle(provider)}>
+              {models.map((m) => (
+                <option key={m.id} value={`${provider}${PICK}${m.id}`}>
+                  {m.title || m.id}
+                </option>
+              ))}
+            </optgroup>
           ))}
+          {/* Fournisseur pas encore prêt (clé, adresse) : l’éditeur du rôle, plus bas sur la page. */}
+          <option value="__other__">{t('Autre fournisseur…', 'Other provider…')}</option>
         </select>
         {quick ? (
           <div className="mw-provider">
             {current.dynamic
               ? t('Valeur définie ailleurs', 'Defined elsewhere')
-              : current.provider || t('Fournisseur', 'Provider')}
+              : providerTitle(current.provider) || t('Fournisseur', 'Provider')}
           </div>
         ) : (
           <button
@@ -322,8 +367,8 @@ export function ModelWorkflowSettings({
             <Settings2 size={12} />
             {current.dynamic
               ? t('Valeur définie ailleurs', 'Defined elsewhere')
-              : current.provider || t('Fournisseur', 'Provider')}
-            <span>{t('Modifier…', 'Edit…')}</span>
+              : providerTitle(current.provider) || t('Fournisseur', 'Provider')}
+            <span>{t('Réglages…', 'Settings…')}</span>
           </button>
         )}
       </div>
@@ -342,6 +387,7 @@ export function ModelWorkflowSettings({
     };
   }
   function result(modelRole: string, title = t('Réponse', 'Answer')): Node {
+    const current = identity(modelRole);
     return {
       id: 'answer',
       tone: 'writing',
@@ -350,13 +396,15 @@ export function ModelWorkflowSettings({
           <Help
             title={title}
             text={t(
-              'Le modèle des Réponses rédige avec les preuves retenues. C’est le même modèle, choisi en haut.',
-              'The Answers model writes using the selected evidence. It is the same model, chosen above.',
+              'Le même modèle que la rédaction écrit avec les preuves retenues.',
+              'The same model as Writing writes using the selected evidence.',
             )}
             icon={PenLine}
           />
           <span>
-            {identity(modelRole).model || t('Modèle hérité', 'Inherited model')}{' '}
+            {current.model
+              ? modelTitle(current.provider, current.model)
+              : t('Modèle hérité', 'Inherited model')}{' '}
             <small>{t('même modèle', 'same model')}</small>
           </span>
         </div>
@@ -375,28 +423,54 @@ export function ModelWorkflowSettings({
       ),
     };
   }
-  function rank(): Node {
+  function retrieve(): Node {
+    return memory(
+      'memories',
+      t('Retrouver', 'Retrieve'),
+      t('Sens, mots, dates et liens', 'Meaning, words, dates and links'),
+      t(
+        'Quatre recherches à la fois : par le sens (embeddings), par les mots, par les dates citées dans la question et par les liens entre faits.',
+        'Four searches at once: by meaning (embeddings), by words, by dates in the question and by links between facts.',
+      ),
+    );
+  }
+  const rerankerName = () => {
     const r = role('reranker'),
       provider = r.fields?.find((f: Row) => f.name === `${P}RERANKER_PROVIDER`)?.value || 'local';
     const field = serviceModelField({ ...r, id: 'reranker', fields: r.fields || [] });
-    const text =
-      field?.value ||
-      (provider === 'hindsight' ? 'hs-rerank-1' : provider === 'rrf' ? 'RRF' : r.effective);
     return {
-      id: 'rank',
+      provider,
+      text:
+        field?.value ||
+        (provider === 'hindsight' ? 'hs-rerank-1' : provider === 'rrf' ? 'RRF' : r.effective),
+    };
+  };
+  /** Classement des candidats : le reranker, sauf quand le modèle de décision le remplace (Recherche). */
+  function rank(id = 'rank', title = t('Recherche', 'Search')): Node {
+    const { provider, text } = rerankerName();
+    const replaced = recall.enabled && !recall.uncertain;
+    return {
+      id,
       tone: 'retrieval',
       content: (
         <div className="mw-row">
           <Help
-            title={t('Recherche', 'Search')}
-            text={t(
-              'Retrouve les faits et classe les candidats. Le classement peut lui aussi utiliser le modèle de décision, indépendamment des Réponses.',
-              'Finds facts and ranks candidates. Ranking can also use the decision model, independently of Answers.',
-            )}
+            title={title}
+            text={
+              replaced
+                ? t(
+                    'Retrouve les faits, puis le modèle de décision les classe à la place du reranker. Réglé dans l’onglet Recherche.',
+                    'Finds facts, then the decision model ranks them instead of the reranker. Set in the Search tab.',
+                  )
+                : t(
+                    'Retrouve les faits et les classe avec le reranker, puis ajoute les bonus de récence, de date et de preuves.',
+                    'Finds facts and ranks them with the reranker, then adds recency, date and evidence boosts.',
+                  )
+            }
             icon={Search}
           />
           <div>
-            {recall.enabled && !recall.uncertain ? (
+            {replaced ? (
               <>
                 <span>{recall.model || recall.provider}</span>
                 <button className="mw-related" onClick={() => setFlow('recall')}>
@@ -476,7 +550,8 @@ export function ModelWorkflowSettings({
       </div>
     );
   }
-  function judge(title: string, tip: string): Node {
+  function judge(op: Op, title: string, tip: string): Node {
+    const decision = decisionOf(op);
     return {
       id: 'decision',
       tone: 'decision',
@@ -496,7 +571,7 @@ export function ModelWorkflowSettings({
               </div>
             )}
           </div>
-          {flow === 'recall' && (
+          {op === 'recall' && (
             <div className="mw-recall-options">
               {[
                 ['PRUNE', t('Écarter les faits inutiles', 'Remove irrelevant facts')],
@@ -534,17 +609,22 @@ export function ModelWorkflowSettings({
     label,
     type: 'side',
   });
-  let nodes: Node[], edges: Edge[];
-  if (flow === 'reflect' || (flow === 'pages' && !on)) {
-    const modelRole = flow === 'pages' ? 'mental_model' : 'reflect';
-    nodes = [
+  const noDates = t(
+    'Il juge chaque preuve sur son seul texte, sans voir sa date.',
+    'It judges each piece of evidence on its text alone, without seeing its date.',
+  );
+  /** Rédiger en cherchant : Réponses, et régénération complète d’une page de connaissance. */
+  function searchAndWrite(op: 'reflect' | 'pages'): { nodes: Node[]; edges: Edge[] } {
+    const modelRole = op === 'pages' ? 'mental_model' : 'reflect',
+      on = isOn(op);
+    const nodes = [
       gen(
         'query',
         t('Rédaction', 'Writing'),
         modelRole,
         t(
-          'Formule la recherche et rédige la réponse. Sans décision spécialisée, choisit aussi quand arrêter de chercher.',
-          'Writes the query and the answer. Without a decision model, also chooses when to stop searching.',
+          'Formule les recherches et rédige. Sans modèle de décision, choisit aussi quand arrêter de chercher.',
+          'Writes the searches and the text. Without a decision model, also chooses when to stop searching.',
         ),
         MessagesSquare,
       ),
@@ -553,20 +633,18 @@ export function ModelWorkflowSettings({
     if (on)
       nodes.push(
         judge(
+          op,
           t('Preuves suffisantes ?', 'Enough evidence?'),
-          t(
-            'Trie les preuves. Si elles ne suffisent pas, demande une nouvelle recherche, dans la limite du budget.',
-            'Filters evidence. If it is insufficient, requests another search within the budget.',
-          ),
+          `${t(
+            'Écarte les preuves jugées inutiles, puis demande une nouvelle recherche si le reste ne suffit pas, dans la limite du budget.',
+            'Drops evidence judged useless, then requests another search if the rest is not enough, within the budget.',
+          )} ${noDates}`,
         ),
       );
     nodes.push(
-      result(
-        modelRole,
-        flow === 'pages' ? t('Régénérer la page', 'Regenerate the page') : undefined,
-      ),
+      result(modelRole, op === 'pages' ? t('Page régénérée', 'Regenerated page') : undefined),
     );
-    edges = on
+    const edges = on
       ? [
           down('query', 'rank', t('Requête', 'Query')),
           down('rank', 'decision', t('Preuves', 'Evidence')),
@@ -578,8 +656,66 @@ export function ModelWorkflowSettings({
           loop('rank', 'query', t('Résultats', 'Results')),
           side('query', 'answer'),
         ];
-  } else if (flow === 'retain') {
-    nodes = [
+    return { nodes, edges };
+  }
+  function pageUpdate(): { nodes: Node[]; edges: Edge[] } {
+    const on = isOn('pagesDelta');
+    const nodes = [
+      memory(
+        'new',
+        t('Nouveaux faits', 'New facts'),
+        t('Depuis la dernière mise à jour', 'Since the last update'),
+        t(
+          'Sélectionne par date les nouveaux faits, sans modèle.',
+          'Selects new facts by date, without a model.',
+        ),
+      ),
+    ];
+    if (on)
+      nodes.push(
+        judge(
+          'pagesDelta',
+          t('Modifier la page ?', 'Change the page?'),
+          t(
+            'Vérifie si les nouveaux faits peuvent modifier la page. Sinon, la garde telle quelle sans appeler la rédaction.',
+            'Checks whether new facts could change the page. Otherwise keeps it as is without calling Writing.',
+          ),
+        ),
+      );
+    nodes.push(
+      gen(
+        'write',
+        t('Rédaction', 'Writing'),
+        'mental_model',
+        t(
+          'Intègre les nouveaux faits à la page existante.',
+          'Merges the new facts into the existing page.',
+        ),
+        NotebookText,
+      ),
+      memory(
+        'page',
+        'Page',
+        on ? t('Gardée ou mise à jour', 'Kept or updated') : t('Mise à jour', 'Updated'),
+        t(
+          'La page garde ses sections ; seules celles que les nouveaux faits changent sont réécrites.',
+          'The page keeps its sections; only those the new facts change are rewritten.',
+        ),
+      ),
+    );
+    const edges = on
+      ? [
+          down('new', 'decision'),
+          down('decision', 'write', t('Oui', 'Yes')),
+          down('write', 'page'),
+          side('decision', 'page', t('Non', 'No')),
+        ]
+      : [down('new', 'write'), down('write', 'page')];
+    return { nodes, edges };
+  }
+  function extraction(): { nodes: Node[]; edges: Edge[] } {
+    const on = isOn('consolidation');
+    const nodes = [
       gen(
         'extract',
         t('Extraction', 'Extraction'),
@@ -594,6 +730,7 @@ export function ModelWorkflowSettings({
     if (on)
       nodes.push(
         judge(
+          'consolidation',
           t('Trier les faits', 'Triage facts'),
           t(
             'Envoie les nouveautés à consolider. Rattache les répétitions comme sources, sans réécriture.',
@@ -622,7 +759,7 @@ export function ModelWorkflowSettings({
         ),
       ),
     );
-    edges = on
+    const edges = on
       ? [
           down('extract', 'decision'),
           down('decision', 'consolidate', t('À consolider', 'To consolidate')),
@@ -630,70 +767,111 @@ export function ModelWorkflowSettings({
           side('decision', 'memory', t('Sans réécrire', 'No rewrite')),
         ]
       : [down('extract', 'consolidate'), down('consolidate', 'memory')];
-  } else if (flow === 'pages') {
-    nodes = [
-      memory(
-        'new',
-        t('Nouveaux faits', 'New facts'),
-        t('Depuis la dernière mise à jour', 'Since the last update'),
-        t(
-          'Sélectionne par date les nouveaux faits, sans modèle.',
-          'Selects new facts by date, without a model.',
-        ),
-      ),
-      judge(
-        t('Modifier la page ?', 'Change the page?'),
-        t(
-          'Vérifie si les nouveaux faits peuvent modifier la page. Sinon, la conserve telle quelle.',
-          'Checks whether new facts could change the page. Otherwise keeps it unchanged.',
-        ),
-      ),
-      gen(
-        'write',
-        t('Rédaction', 'Writing'),
-        'mental_model',
-        t('Réécrit la page avec les faits utiles.', 'Rewrites the page using relevant facts.'),
-        NotebookText,
-      ),
-      memory(
-        'page',
-        'Page',
-        t('Conservée ou régénérée', 'Kept or regenerated'),
-        t(
-          'La page reste intacte si aucun changement utile n’est détecté.',
-          'The page remains unchanged when no relevant change is found.',
-        ),
-      ),
-    ];
-    edges = [
-      down('new', 'decision'),
-      down('decision', 'write', t('Oui', 'Yes')),
-      down('write', 'page'),
-      side('decision', 'page', t('Non', 'No')),
-    ];
-  } else {
-    nodes = on
-      ? [
-          memory(
-            'memories',
-            t('Retrouver', 'Retrieve'),
-            workflow.embeddings,
-            t(
-              'Les embeddings retrouvent des faits proches par le sens.',
-              'Embeddings retrieve facts that are similar in meaning.',
-            ),
-          ),
-          judge(
-            t('Classer', 'Rank'),
-            t(
-              'Classe les faits selon leur utilité. Ne rédige pas de réponse.',
-              'Ranks facts by usefulness. Does not write an answer.',
-            ),
-          ),
-        ]
-      : [rank()];
-    edges = on ? [down('memories', 'decision')] : [];
+    return { nodes, edges };
   }
+  function searchFlow(): { nodes: Node[]; edges: Edge[] } {
+    if (!isOn('recall'))
+      return {
+        nodes: [retrieve(), rank('rank', t('Classer', 'Rank'))],
+        edges: [down('memories', 'rank', t('Candidats', 'Candidates'))],
+      };
+    return {
+      nodes: [
+        retrieve(),
+        judge(
+          'recall',
+          t('Classer', 'Rank'),
+          `${t(
+            `Remplace le reranker (${rerankerName().text}). Son ordre est final : plus de bonus de récence ni de date.`,
+            `Replaces the reranker (${rerankerName().text}). Its order is final: no more recency or date boosts.`,
+          )} ${noDates}`,
+        ),
+      ],
+      edges: [down('memories', 'decision', t('Candidats', 'Candidates'))],
+    };
+  }
+  function toggle(op: Op, title: string, tip: string) {
+    const uncertain = isUncertain(op),
+      on = isOn(op);
+    return (
+      <div className="mw-decision-toggle">
+        <Help title={title} text={tip} icon={GitBranch} />
+        <label>
+          <span>
+            {uncertain
+              ? t('À vérifier', 'Check configuration')
+              : on
+                ? t('Activé', 'On')
+                : t('Désactivé', 'Off')}
+          </span>
+          <input
+            type="checkbox"
+            role="switch"
+            aria-label={`${t('Décision', 'Decision')} · ${title === t('Modèle de décision', 'Decision model') ? labels[flow] : title}`}
+            checked={on}
+            disabled={toggleDisabled(op)}
+            onChange={(e) => changeToggle(op, e.target.checked)}
+          />
+        </label>
+      </div>
+    );
+  }
+  function uncertainNotice() {
+    return (
+      <div className="notice">
+        <span>
+          {t(
+            'Ce parcours utilise des valeurs externes ou des options différentes. Vérifiez sa configuration avancée.',
+            'This workflow uses external values or different options. Check its advanced configuration.',
+          )}
+        </span>
+        <Button kind="ghost" onClick={() => configure('decision')}>
+          {t('Vérifier', 'Review')}
+        </Button>
+      </div>
+    );
+  }
+  const decisionTip = t(
+    'Active le modèle de décision pour cette fonction, sur tout le serveur. Le classement dans Recherche et le tri des preuves dans Réponses sont indépendants.',
+    'Turns on the decision model for this function, for the whole server. Ranking in Search and evidence filtering in Answers are independent.',
+  );
+  type Section = { op: Op; title?: string; tip: string; diagram: { nodes: Node[]; edges: Edge[] } };
+  const sections: Section[] =
+    flow === 'pages'
+      ? [
+          {
+            op: 'pages',
+            title: t('Régénération complète', 'Full regeneration'),
+            tip: t(
+              'Quand une page est régénérée en entier (bouton Régénérer, pages en mode complet) : la rédaction cherche dans la mémoire, et le modèle de décision peut trier les preuves.',
+              'When a page is fully regenerated (Regenerate button, pages in full mode): Writing searches memory, and the decision model can filter the evidence.',
+            ),
+            diagram: searchAndWrite('pages'),
+          },
+          {
+            op: 'pagesDelta',
+            title: t('Mise à jour partielle', 'Partial update'),
+            tip: t(
+              'Quand une page en mode mise à jour reçoit de nouveaux faits : le modèle de décision peut ignorer ceux qui ne la changent pas.',
+              'When a page in update mode receives new facts: the decision model can skip those that do not change it.',
+            ),
+            diagram: pageUpdate(),
+          },
+        ]
+      : [
+          {
+            op: flow === 'retain' ? 'consolidation' : flow,
+            tip: decisionTip,
+            diagram:
+              flow === 'reflect'
+                ? searchAndWrite('reflect')
+                : flow === 'retain'
+                  ? extraction()
+                  : searchFlow(),
+          },
+        ];
+  const setupOp: Op = flow === 'retain' ? 'consolidation' : flow;
+  const needsSetup = flow === 'recall' ? !recallReady : !decisionOf(setupOp).configured;
   return (
     <section className="card model-workflow" aria-label={t('Choix des modèles', 'Model settings')}>
       <header className="mw-heading">
@@ -724,33 +902,6 @@ export function ModelWorkflowSettings({
       />
       <div className="mw-body">
         <ErrorNotice message={error} />
-        <div className="mw-decision-toggle">
-          <Help
-            title={t('Modèle de décision', 'Decision model')}
-            text={t(
-              'Active la décision spécialisée pour cette fonction. Les banques peuvent remplacer ces valeurs. Le classement dans Recherche et l’évaluation dans Réponses sont indépendants.',
-              'Enables specialized decisions for this function. Banks may override these defaults. Ranking in Search and evidence evaluation in Answers are independent.',
-            )}
-            icon={GitBranch}
-          />
-          <label>
-            <span>
-              {uncertain
-                ? t('À vérifier', 'Check configuration')
-                : on
-                  ? t('Activé', 'On')
-                  : t('Désactivé', 'Off')}
-            </span>
-            <input
-              type="checkbox"
-              role="switch"
-              aria-label={`${t('Décision', 'Decision')} · ${labels[flow]}`}
-              checked={on}
-              disabled={toggleDisabled}
-              onChange={(e) => changeToggle(e.target.checked)}
-            />
-          </label>
-        </div>
         {!is120 && (
           <p className="notice">
             {t(
@@ -781,7 +932,7 @@ export function ModelWorkflowSettings({
               </Button>
             </div>
           )}
-        {!decision.configured && (
+        {needsSetup && (
           <div className="mw-setup">
             {sourcePicker()}
             <Button kind="ghost" onClick={() => configure('decision')}>
@@ -789,21 +940,20 @@ export function ModelWorkflowSettings({
             </Button>
           </div>
         )}
-        {uncertain ? (
-          <div className="notice">
-            <span>
-              {t(
-                'Ce parcours utilise des valeurs externes ou des options différentes. Vérifiez sa configuration avancée.',
-                'This workflow uses external values or different options. Check its advanced configuration.',
-              )}
-            </span>
-            <Button kind="ghost" onClick={() => configure('decision')}>
-              {t('Vérifier', 'Review')}
-            </Button>
+        {sections.map((section) => (
+          <div key={section.op} className="mw-section">
+            {toggle(
+              section.op,
+              section.title || t('Modèle de décision', 'Decision model'),
+              section.tip,
+            )}
+            {isUncertain(section.op) ? (
+              uncertainNotice()
+            ) : (
+              <Diagram nodes={section.diagram.nodes} edges={section.diagram.edges} />
+            )}
           </div>
-        ) : (
-          <Diagram nodes={nodes} edges={edges} />
-        )}
+        ))}
         <div className="mw-embeddings">
           <Help
             title="Embeddings"

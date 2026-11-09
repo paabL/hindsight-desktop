@@ -22,10 +22,25 @@ const providerChoices = [
 ];
 const modelsByProvider = Object.fromEntries(
   [
-    ['claude-code', ['claude-sonnet-5-5', 'claude-haiku-5-5']],
-    ['openai-codex', ['gpt-6-luna', 'gpt-5.4-mini']],
-    ['gemini', ['gemini-3.5-flash']],
-  ].map(([provider, models]) => [provider, (models as string[]).map((id) => ({ id, title: id }))]),
+    [
+      'claude-code',
+      [
+        ['claude-sonnet-5-5', 'Claude Sonnet 5.5'],
+        ['claude-haiku-5-5', 'Claude Haiku 5.5'],
+      ],
+    ],
+    [
+      'openai-codex',
+      [
+        ['gpt-6-luna', 'GPT-6 Luna'],
+        ['gpt-5.4-mini', 'GPT-5.4 Mini'],
+      ],
+    ],
+    ['gemini', [['gemini-3.5-flash', 'Gemini 3.5 Flash']]],
+  ].map(([provider, models]) => [
+    provider,
+    (models as string[][]).map(([id, title]) => ({ id, title })),
+  ]),
 );
 export function modelWorkflowDemo() {
   const identities: Row = {},
@@ -149,7 +164,7 @@ export function modelWorkflowDemo() {
     values[P + name] = 'true';
   });
   const decisions = Object.fromEntries(
-    ['reflect', 'consolidation', 'pages', 'recall'].map((op) => [
+    ['reflect', 'consolidation', 'pages', 'pagesDelta', 'recall'].map((op) => [
       op,
       {
         provider: 'hindsight',
@@ -159,7 +174,6 @@ export function modelWorkflowDemo() {
         enabled: op !== 'recall',
         uncertain: false,
         shared: true,
-        partial: false,
       },
     ]),
   );
@@ -239,10 +253,10 @@ export function changeModelWorkflowDemo(server: Row, command: string, args: Row)
         for (const field of role.fields)
           if (field.name === name) {
             field.value = value || null;
-            if (w.identities[role.id] && name.endsWith('_MODEL')) {
-              w.identities[role.id].model = value || 'gpt-6-luna';
-              role.effective = `${w.identities[role.id].provider} · ${w.identities[role.id].model}`;
-            }
+            const identity = w.identities[role.id];
+            if (identity && name.endsWith('_MODEL')) identity.model = value || 'gpt-6-luna';
+            if (identity && name.endsWith('_PROVIDER')) identity.provider = value || 'openai-codex';
+            if (identity) role.effective = `${identity.provider} · ${identity.model}`;
           }
     }
   } else {
@@ -253,17 +267,17 @@ export function changeModelWorkflowDemo(server: Row, command: string, args: Row)
   }
   const global = server.hindsightModels.decision !== 'off';
   const enabled = (name: string) => w.values[P + name] !== 'false';
-  for (const op of ['reflect', 'consolidation', 'pages', 'recall']) {
+  const flagOf: Row = {
+    pages: 'MENTAL_MODEL_REFRESH_USE_DECISION_MODEL',
+    pagesDelta: 'MENTAL_MODEL_DELTA_USE_DECISION_MODEL',
+  };
+  for (const op of ['reflect', 'consolidation', 'pages', 'pagesDelta', 'recall']) {
     const d = w.decisions[op];
     d.configured =
       global && (op !== 'recall' || w.values[P + 'RECALL_DECISION_MODEL_PROVIDER'] === 'hindsight');
     d.enabled =
       d.configured &&
-      (op === 'recall' ||
-        (op === 'pages'
-          ? enabled('MENTAL_MODEL_DELTA_USE_DECISION_MODEL') &&
-            enabled('MENTAL_MODEL_REFRESH_USE_DECISION_MODEL')
-          : enabled(op.toUpperCase() + '_USE_DECISION_MODEL')));
+      (op === 'recall' || enabled(flagOf[op] || op.toUpperCase() + '_USE_DECISION_MODEL'));
   }
   w.revision = 'example-' + ++state.revision;
   server.hasChanges = true;

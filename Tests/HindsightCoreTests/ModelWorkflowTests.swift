@@ -93,12 +93,36 @@ final class ModelWorkflowTests: XCTestCase {
         XCTAssertEqual(vm.backups.count, 1)
         XCTAssertEqual(try String(contentsOf: vm.backups[0].url, encoding: .utf8), original)
     }
-    func testMixedPageOptionsAndUnsupportedReflectProviderAreNotDisplayedAsActive() async throws {
+    func testPageOptionsAreIndependentAndUnsupportedReflectProviderIsNotDisplayedAsActive() async throws {
         let (vm, file) = try await make("export HINDSIGHT_API_MENTAL_MODEL_REFRESH_USE_DECISION_MODEL=false"); defer { try? FileManager.default.removeItem(at: file) }
-        XCTAssertTrue(vm.modelWorkflow!.decisions["pages"]!.partial)
+        // Régénération complète coupée, mise à jour partielle gardée : un réglage voulu, pas « à vérifier ».
+        XCTAssertFalse(vm.modelWorkflow!.decisions["pages"]!.enabled)
+        XCTAssertFalse(vm.modelWorkflow!.decisions["pages"]!.uncertain)
+        XCTAssertTrue(vm.modelWorkflow!.decisions["pagesDelta"]!.enabled)
+        try vm.prepareModelWorkflow([p + "MENTAL_MODEL_DELTA_USE_DECISION_MODEL": "false"], revision: vm.modelWorkflow!.revision)
+        XCTAssertFalse(vm.modelWorkflow!.decisions["pagesDelta"]!.enabled)
+        XCTAssertTrue(vm.modelWorkflow!.decisions["reflect"]!.enabled, "Réponses restent indépendantes des pages")
         vm.setValue(p + "REFLECT_DECISION_MODEL_PROVIDER", "openai")
         XCTAssertFalse(vm.modelWorkflow!.decisions["reflect"]!.configured)
         XCTAssertFalse(vm.modelWorkflow!.decisions["pages"]!.enabled)
         XCTAssertTrue(vm.modelWorkflow!.decisions["consolidation"]!.enabled)
+    }
+    func testDiagramMenuChangesProviderAndModelTogetherAndRefusesUnknownProviders() async throws {
+        let (vm, file) = try await make(); defer { try? FileManager.default.removeItem(at: file) }
+        try vm.prepareModelWorkflow([p + "MENTAL_MODEL_REFRESH_LLM_PROVIDER": "claude-code", p + "MENTAL_MODEL_REFRESH_LLM_MODEL": "sonnet"],
+                                    revision: vm.modelWorkflow!.revision)
+        XCTAssertEqual(vm.modelWorkflow!.identities["mental_model"]!.provider, "claude-code")
+        XCTAssertEqual(vm.modelWorkflow!.identities["mental_model"]!.model, "sonnet")
+        let before = vm.draft
+        XCTAssertThrowsError(try vm.prepareModelWorkflow([p + "REFLECT_LLM_PROVIDER": "made-up", p + "REFLECT_LLM_MODEL": "x"],
+                                                         revision: vm.modelWorkflow!.revision))
+        XCTAssertEqual(vm.draft, before, "Rien n'est appliqué si un fournisseur est refusé")
+        // Revenir à l'héritage efface fournisseur et modèle propres à l'usage.
+        try vm.prepareModelWorkflow([p + "REFLECT_LLM_PROVIDER": "", p + "REFLECT_LLM_MODEL": ""], revision: vm.modelWorkflow!.revision)
+        XCTAssertEqual(vm.modelWorkflow!.identities["reflect"]!.provider, "openai-codex")
+        XCTAssertEqual(LLMModelCatalog.readableTitle("claude-haiku-5-5"), "Claude Haiku 5.5")
+        XCTAssertEqual(LLMModelCatalog.readableTitle("gpt-6-luna"), "GPT-6 Luna")
+        XCTAssertNil(LLMModelCatalog.readableTitle("local-model"))
+        XCTAssertEqual(LLMModelCatalog.choices(for: "claude-code", configured: ["haiku"]).first?.title, "Claude Haiku 5.5")
     }
 }
