@@ -145,6 +145,129 @@ final class BankAdminTests: XCTestCase {
         XCTAssertFalse(t.requests.contains { $0.method != "GET" }, "lire un modèle mental n'écrit rien")
     }
 
+    // MARK: Modifier le nom et la question d'une connaissance
+
+    /// Modèle mental ouvert (la liste ne porte pas la question : la modification part de la page complète).
+    private func openModel(_ t: MockTransport, _ vm: BankAdminViewModel, page: Bool = false) async throws -> MentalModelResponse {
+        let id = page ? "mm2" : "mm1"
+        t.on("GET", "\(bankPath)/mental-models/\(id)", json: #"{"id":"\#(id)","bank_id":"b","name":"TODO","source_query":"Mes échéances ?","tags":[],"is_knowledge_page":\#(page)}"#)
+        await vm.loadMentalModel(id)
+        return try XCTUnwrap(vm.mentalModelDetail.value)
+    }
+
+    func testRenamingAMentalModelSendsOnlyItsNameAfterConfirmation() async throws {
+        let t = MockTransport()
+        let vm = make(t)
+        let m = try await openModel(t, vm)
+        t.on("PATCH", "\(bankPath)/mental-models/mm1", json: #"{"id":"mm1","bank_id":"b","name":"Échéances","source_query":"Mes échéances ?","tags":[]}"#)
+        vm.requestUpdateMentalModel(m, name: "  Échéances ", sourceQuery: "Mes échéances ?")
+        let c = try XCTUnwrap(vm.confirmation)
+        XCTAssertEqual(c.title, "Renommer le modèle mental « TODO » ?")
+        XCTAssertEqual(c.message, "Nouveau nom : « Échéances »\n\nSon contenu ne change pas.")
+        XCTAssertEqual(c.confirmTitle, "Enregistrer")
+        XCTAssertFalse(t.requests.contains { $0.method != "GET" }, "rien n'est écrit avant la confirmation")
+        await c.perform()
+        let body = try XCTUnwrap(t.requests.first { $0.method == "PATCH" }?.bodyJSON)
+        XCTAssertEqual(body, .object(["name": "Échéances"]), "seul le champ modifié part")
+        XCTAssertFalse(t.requests.contains { $0.path.hasSuffix("/refresh") }, "un nouveau nom ne régénère rien")
+        XCTAssertFalse(vm.refreshingIDs.contains("mm1"))
+        XCTAssertEqual(vm.actionMessage, "Modèle mental renommé.")
+    }
+
+    func testANewQuestionIsSavedAndRegeneratedUnderOneConfirmation() async throws {
+        let t = MockTransport()
+        let vm = make(t)
+        let m = try await openModel(t, vm)
+        t.on("PATCH", "\(bankPath)/mental-models/mm1", json: #"{"id":"mm1","bank_id":"b","name":"TODO","source_query":"Mes échéances des six prochaines semaines ?","tags":[]}"#)
+        t.on("POST", "\(bankPath)/mental-models/mm1/refresh", json: #"{"operation_id":"op-r","status":"pending"}"#)
+        vm.requestUpdateMentalModel(m, name: "TODO", sourceQuery: "Mes échéances des six prochaines semaines ?\n")
+        let c = try XCTUnwrap(vm.confirmation)
+        XCTAssertEqual(c.title, "Modifier la question de « TODO » ?")
+        XCTAssertEqual(c.message, "Nouvelle question : Mes échéances des six prochaines semaines ?\n\nLe modèle mental est aussitôt régénéré par le LLM pour cette question (opération asynchrone).")
+        XCTAssertEqual(c.confirmTitle, "Enregistrer et régénérer")
+        await c.perform()
+        let body = try XCTUnwrap(t.requests.first { $0.method == "PATCH" }?.bodyJSON)
+        XCTAssertEqual(body, .object(["source_query": "Mes échéances des six prochaines semaines ?"]))
+        let writes = t.requests.filter { $0.method != "GET" }.map { "\($0.method) \($0.path)" }
+        XCTAssertEqual(writes, ["PATCH \(bankPath)/mental-models/mm1", "POST \(bankPath)/mental-models/mm1/refresh"], "la question d'abord, puis sa régénération")
+        XCTAssertTrue(vm.refreshingIDs.contains("mm1"))
+        XCTAssertEqual(vm.actionMessage, "Question de « TODO » modifiée ; régénération mise en file : suivi dans « Activité › Traitements ».")
+        XCTAssertEqual(vm.mentalModelDetail.value?.id, "mm1", "la page ouverte est relue")
+    }
+
+    func testAKnowledgePageChangesThroughItsNodeAndTheServerRegeneratesIt() async throws {
+        let t = MockTransport()
+        let vm = make(t)
+        let m = try await openModel(t, vm, page: true)
+        t.on("GET", "\(bankPath)/knowledge-base/tree", json: #"{"roots":[{"id":"kf-1","kind":"folder","name":"Projets","managed":false,"tags":[],"children":[{"id":"kp-9","kind":"page","name":"TODO","parent_id":"kf-1","mental_model_id":"mm2","managed":false,"tags":[],"children":[]}]}]}"#)
+        t.on("PATCH", "\(bankPath)/knowledge-base/nodes/kp-9", json: #"{"id":"kp-9","kind":"page","name":"Échéances","parent_id":"kf-1","mental_model_id":"mm2","managed":false,"tags":[],"children":[]}"#)
+        vm.requestUpdateMentalModel(m, name: "Échéances", sourceQuery: "Mes échéances datées ?")
+        let c = try XCTUnwrap(vm.confirmation)
+        XCTAssertEqual(c.title, "Modifier la question de « TODO » ?")
+        XCTAssertEqual(c.message, "Nouveau nom : « Échéances »\n\nNouvelle question : Mes échéances datées ?\n\nLa page de connaissance est aussitôt régénérée par le LLM pour cette question (opération asynchrone).")
+        await c.perform()
+        let patch = try XCTUnwrap(t.requests.first { $0.method == "PATCH" })
+        XCTAssertEqual(patch.path, "\(bankPath)/knowledge-base/nodes/kp-9", "le nœud de la page, trouvé dans un dossier")
+        XCTAssertEqual(patch.bodyJSON, .object(["name": "Échéances", "source_query": "Mes échéances datées ?"]), "sans parent_id : la page ne bouge pas")
+        XCTAssertFalse(t.requests.contains { $0.path.hasSuffix("/refresh") }, "le serveur régénère lui-même la page")
+        XCTAssertFalse(t.requests.contains { $0.path.hasSuffix("/mental-models/mm2") && $0.method == "PATCH" })
+        XCTAssertTrue(vm.refreshingIDs.contains("mm2"))
+        XCTAssertEqual(vm.actionMessage, "Question de « Échéances » modifiée ; régénération mise en file : suivi dans « Activité › Traitements ».")
+    }
+
+    func testAPageMissingFromTheTreeIsNotChanged() async throws {
+        let t = MockTransport()
+        let vm = make(t)
+        let m = try await openModel(t, vm, page: true)
+        t.on("GET", "\(bankPath)/knowledge-base/tree", json: #"{"roots":[]}"#)
+        vm.requestUpdateMentalModel(m, name: "Échéances", sourceQuery: "Mes échéances ?")
+        await vm.confirmation!.perform()
+        XCTAssertFalse(t.requests.contains { $0.method != "GET" })
+        XCTAssertEqual(vm.actionMessage, "Cette page n'apparaît plus dans la base de connaissance : rien n'a été modifié.")
+    }
+
+    func testNothingToSaveOrAnEmptyFieldAsksNothing() async throws {
+        let t = MockTransport()
+        let vm = make(t)
+        let m = try await openModel(t, vm)
+        vm.requestUpdateMentalModel(m, name: "TODO ", sourceQuery: " Mes échéances ?")
+        XCTAssertNil(vm.confirmation)
+        XCTAssertEqual(vm.actionMessage, "Aucune modification à enregistrer.")
+        vm.requestUpdateMentalModel(m, name: " ", sourceQuery: "Autre ?")
+        XCTAssertNil(vm.confirmation)
+        XCTAssertEqual(vm.actionMessage, "Le nom ne peut pas être vide.")
+        vm.requestUpdateMentalModel(m, name: "TODO", sourceQuery: "\n")
+        XCTAssertNil(vm.confirmation)
+        XCTAssertEqual(vm.actionMessage, "La question ne peut pas être vide.")
+        XCTAssertFalse(t.requests.contains { $0.method != "GET" })
+    }
+
+    func testPauseRefusesANewQuestionButNotARename() async throws {
+        let t = MockTransport()
+        let vm = make(t)
+        let m = try await openModel(t, vm)
+        vm.pauseGate = { _ in "Banque en pause." }
+        vm.requestUpdateMentalModel(m, name: "TODO", sourceQuery: "Autre question ?")
+        XCTAssertNil(vm.confirmation, "une régénération ne part pas pendant une pause")
+        XCTAssertEqual(vm.actionMessage, "Banque en pause.")
+        vm.requestUpdateMentalModel(m, name: "Échéances", sourceQuery: "Mes échéances ?")
+        XCTAssertEqual(vm.confirmation?.confirmTitle, "Enregistrer", "renommer n'appelle pas le LLM")
+    }
+
+    func testARegenerationThatCannotStartAfterSavingIsNamed() async throws {
+        let t = MockTransport()
+        let vm = make(t)
+        let m = try await openModel(t, vm)
+        t.on("PATCH", "\(bankPath)/mental-models/mm1", json: #"{"id":"mm1","bank_id":"b","name":"TODO","source_query":"Autre ?","tags":[]}"#)
+        t.on("POST", "\(bankPath)/mental-models/mm1/refresh", json: #"{"detail":"boom"}"#, status: 500)
+        vm.requestUpdateMentalModel(m, name: "TODO", sourceQuery: "Autre ?")
+        await vm.confirmation!.perform()
+        let message = try XCTUnwrap(vm.actionMessage)
+        XCTAssertTrue(message.hasPrefix("Question enregistrée, mais la régénération n'a pas pu partir : "), message)
+        XCTAssertTrue(message.hasSuffix(" Utilisez « Régénérer »."), message)
+        XCTAssertFalse(vm.refreshingIDs.contains("mm1"))
+    }
+
     func testLoadsDirectivesAndMentalModels() async throws {
         let vm = make(MockTransport())
         await vm.reload()

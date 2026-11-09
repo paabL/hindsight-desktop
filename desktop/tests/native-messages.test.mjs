@@ -61,6 +61,55 @@ test('les détails de coût sont traduits et la question utilisateur reste stric
   assert.ok(result.message.endsWith('\n\n' + query));
 });
 
+test('modifier une connaissance traduit le cadre et garde le nom et la question tels quels', () => {
+  setLanguage('en');
+  const question = 'Qu’est-ce qui m’attend ?\n\nSon contenu ne change pas.';
+  const both = localizeConfirmation(
+    confirmation({
+      title: 'Modifier la question de « TODO » ?',
+      message:
+        'Nouveau nom : « Échéances »\n\nNouvelle question : ' +
+        question +
+        "\n\nLa page de connaissance est aussitôt régénérée par le LLM pour cette question (opération asynchrone).\n\nEstimation : ≈ 4 k–9 k jetons LLM, pris sur l'abonnement — valeurs par défaut (aucune trace récente).",
+      confirmTitle: 'Enregistrer et régénérer',
+      requiredText: undefined,
+      destructive: false,
+    }),
+  );
+  assert.equal(both.title, 'Change the question of “TODO”?');
+  assert.equal(both.confirmTitle, 'Save and regenerate');
+  assert.ok(both.message.startsWith('New name: “Échéances”\n\nNew question: ' + question + '\n\n'));
+  assert.match(
+    both.message,
+    /The knowledge page is regenerated right away by the LLM for this question \(asynchronous operation\)\.\n\nEstimate: ≈ 4 k–9 k LLM tokens/,
+  );
+  const rename = localizeConfirmation(
+    confirmation({
+      title: 'Renommer le modèle mental « TODO » ?',
+      message: 'Nouveau nom : « Échéances »\n\nSon contenu ne change pas.',
+      confirmTitle: 'Enregistrer',
+      requiredText: undefined,
+      destructive: false,
+    }),
+  );
+  assert.equal(rename.title, 'Rename mental model “TODO”?');
+  assert.equal(rename.message, 'New name: “Échéances”\n\nIts content does not change.');
+  assert.equal(rename.confirmTitle, 'Save');
+  assert.equal(
+    nativeSystemMessage(
+      'Question de « TODO » modifiée ; régénération mise en file : suivi dans « Activité › Traitements ».',
+    ),
+    'Question of “TODO” changed. Its regeneration is queued: follow it in Activity › Processing.',
+  );
+  assert.equal(
+    nativeSystemMessage(
+      "Question enregistrée, mais la régénération n'a pas pu partir : Connaissance inconnue. Utilisez « Régénérer ».",
+    ),
+    'Question saved, but the regeneration could not start: Unknown knowledge item. Use “Regenerate”.',
+  );
+  assert.equal(nativeSystemMessage('Page de connaissance renommée.'), 'Knowledge page renamed.');
+});
+
 test('le texte d’une directive reste intact même s’il ressemble exactement à un message système', () => {
   setLanguage('en');
   const original = confirmation({

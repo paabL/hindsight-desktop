@@ -277,6 +277,94 @@ public final class BankAdminViewModel {
         }
     }
 
+    /// Modifie le nom ou la question d'une connaissance, depuis sa page.
+    ///
+    /// Une nouvelle question rend le contenu caduc : elle part avec sa régénération, sous une seule confirmation
+    /// qui en annonce le coût. Le nom seul ne touche pas au contenu. Une page de connaissance se modifie par son
+    /// nœud de la base de connaissance : le nom de la page et le modèle qui la porte changent ensemble, et le
+    /// serveur la régénère lui-même quand la question change. Un modèle mental se modifie directement, puis sa
+    /// régénération est demandée. Une régénération déjà en file lira la nouvelle question ; une régénération en
+    /// cours est suivie d'une autre (le serveur les enchaîne). `m` est le modèle complet, question comprise.
+    public func requestUpdateMentalModel(_ m: MentalModelResponse, name: String, sourceQuery: String) {
+        let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let q = sourceQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        let current = (m.sourceQuery ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !n.isEmpty else { actionMessage = "Le nom ne peut pas être vide."; return }
+        guard !q.isEmpty || current.isEmpty else { actionMessage = "La question ne peut pas être vide."; return }
+        let rename = n != m.name, requery = q != current
+        guard rename || requery else { actionMessage = "Aucune modification à enregistrer."; return }
+        if requery, let reason = pauseGate?(bank) {
+            actionMessage = reason
+            return
+        }
+        let page = m.isKnowledgePage == true
+        var lines: [String] = []
+        if rename { lines.append("Nouveau nom : « \(n) »") }
+        if requery { lines.append("Nouvelle question : \(q)") }
+        lines.append(requery
+            ? (page ? "La page de connaissance est aussitôt régénérée" : "Le modèle mental est aussitôt régénéré")
+                + " par le LLM pour cette question (opération asynchrone)."
+                + (estimate?(.mentalModelRefresh).map { "\n\n" + $0.summary } ?? "")
+            : "Son contenu ne change pas.")
+        confirmation = ConfirmationRequest(
+            title: requery
+                ? "Modifier la question de « \(m.name) » ?"
+                : page ? "Renommer la page de connaissance « \(m.name) » ?" : "Renommer le modèle mental « \(m.name) » ?",
+            message: lines.joined(separator: "\n\n"),
+            confirmTitle: requery ? "Enregistrer et régénérer" : "Enregistrer", severity: .normal
+        ) { [weak self] in
+            guard let self else { return }
+            if requery, let reason = self.pauseGate?(self.bank) {
+                self.actionMessage = reason
+                return
+            }
+            let newName = rename ? n : nil, newQuery = requery ? q : nil
+            do {
+                if page {
+                    guard let node = try await self.knowledgeNodeID(of: m.id) else {
+                        self.actionMessage = "Cette page n'apparaît plus dans la base de connaissance : rien n'a été modifié."
+                        return
+                    }
+                    _ = try await self.client.updateKnowledgeNode(
+                        self.bank, id: node, UpdateNodeRequest(name: newName, sourceQuery: newQuery))
+                } else {
+                    _ = try await self.client.updateMentalModel(
+                        self.bank, id: m.id, UpdateMentalModelRequest(name: newName, sourceQuery: newQuery))
+                    if requery {
+                        do { _ = try await self.client.refreshMentalModel(self.bank, id: m.id) } catch {
+                            self.actionMessage = "Question enregistrée, mais la régénération n'a pas pu partir : \(error.userMessage) Utilisez « Régénérer »."
+                            await self.reloadEdited(m.id)
+                            return
+                        }
+                    }
+                }
+                if requery { self.refreshingIDs.insert(m.id) }
+                self.actionMessage = requery
+                    ? "Question de « \(n) » modifiée ; régénération mise en file : suivi dans « Activité › Traitements »."
+                    : page ? "Page de connaissance renommée." : "Modèle mental renommé."
+                await self.reloadEdited(m.id)
+            } catch { self.actionMessage = "Échec : \(error.userMessage)" }
+        }
+    }
+
+    /// Nœud de la base de connaissance qui porte ce modèle (une page), cherché dans toute l'arborescence.
+    private func knowledgeNodeID(of modelID: String) async throws -> String? {
+        func find(_ nodes: [KnowledgeNode]) -> String? {
+            for node in nodes {
+                if node.mentalModelId == modelID { return node.id }
+                if let id = find(node.children) { return id }
+            }
+            return nil
+        }
+        return find(try await client.knowledgeTree(bank).roots)
+    }
+
+    /// Après une modification : la liste relue et, si elle est ouverte, la page aussi.
+    private func reloadEdited(_ id: String) async {
+        await loadMentalModels()
+        if mentalModelDetail.value?.id == id { await loadMentalModel(id) }
+    }
+
     /// Charge un modèle mental complet (contenu, question source, déclenchement). Lecture seule, sans appel LLM.
     public func loadMentalModel(_ id: String) async {
         if mentalModelDetail.value?.id != id { mentalModelDetail = .loading }

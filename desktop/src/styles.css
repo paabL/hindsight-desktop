@@ -1580,6 +1580,22 @@ tbody tr:hover {
   color: var(--secondary);
   margin-bottom: 22px;
 }
+/* Connaissances : nom et question modifiés depuis la page ouverte, au-dessus de son contenu. */
+.knowledge-edit {
+  margin-bottom: 24px;
+  padding: 18px 20px 0;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--surface-subtle);
+}
+.knowledge-edit .form-hint {
+  margin: -8px 0 0;
+}
+.knowledge-edit .modal-actions {
+  margin-top: 0;
+  padding: 14px 0 16px;
+  border-top-color: var(--line-soft);
+}
 .provenance {
   margin-top: 35px;
   border-top: 1px solid var(--line);

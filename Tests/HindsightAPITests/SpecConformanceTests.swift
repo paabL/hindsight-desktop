@@ -115,6 +115,7 @@ final class SpecConformanceTests: XCTestCase {
         c["get_knowledge_page"] = { _ = try await $0.knowledgePage(b, id: "p1") }
         c["search_knowledge_base"] = { _ = try await $0.searchKnowledgeBase(b, q: "x") }
         c["delete_knowledge_node"] = { _ = try await $0.deleteKnowledgeNode(b, id: "n1") }
+        c["update_knowledge_node"] = { _ = try await $0.updateKnowledgeNode(b, id: "n1", UpdateNodeRequest(name: "n")) }
 
         c["export_bank_transfer"] = { _ = try await $0.exportBank(b, includeHistory: true, documentIDs: ["d1", "d2"]) }
         c["export_documents"] = { _ = try await $0.exportDocuments(b, documentIDs: ["d1"], includeObservations: true) }
@@ -144,7 +145,6 @@ final class SpecConformanceTests: XCTestCase {
         "create_knowledge_folder": "hors périmètre (lecture seule de la base de connaissance)",
         "create_knowledge_page": "hors périmètre (lecture seule de la base de connaissance)",
         "export_knowledge_base": "hors périmètre",
-        "update_knowledge_node": "hors périmètre",
         "preview_consolidation_strategies": "hors périmètre",
         "create_webhook": "webhooks hors périmètre",
         "list_webhooks": "webhooks hors périmètre",

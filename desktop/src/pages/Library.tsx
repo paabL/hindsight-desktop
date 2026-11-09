@@ -11,6 +11,7 @@ import {
   FileText,
   FolderPlus,
   Layers3,
+  Pencil,
   Plus,
   RotateCcw,
   Search,
@@ -349,6 +350,11 @@ export function Models({ data, run, busy, notify }: PageProps) {
   const [create, setCreate] = useState(false);
   const [name, setName] = useState('');
   const [question, setQuestion] = useState('');
+  // Nom et question modifiés depuis la page ouverte ; la fenêtre se referme quand la page relue les porte.
+  const [editing, setEditing] = useState(false);
+  const [draftName, setDraftName] = useState('');
+  const [draftQuery, setDraftQuery] = useState('');
+  const [submitted, setSubmitted] = useState<{ name: string; query: string } | null>(null);
   const allModels: Row[] | undefined = Array.isArray(data.models) ? data.models : undefined;
   const models: Row[] = (allModels || []).filter((m: Row) =>
     `${m.name} ${m.source_query}`.toLocaleLowerCase('fr').includes(query.toLocaleLowerCase('fr')),
@@ -363,7 +369,34 @@ export function Models({ data, run, busy, notify }: PageProps) {
     const result = await run('model.open', { id });
     if (result?.error) throw new Error(nativeSystemMessage(result.error));
     setModel(result.model);
+    setEditing(false);
   }
+  // Après une modification, le moteur relit la page ouverte : son nom et sa question à jour priment.
+  const shown: Row | null =
+    model && data.openModel?.id === model.id ? { ...model, ...data.openModel } : model;
+  const currentQuery = (shown?.source_query || '').trim();
+  // Une question vidée n'est pas une nouvelle question : elle ne s'enregistre pas.
+  const queryEmptied = !draftQuery.trim() && !!currentQuery;
+  const requery = !queryEmptied && draftQuery.trim() !== currentQuery;
+  const changed = !!shown && (draftName.trim() !== shown.name || requery);
+  function startEdit() {
+    if (!shown) return;
+    setDraftName(shown.name);
+    setDraftQuery(shown.source_query || '');
+    setSubmitted(null);
+    setEditing(true);
+  }
+  useEffect(() => {
+    if (
+      submitted &&
+      shown &&
+      shown.name === submitted.name &&
+      (shown.source_query || '').trim() === submitted.query
+    ) {
+      setEditing(false);
+      setSubmitted(null);
+    }
+  }, [shown, submitted]);
   // Régénération en attente ou en cours (opérations de Traitements) : l'état prime sur « À régénérer ».
   const refreshing = new Set<string>(Array.isArray(data.refreshing) ? data.refreshing : []);
   const refreshFailed = (m: Row) =>
@@ -498,55 +531,126 @@ export function Models({ data, run, busy, notify }: PageProps) {
           }
         />
       )}
-      {model && (
-        <Modal title={model.name} subtitle={model.source_query} wide onClose={() => setModel(null)}>
+      {model && shown && (
+        <Modal
+          title={shown.name}
+          subtitle={shown.source_query}
+          wide
+          onClose={() => {
+            setModel(null);
+            setEditing(false);
+          }}
+        >
           <div className="reader-meta">
             <Badge>
-              {model.is_knowledge_page
+              {shown.is_knowledge_page
                 ? t('Page de connaissance', 'Knowledge page')
                 : t('Modèle mental', 'Mental model')}
             </Badge>
             <span>
-              {model.last_refreshed_at
-                ? `${t('Générée le', 'Generated on')} ${date(model.last_refreshed_at, true)}`
+              {shown.last_refreshed_at
+                ? `${t('Générée le', 'Generated on')} ${date(shown.last_refreshed_at, true)}`
                 : t('Jamais générée', 'Never generated')}
             </span>
-            {refreshFailed(model) && (
+            {refreshFailed(shown) && (
               <Badge tone="red">
                 {t('Échec de la dernière génération', 'Last generation failed')}
               </Badge>
             )}
             <div className="spacer" />
-            <Button
-              icon={WandSparkles}
-              disabled={busy || refreshing.has(model.id)}
-              title={
-                refreshing.has(model.id)
+            {/* Pendant la modification, son formulaire porte la seule action principale. */}
+            {!editing && (
+              <>
+                <Button
+                  icon={WandSparkles}
+                  disabled={busy || refreshing.has(shown.id)}
+                  title={
+                    refreshing.has(shown.id)
+                      ? t(
+                          'Une régénération est déjà en cours ou en file (Activité › Traitements).',
+                          'A regeneration is already running or queued (Activity › Processing).',
+                        )
+                      : t(
+                          'Fait réécrire cette connaissance par le LLM à partir des faits actuels (appel LLM).',
+                          'Has the LLM rewrite this knowledge item from the current facts (LLM call).',
+                        )
+                  }
+                  onClick={() => void run('model.refresh', { id: shown.id })}
+                >
+                  {' '}
+                  {refreshing.has(shown.id)
+                    ? t('Régénération en cours', 'Regenerating')
+                    : t('Régénérer', 'Regenerate')}
+                </Button>
+                <IconButton
+                  icon={Pencil}
+                  label={t('Modifier le nom et la question', 'Edit the name and question')}
+                  disabled={busy}
+                  onClick={startEdit}
+                />
+                <IconButton
+                  icon={Trash2}
+                  label={t('Supprimer cette connaissance', 'Delete this knowledge item')}
+                  disabled={busy}
+                  onClick={() => void run('model.delete', { id: shown.id })}
+                />
+              </>
+            )}
+          </div>
+          {editing && (
+            <form
+              className="form-stack knowledge-edit"
+              aria-label={t('Modifier le nom et la question', 'Edit the name and question')}
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!changed || !draftName.trim() || queryEmptied) return;
+                setSubmitted({ name: draftName.trim(), query: draftQuery.trim() });
+                void run('model.update', { id: shown.id, name: draftName, query: draftQuery });
+              }}
+            >
+              <label>
+                {shown.is_knowledge_page
+                  ? t('Nom de la page de connaissance', 'Knowledge page name')
+                  : t('Nom du modèle mental', 'Mental model name')}
+                <input required value={draftName} onChange={(e) => setDraftName(e.target.value)} />
+              </label>
+              <label>
+                {t('La question à explorer', 'The question to explore')}
+                <textarea
+                  value={draftQuery}
+                  onChange={(e) => setDraftQuery(e.target.value)}
+                  rows={6}
+                />
+              </label>
+              <p className="form-hint">
+                {requery
                   ? t(
-                      'Une régénération est déjà en cours ou en file (Activité › Traitements).',
-                      'A regeneration is already running or queued (Activity › Processing).',
+                      'Une nouvelle question régénère le contenu par le LLM. L’estimation sera présentée avant confirmation.',
+                      'A new question has the LLM regenerate the content. An estimate will be shown before you confirm.',
                     )
                   : t(
-                      'Fait réécrire cette connaissance par le LLM à partir des faits actuels (appel LLM).',
-                      'Has the LLM rewrite this knowledge item from the current facts (LLM call).',
-                    )
-              }
-              onClick={() => void run('model.refresh', { id: model.id })}
-            >
-              {' '}
-              {refreshing.has(model.id)
-                ? t('Régénération en cours', 'Regenerating')
-                : t('Régénérer', 'Regenerate')}
-            </Button>
-            <IconButton
-              icon={Trash2}
-              label={t('Supprimer cette connaissance', 'Delete this knowledge item')}
-              disabled={busy}
-              onClick={() => void run('model.delete', { id: model.id })}
-            />
-          </div>
-          {model.content ? (
-            <Markdown text={model.content} />
+                      'Changer le nom ne touche pas au contenu.',
+                      'Changing the name leaves the content as it is.',
+                    )}
+              </p>
+              <div className="modal-actions">
+                <Button type="button" onClick={() => setEditing(false)}>
+                  {t('Annuler', 'Cancel')}
+                </Button>
+                <Button
+                  kind="primary"
+                  icon={requery ? WandSparkles : Check}
+                  disabled={busy || !changed || !draftName.trim() || queryEmptied}
+                >
+                  {requery
+                    ? t('Enregistrer et régénérer', 'Save and regenerate')
+                    : t('Enregistrer', 'Save')}
+                </Button>
+              </div>
+            </form>
+          )}
+          {shown.content ? (
+            <Markdown text={shown.content} />
           ) : (
             <Empty
               icon={Sparkles}

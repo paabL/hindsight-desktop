@@ -43,7 +43,7 @@ opens explicitly labeled fictional data. Native file and server access uses Taur
 | --- | --- |
 | Overview | Bank statistics, processing status and recent documents; initial view |
 | Memory → Facts | Stored bank facts and links to their original documents |
-| Knowledge | Read, create, refresh and delete knowledge pages and mental models with confirmation |
+| Knowledge | Read, create, refresh and delete knowledge pages and mental models, and edit their name and question, with confirmation |
 | Sources | The folders that feed the selected bank; a catalog folder shows its sources, collection and upload previews |
 | Search | Recall, exact text and confirmed reflect; filters and links to original documents |
 | Models | Every model setting: diagram with selectors, decision switches and tooltips; accounts; all roles; installation and services |

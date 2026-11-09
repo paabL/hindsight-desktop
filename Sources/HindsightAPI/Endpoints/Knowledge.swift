@@ -58,4 +58,11 @@ extension HindsightClient {
     public func deleteKnowledgeNode(_ bank: String, id: String) async throws -> JSONValue {
         try await send(APIRequest("DELETE", Self.bank(bank, "knowledge-base", "nodes", id)))
     }
+
+    /// `PATCH …/knowledge-base/nodes/{id}` — renomme une page (son nœud et le modèle qui la porte, ensemble) ou
+    /// change ses options. Une nouvelle `source_query` fait régénérer la page par le serveur (appel LLM).
+    /// Un `parentId` nil n'est pas envoyé : la page ne bouge pas dans l'arborescence.
+    public func updateKnowledgeNode(_ bank: String, id: String, _ request: UpdateNodeRequest) async throws -> KnowledgeNode {
+        try await send(try APIRequest.json("PATCH", Self.bank(bank, "knowledge-base", "nodes", id), body: request))
+    }
 }

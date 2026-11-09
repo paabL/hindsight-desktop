@@ -326,6 +326,12 @@ final class DesktopBridge {
             await admin.loadMentalModel(str("id"))
             return ["model": wire(admin.mentalModelDetail.value), "error": wire(admin.mentalModelDetail.errorMessage)]
         case "model.create": (try session()).admin.requestCreateMentalModel(name: str("name"), sourceQuery: str("query"), tags: strings("tags"))
+        case "model.update":
+            // La liste ne porte pas la question : la modification part de la page complète, relue au besoin.
+            let admin = try session().admin
+            if admin.mentalModelDetail.value?.id != str("id") { await admin.loadMentalModel(str("id")) }
+            guard let model = admin.mentalModelDetail.value, model.id == str("id") else { throw BridgeFailure("Connaissance inconnue.") }
+            admin.requestUpdateMentalModel(model, name: str("name"), sourceQuery: str("query"))
         case "model.refresh", "model.delete":
             let admin = try session().admin
             guard let model = admin.mentalModels.value?.first(where: { $0.id == str("id") }) else { throw BridgeFailure("Connaissance inconnue.") }
@@ -829,6 +835,8 @@ final class DesktopBridge {
         case "models", "admin":
             return ["models": wire(s?.admin.mentalModels.value ?? []), "directives": wire(s?.admin.directives.value ?? []),
                     "refreshing": (s?.admin.refreshingIDs).map { Array($0).sorted() } ?? [],
+                    // Page ouverte, relue après une modification : la fenêtre affiche son nom et sa question à jour.
+                    "openModel": wire(s?.admin.mentalModelDetail.value),
                     "config": wire(s?.admin.config.value), "error": wire(s?.admin.config.errorMessage),
                     "modelError": wire(s?.admin.mentalModels.errorMessage), "templateDryRun": wire(s?.admin.templateDryRun),
                     "configWritable": s?.admin.configWritable ?? true,

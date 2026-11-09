@@ -106,7 +106,12 @@ the type applies at once, and the line under the search says what is shown, with
 **Clear search**. The Timeline searches the bank the same way.
 
 **Knowledge** lists knowledge pages, kept up to date by the server, and mental
-models, which follow a question you ask. Each card names its kind.
+models, which follow a question you ask. Each card names its kind. An item's
+name and question are edited from its own page (✎): a new name alone leaves the
+content as it is (**Save**); a new question goes with its regeneration, under one
+confirmation that shows the estimate (**Save and regenerate**). A knowledge page
+changes through its knowledge-base node, so its name in the tree follows, and the
+server regenerates it itself.
 
 **Processing** carries the pause: **Pause** or **Resume processing** for the
 selected bank. **More processing options** (⋯) applies the pause to all banks,
