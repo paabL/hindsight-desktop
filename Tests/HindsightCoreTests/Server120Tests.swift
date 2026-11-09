@@ -28,15 +28,16 @@ final class Server120Tests: XCTestCase {
 
     func testDecisionModelBankOptionsAreReadAndSentOnlyWhenChanged() throws {
         let before = MemoryDesign(config: ["reflect_use_decision_model": false])
-        XCTAssertFalse(before.reflectUseDecisionModel)
-        XCTAssertTrue(before.consolidationUseDecisionModel, "défaut du serveur")
         XCTAssertFalse(before.recallDecisionModelPrune, "défaut du serveur")
         var after = before
         XCTAssertNil(after.updates(from: before)?["recall_decision_model_prune"], "inchangée : jamais envoyée (serveur 1.1.0)")
         after.recallDecisionModelPrune = true
-        after.mentalModelDeltaUseDecisionModel = false
         let updates = try XCTUnwrap(after.updates(from: before))
-        XCTAssertEqual(updates, ["recall_decision_model_prune": true, "mental_model_delta_use_decision_model": false])
+        XCTAssertEqual(updates, ["recall_decision_model_prune": true])
+        // Le modèle de décision par fonction se règle dans Modèles, pour tout le serveur : la banque
+        // n'envoie jamais d'exception, même si une ancienne valeur figure dans sa configuration.
+        XCTAssertNil(MemoryDesign.labels["reflect_use_decision_model"])
+        XCTAssertFalse(try XCTUnwrap(after.values()).keys.contains { $0.hasSuffix("_use_decision_model") })
     }
 
     func testPreferObservationsIsReadAndSentOnlyWhenChanged() throws {

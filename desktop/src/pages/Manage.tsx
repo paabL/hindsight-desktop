@@ -77,10 +77,6 @@ const memoryFields = {
   storeDocumentText: 'store_document_text',
   entitiesAllowFreeForm: 'entities_allow_free_form',
   defaultObservationScopes: 'default_observation_scopes',
-  consolidationUseDecisionModel: 'consolidation_use_decision_model',
-  reflectUseDecisionModel: 'reflect_use_decision_model',
-  mentalModelRefreshUseDecisionModel: 'mental_model_refresh_use_decision_model',
-  mentalModelDeltaUseDecisionModel: 'mental_model_delta_use_decision_model',
   recallDecisionModelPrune: 'recall_decision_model_prune',
   recallDecisionModelDedup: 'recall_decision_model_dedup',
   recallPreferObservations: 'recall_prefer_observations',
@@ -395,11 +391,7 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
                 ),
               )}
               {advancedSection(
-                [
-                  'maxObservationsPerScope',
-                  'defaultObservationScopes',
-                  'consolidationUseDecisionModel',
-                ],
+                ['maxObservationsPerScope', 'defaultObservationScopes'],
                 <>
                   <label className="setting-compact">
                     <span className="setting-label">
@@ -444,14 +436,6 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
                       )}
                     </small>
                   </label>
-                  {toggle(
-                    'consolidationUseDecisionModel',
-                    t('Trier avec le modèle de décision', 'Triage with the decision model'),
-                    t(
-                      'Les redites et le bavardage sont réglés sans appel LLM, si le serveur a un modèle de décision.',
-                      'Repetition and chatter are handled without an LLM call if the server has a decision model.',
-                    ),
-                  )}
                 </>,
               )}
             </>
@@ -487,48 +471,6 @@ export function MemoryDesign({ data, run, busy, notify }: PageProps) {
                   />
                 </label>
               ))}
-              {advancedSection(
-                [
-                  'reflectUseDecisionModel',
-                  'mentalModelRefreshUseDecisionModel',
-                  'mentalModelDeltaUseDecisionModel',
-                ],
-                <>
-                  {toggle(
-                    'reflectUseDecisionModel',
-                    t(
-                      'Réponses : trier avec le modèle de décision',
-                      'Answers: filter with the decision model',
-                    ),
-                    t(
-                      'Il élague les preuves et juge quand elles suffisent ; moins cher, un peu moins précis.',
-                      'It trims evidence and decides when there is enough; lower cost, slightly lower accuracy.',
-                    ),
-                  )}
-                  {toggle(
-                    'mentalModelRefreshUseDecisionModel',
-                    t(
-                      'Pages de connaissance : régénérer avec le modèle de décision',
-                      'Knowledge pages: regenerate with the decision model',
-                    ),
-                    t(
-                      'Même tri que pour les réponses pendant une régénération complète.',
-                      'The same filtering as for answers during a full regeneration.',
-                    ),
-                  )}
-                  {toggle(
-                    'mentalModelDeltaUseDecisionModel',
-                    t(
-                      'Pages de connaissance : ignorer les faits sans effet',
-                      'Knowledge pages: skip facts that make no difference',
-                    ),
-                    t(
-                      'Une mise à jour dont aucun nouveau fait ne change la page ne fait aucun appel LLM.',
-                      'An update makes no LLM call when no new facts change the page.',
-                    ),
-                  )}
-                </>,
-              )}
             </>
           )}
           {tab === 'recall' && (

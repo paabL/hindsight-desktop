@@ -111,11 +111,8 @@ public struct MemoryDesign: Sendable, Hashable {
     public var enableTemporalRetrieval = true
     public var enableGraphRetrieval = true
     public var enableReranking = true
-    // Modèle de décision (s'il est configuré sur le serveur) : où il remplace des appels LLM
-    public var consolidationUseDecisionModel = true
-    public var reflectUseDecisionModel = true
-    public var mentalModelRefreshUseDecisionModel = true
-    public var mentalModelDeltaUseDecisionModel = true
+    // Le modèle de décision de chaque fonction se règle pour tout le serveur, dans Modèles ; la
+    // banque n'en porte pas d'exception (un seul endroit pour ce réglage).
     /// Défauts de recall quand la requête ne dit rien (serveur 1.2.0).
     public var recallDecisionModelPrune = false
     public var recallDecisionModelDedup = false
@@ -158,10 +155,6 @@ public struct MemoryDesign: Sendable, Hashable {
         enableTemporalRetrieval = bool("enable_temporal_retrieval") ?? true
         enableGraphRetrieval = bool("enable_graph_retrieval") ?? true
         enableReranking = bool("enable_reranking") ?? true
-        consolidationUseDecisionModel = bool("consolidation_use_decision_model") ?? true
-        reflectUseDecisionModel = bool("reflect_use_decision_model") ?? true
-        mentalModelRefreshUseDecisionModel = bool("mental_model_refresh_use_decision_model") ?? true
-        mentalModelDeltaUseDecisionModel = bool("mental_model_delta_use_decision_model") ?? true
         recallDecisionModelPrune = bool("recall_decision_model_prune") ?? false
         recallDecisionModelDedup = bool("recall_decision_model_dedup") ?? false
         recallPreferObservations = bool("recall_prefer_observations") ?? false
@@ -205,11 +198,7 @@ public struct MemoryDesign: Sendable, Hashable {
             "enable_temporal_retrieval": .bool(enableTemporalRetrieval),
             "enable_graph_retrieval": .bool(enableGraphRetrieval),
             "enable_reranking": .bool(enableReranking),
-            // Envoyés seulement s'ils changent : inconnus d'un serveur 1.0.0 (les deux derniers, d'un 1.1.0).
-            "consolidation_use_decision_model": .bool(consolidationUseDecisionModel),
-            "reflect_use_decision_model": .bool(reflectUseDecisionModel),
-            "mental_model_refresh_use_decision_model": .bool(mentalModelRefreshUseDecisionModel),
-            "mental_model_delta_use_decision_model": .bool(mentalModelDeltaUseDecisionModel),
+            // Envoyés seulement s'ils changent : inconnus d'un serveur 1.1.0.
             "recall_decision_model_prune": .bool(recallDecisionModelPrune),
             "recall_decision_model_dedup": .bool(recallDecisionModelDedup),
             "recall_prefer_observations": .bool(recallPreferObservations),
@@ -241,14 +230,10 @@ public struct MemoryDesign: Sendable, Hashable {
         "observations_mission": "Mission de consolidation",
         "max_observations_per_scope": "Maximum d'observations par portée",
         "default_observation_scopes": "Portée des observations par défaut",
-        "consolidation_use_decision_model": "Trier avec le modèle de décision",
         "reflect_mission": "Mission de réponse",
         "disposition_skepticism": "Esprit critique",
         "disposition_literalism": "Interprétation littérale",
         "disposition_empathy": "Empathie",
-        "reflect_use_decision_model": "Réponses : trier avec le modèle de décision",
-        "mental_model_refresh_use_decision_model": "Pages de connaissance : régénérer avec le modèle de décision",
-        "mental_model_delta_use_decision_model": "Pages de connaissance : ignorer les faits sans effet",
         "enable_text_search": "Recherche textuelle",
         "enable_temporal_retrieval": "Recherche temporelle",
         "enable_graph_retrieval": "Recherche par relations",

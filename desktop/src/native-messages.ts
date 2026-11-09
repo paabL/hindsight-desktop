@@ -662,16 +662,10 @@ const memoryLabels: Record<string, string> = {
   'Mission de consolidation': 'Consolidation mission',
   "Maximum d'observations par portée": 'Maximum observations per scope',
   'Portée des observations par défaut': 'Default observation scope',
-  'Trier avec le modèle de décision': 'Filter with the decision model',
   'Mission de réponse': 'Answer mission',
   'Esprit critique': 'Critical thinking',
   'Interprétation littérale': 'Literal interpretation',
   Empathie: 'Empathy',
-  'Réponses : trier avec le modèle de décision': 'Answers: filter with the decision model',
-  'Pages de connaissance : régénérer avec le modèle de décision':
-    'Knowledge pages: regenerate with the decision model',
-  'Pages de connaissance : ignorer les faits sans effet':
-    'Knowledge pages: skip facts that make no difference',
   'Recherche textuelle': 'Text search',
   'Recherche temporelle': 'Temporal search',
   'Recherche par relations': 'Relationship search',

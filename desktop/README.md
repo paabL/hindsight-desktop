@@ -227,4 +227,6 @@ unknown; localized status text remains alongside the color.
 
 The diagram explains roles on hover, keyboard focus and tap. Answer's return loop
 requests more evidence; Search ranking and Answer decisions are independent.
+Each function's decision switch applies to the whole server; memory banks carry no
+per-bank exception, so the setting has one place.
 Embeddings are read-only in the quick view. See the [model workflow guide](../docs/MODEL-SETTINGS.md).

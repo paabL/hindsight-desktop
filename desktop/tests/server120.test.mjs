@@ -7,7 +7,7 @@ import { BridgeClient } from './support/bridge-client.mjs';
 test('Hindsight 1.2 : recall, réglages confirmés et statistiques traversent le pont', async () => {
   let version = '1.2.0';
   const calls = [];
-  const config = { recall_decision_model_prune: true, reflect_use_decision_model: true };
+  const config = { recall_decision_model_prune: true, recall_decision_model_dedup: true };
   const server = createServer(async (request, response) => {
     const url = new URL(request.url, 'http://localhost');
     const chunks = [];
@@ -110,7 +110,7 @@ test('Hindsight 1.2 : recall, réglages confirmés et statistiques traversent le
     result = await bridge.request('memory.save', {
       config: {
         recall_decision_model_prune: false,
-        reflect_use_decision_model: false,
+        recall_decision_model_dedup: false,
       },
     });
     assert.equal(patches().length, 0);
@@ -120,7 +120,7 @@ test('Hindsight 1.2 : recall, réglages confirmés et statistiques traversent le
     assert.equal(patches().length, 1);
     assert.deepEqual(patches()[0].body.updates, {
       recall_decision_model_prune: false,
-      reflect_use_decision_model: false,
+      recall_decision_model_dedup: false,
     });
     await assert.rejects(bridge.request('confirm', { id, typed: '' }), /expiré/);
 

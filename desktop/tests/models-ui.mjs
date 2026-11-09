@@ -62,11 +62,12 @@ try {
   const settings = page.getByRole('tablist', { name: 'Vues des réglages' });
   await settings.getByRole('tab', { name: 'Comportement de la mémoire', exact: true }).click();
   await page.getByRole('tab', { name: 'Réponses', exact: true }).click();
-  // Le réglage fin reste sur la page, replié sous « Options avancées ».
+  // Le modèle de décision de chaque fonction se règle dans Modèles, pour tout le serveur :
+  // Réponses n'en porte plus d'exception par banque.
   const advanced = page.locator('summary', { hasText: 'Options avancées' });
   await expect(page.getByRole('switch')).toHaveCount(0);
-  await advanced.click();
-  await expect(page.getByRole('switch')).toHaveCount(3);
+  await expect(advanced).toHaveCount(0);
+  // Le réglage fin reste sur la page, replié sous « Options avancées ».
   await page.getByRole('tab', { name: 'Recherche', exact: true }).click();
   await advanced.click();
   await expect(page.getByRole('switch', { name: /Écarter les faits inutiles/ })).not.toBeChecked();
