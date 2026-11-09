@@ -62,7 +62,9 @@ The updater reads
 `https://raw.githubusercontent.com/paabL/hindsight-desktop/main/updates/beta.json`.
 This dedicated feed supports prereleases; GitHub’s `/releases/latest/` endpoint
 does not serve this beta channel. The feed contains the version, exact release
-asset URL and archive signature for `darwin-aarch64`.
+asset URL and archive signature for `darwin-aarch64`, repeated under `darwin`
+for installed versions up to 0.2.1, whose installer looked the feed up by OS
+alone. Keep both keys while such versions may still be installed.
 
 1. Publish the release assets and verify unauthenticated downloads and checksums.
 2. Verify the archive signature, version binding and installation behavior.

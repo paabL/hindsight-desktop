@@ -405,9 +405,10 @@ mod tests {
             .plugin(tauri_plugin_updater::Builder::new().build())
             .build(context)
             .unwrap();
+        // Built like the app's own check, without an explicit target: the offer then carries
+        // only the OS as its target, which the installer must not reuse as a feed key.
         let update = app
             .updater_builder()
-            .target("darwin-aarch64")
             .executable_path(&executable)
             .build()
             .unwrap()

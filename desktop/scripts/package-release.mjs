@@ -139,6 +139,10 @@ Independent client, not affiliated with Vectorize AI, Inc.
     path.join(output, 'SHA256SUMS.txt'),
     `${sha256}  ${name}\n${archiveSHA256}  ${archiveName}\n`,
   );
+  const entry = {
+    url: `https://github.com/paabL/hindsight-desktop/releases/download/v${version}/${archiveName}`,
+    signature,
+  };
   writeFileSync(
     path.join(output, 'beta.json'),
     JSON.stringify(
@@ -146,12 +150,9 @@ Independent client, not affiliated with Vectorize AI, Inc.
         version,
         notes: `Hindsight Desktop ${version} community beta.`,
         pub_date: new Date().toISOString(),
-        platforms: {
-          'darwin-aarch64': {
-            url: `https://github.com/paabL/hindsight-desktop/releases/download/v${version}/${archiveName}`,
-            signature,
-          },
-        },
+        // "darwin" repeats the same archive for installed versions up to 0.2.1, whose installer
+        // looked the feed up by OS alone. Same file, same version-bound signature.
+        platforms: { 'darwin-aarch64': entry, darwin: entry },
       },
       null,
       2,

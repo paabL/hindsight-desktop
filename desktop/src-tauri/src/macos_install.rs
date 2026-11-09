@@ -43,9 +43,11 @@ pub fn install<R: tauri::Runtime>(
 
     let filename = executable.file_name().unwrap();
     let staged_executable = staged_path.join("Contents/MacOS").join(filename);
+    // Same lookup as the check: no explicit target. `offer.target` holds only the OS
+    // ("darwin"), so passing it would search the feed for a "darwin" entry instead of
+    // "darwin-aarch64" and every update would fail before installing.
     let staged_offer = app
         .updater_builder()
-        .target(offer.target.clone())
         .executable_path(&staged_executable)
         .build()
         .map_err(updater_error)?
