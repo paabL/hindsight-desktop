@@ -1,15 +1,15 @@
 {
-  "version": "0.2.2",
-  "notes": "Hindsight Desktop 0.2.2 community beta.",
-  "pub_date": "2026-11-09T01:07:30.747Z",
+  "version": "0.2.3",
+  "notes": "Hindsight Desktop 0.2.3 community beta.",
+  "pub_date": "2026-11-09T02:07:13.732Z",
   "platforms": {
     "darwin-aarch64": {
-      "url": "https://github.com/paabL/hindsight-desktop/releases/download/v0.2.2/Hindsight-Desktop_0.2.2_macOS-Apple-Silicon.app.tar.gz",
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTWDFNTFRDcUlTTGVlOWkvNXNMRk5EZFNBZTFPeGkyTGZMT0xuOSthaU0zY1dGNlRMWUd5ZWM3aEszN3hoN1FoOVd1SVRUVzd0OWY3M053bEsxcG1ya3ptWWhRL1FHVlFrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MTg2NDUwCWZpbGU6SGluZHNpZ2h0LURlc2t0b3BfMC4yLjJfbWFjT1MtQXBwbGUtU2lsaWNvbi5hcHAudGFyLmd6CXZlcnNpb246MC4yLjIKTWhnUHFmblEwWm9COGZUdEFNWHFtMHFvNWFCZDI0ZWhPNUYyU1J1b2dvbGYzeEVVS1Ftd2E3TWFabU1hVTNDMjZ3QnpGSzBZOTU5SHdPeUNZV29zQUE9PQo="
+      "url": "https://github.com/paabL/hindsight-desktop/releases/download/v0.2.3/Hindsight-Desktop_0.2.3_macOS-Apple-Silicon.app.tar.gz",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTWDFNTFRDcUlTTGFpYzZ0MVhRTU9BOE40Q1ZDSkV4NnhKSFRHSDd2ci9MS0htYjhsSjZTeFZXUlhmL3Q1Z1dFYXFUWWZraEdUUTVZMVZKMlJKTGN5KzZSYmJXOW9TR1FjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MTkwMDMzCWZpbGU6SGluZHNpZ2h0LURlc2t0b3BfMC4yLjNfbWFjT1MtQXBwbGUtU2lsaWNvbi5hcHAudGFyLmd6CXZlcnNpb246MC4yLjMKc3pyaDVWRmxCNEsyTGpPSE42MXFWZmNyTnRLcHpIaVhrMmlkaXdBVUJwU2wvVnRqYVY0YzM2Uk40SC9FbTdGOEMxQmlsa0F4Qkhqb3ZTczM3ak1pREE9PQo="
     },
     "darwin": {
-      "url": "https://github.com/paabL/hindsight-desktop/releases/download/v0.2.2/Hindsight-Desktop_0.2.2_macOS-Apple-Silicon.app.tar.gz",
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTWDFNTFRDcUlTTGVlOWkvNXNMRk5EZFNBZTFPeGkyTGZMT0xuOSthaU0zY1dGNlRMWUd5ZWM3aEszN3hoN1FoOVd1SVRUVzd0OWY3M053bEsxcG1ya3ptWWhRL1FHVlFrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MTg2NDUwCWZpbGU6SGluZHNpZ2h0LURlc2t0b3BfMC4yLjJfbWFjT1MtQXBwbGUtU2lsaWNvbi5hcHAudGFyLmd6CXZlcnNpb246MC4yLjIKTWhnUHFmblEwWm9COGZUdEFNWHFtMHFvNWFCZDI0ZWhPNUYyU1J1b2dvbGYzeEVVS1Ftd2E3TWFabU1hVTNDMjZ3QnpGSzBZOTU5SHdPeUNZV29zQUE9PQo="
+      "url": "https://github.com/paabL/hindsight-desktop/releases/download/v0.2.3/Hindsight-Desktop_0.2.3_macOS-Apple-Silicon.app.tar.gz",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTWDFNTFRDcUlTTGFpYzZ0MVhRTU9BOE40Q1ZDSkV4NnhKSFRHSDd2ci9MS0htYjhsSjZTeFZXUlhmL3Q1Z1dFYXFUWWZraEdUUTVZMVZKMlJKTGN5KzZSYmJXOW9TR1FjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MTkwMDMzCWZpbGU6SGluZHNpZ2h0LURlc2t0b3BfMC4yLjNfbWFjT1MtQXBwbGUtU2lsaWNvbi5hcHAudGFyLmd6CXZlcnNpb246MC4yLjMKc3pyaDVWRmxCNEsyTGpPSE42MXFWZmNyTnRLcHpIaVhrMmlkaXdBVUJwU2wvVnRqYVY0YzM2Uk40SC9FbTdGOEMxQmlsa0F4Qkhqb3ZTczM3ak1pREE9PQo="
     }
   }
 }
