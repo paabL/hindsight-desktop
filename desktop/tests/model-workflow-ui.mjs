@@ -43,10 +43,11 @@ try {
   await expect(graph.getByRole('switch')).not.toBeChecked();
   await expect(graph.locator('[data-edge="rank-query"]')).toHaveCount(1);
   await expect(graph.locator('[data-node="decision"]')).toHaveCount(0);
+  // Un seul menu pour le fournisseur et le modèle (0.2.3) : on choisit le modèle par son nom.
   await graph
     .getByRole('combobox', { name: 'Modèle · Rédaction' })
-    .selectOption('claude-haiku-5-5');
-  await expect(graph.locator('[data-node="answer"]')).toContainText('claude-haiku-5-5');
+    .selectOption({ label: 'Claude Haiku 5.5' });
+  await expect(graph.locator('[data-node="answer"]')).toContainText('Claude Haiku 5.5');
   await expect(graph.getByRole('button', { name: /Modifier/ })).toHaveCount(0);
   // Comptes et rôles sont sur la même page, sous le schéma : rien à ouvrir ailleurs.
   await expect(page.getByRole('button', { name: 'Gérer les modèles', exact: true })).toHaveCount(0);
@@ -89,9 +90,25 @@ try {
   await expect(editor.locator('input[list], datalist')).toHaveCount(0);
   await expect(provider).toHaveValue('claude-code');
   await expect(model).toHaveValue('claude-haiku-5-5');
+  // L’effort de raisonnement se choisit dans un menu, avec les niveaux du fournisseur du rôle.
+  const effort = editor.getByRole('combobox', { name: 'Effort de raisonnement', exact: true });
+  await expect(effort).toHaveValue('');
+  await expect(effort.locator('option')).toHaveText([
+    'Hérité / défaut du fournisseur',
+    'Faible',
+    'Moyen',
+    'Élevé',
+    'Très élevé',
+    'Maximal',
+    'Autre valeur…',
+  ]);
+  await effort.selectOption('xhigh');
   await provider.selectOption('openai-codex');
   await expect(model).toHaveValue('gpt-6-luna');
   await expect(model.locator('option[value="claude-haiku-5-5"]')).toHaveCount(0);
+  await expect(effort).toHaveValue('xhigh');
+  await expect(effort.locator('option[value="minimal"]')).toHaveCount(1);
+  await expect(effort.locator('option[value="max"]')).toHaveCount(0);
   await model.selectOption('gpt-5.4-mini');
   await expect(model).toHaveValue('gpt-5.4-mini');
   await model.selectOption('__custom_model__');
@@ -115,6 +132,23 @@ try {
     .click();
   await expect(provider).toHaveValue('claude-code');
   await expect(model).toHaveValue('claude-haiku-5-5');
+  await expect(effort).toHaveValue('');
+  await editor.getByRole('button', { name: 'Annuler', exact: true }).click();
+  // Une valeur enregistrée est présélectionnée ; « Autre valeur… » garde la saisie libre.
+  await page
+    .locator('.role-card')
+    .filter({ has: page.getByRole('heading', { name: 'Consolidation', exact: true }) })
+    .click();
+  await expect(effort).toHaveValue('low');
+  await effort.selectOption('__custom_model__');
+  const customEffort = editor.getByRole('textbox', {
+    name: 'Effort de raisonnement · Valeur personnalisée',
+    exact: true,
+  });
+  await customEffort.fill('minimal');
+  await expect(effort).toHaveValue('__custom_model__');
+  await effort.selectOption('high');
+  await expect(customEffort).toHaveCount(0);
   await editor.getByRole('button', { name: 'Annuler', exact: true }).click();
   await page.locator('.role-card').filter({ hasText: 'Classement' }).click();
   const cohereModel = editor.getByRole('combobox', { name: 'Modèle Cohere', exact: true });
@@ -215,7 +249,7 @@ try {
   await expect(decisionFlag.locator('option[value="__custom_model__"]')).toHaveCount(0);
   await editor.getByRole('button', { name: 'Annuler', exact: true }).click();
   await expect(graph.getByRole('combobox', { name: 'Modèle · Rédaction' })).toHaveValue(
-    'claude-haiku-5-5',
+    'claude-code\u001fclaude-haiku-5-5',
   );
   await graph.getByRole('tab', { name: 'Recherche', exact: true }).click();
   await graph.getByRole('switch', { name: 'Décision · Recherche' }).click();
@@ -240,7 +274,7 @@ try {
   await graph.getByRole('tab', { name: 'Réponses', exact: true }).click();
   await expect(graph.getByRole('switch')).toBeChecked();
   await expect(graph.getByRole('combobox', { name: 'Modèle · Rédaction' })).toHaveValue(
-    'claude-sonnet-5-5',
+    'claude-code\u001fclaude-sonnet-5-5',
   );
   await graph.getByRole('tab', { name: 'Extraction et consolidation', exact: true }).click();
   await graph.getByRole('button', { name: 'Extraction', exact: true }).focus();

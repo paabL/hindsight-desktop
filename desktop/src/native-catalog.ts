@@ -34,7 +34,8 @@ const catalog: Record<string, string> = {
   'Requêtes simultanées': 'Concurrent requests',
   'Plafond de concurrence vers ce LLM': 'Maximum concurrent requests to this LLM',
   'Effort de raisonnement': 'Reasoning effort',
-  'Selon le fournisseur (low, medium, high…)': 'Depends on the provider (low, medium, high…)',
+  "Niveaux du fournisseur choisi (low, medium, high…) ; vide = réglage hérité ou défaut du fournisseur. Hindsight 1.2 sans modification l'ignore pour claude-code, anthropic, gemini et cursor : un avertissement le signale dans le journal du serveur au démarrage.":
+    'Levels of the selected provider (low, medium, high…); empty = inherited setting or provider default. Unmodified Hindsight 1.2 ignores it for claude-code, anthropic, gemini and cursor: a warning in the server log says so at startup.',
   'LLM par défaut': 'Default LLM',
   "Utilisé par tous les rôles qui n'ont pas leurs propres réglages.":
     'Used by all roles without their own settings.',

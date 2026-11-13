@@ -7,6 +7,9 @@ import {
   visibleRoleFields,
   serviceModelField,
   isBooleanField,
+  isEffortField,
+  effortOptions,
+  effortLabel,
   decisionProviderValue,
   localDecisionURL,
 } from '../src/model-field-options.ts';
@@ -218,6 +221,43 @@ test('inherited provider resolves through pages, reflect and default without tou
     mental_model_PROVIDER: '',
     mental_model_MODEL: '',
   });
+});
+
+test('reasoning effort offers the levels of the role provider, inherited or staged', () => {
+  const withEffort = (r, value) => {
+    r.fields.push({ name: `${r.id}_REASONING_EFFORT`, value });
+    return r;
+  };
+  const primary = withEffort(role('default', 'claude-code', 'haiku'), '');
+  const consolidation = withEffort(role('consolidation', null, null, 'default'), 'low');
+  const data = { roles: [primary, consolidation] };
+  const ids = (r, draft = {}) => effortOptions(r, r.fields[2], draft, data).map((o) => o.id);
+  const claude = ['low', 'medium', 'high', 'xhigh', 'max'];
+  assert.deepEqual(ids(primary), claude);
+  // Sans fournisseur propre, la consolidation suit le LLM par défaut.
+  assert.deepEqual(ids(consolidation), claude);
+  // Le fournisseur choisi dans le brouillon change les niveaux tout de suite.
+  assert.deepEqual(ids(consolidation, { consolidation_PROVIDER: 'openai' }), [
+    'none',
+    'minimal',
+    'low',
+    'medium',
+    'high',
+    'xhigh',
+  ]);
+  assert.deepEqual(ids(consolidation, { consolidation_PROVIDER: 'ollama' }), [
+    'low',
+    'medium',
+    'high',
+  ]);
+  // Une valeur hors liste, enregistrée ou saisie, reste visible pour être vue ou retirée.
+  consolidation.fields[2].value = 'max';
+  assert.equal(ids(consolidation, { consolidation_PROVIDER: 'openai' }).at(-1), 'max');
+  assert.ok(ids(primary, { default_REASONING_EFFORT: 'turbo' }).includes('turbo'));
+  assert.ok(isEffortField(consolidation.fields[2]));
+  assert.ok(!isEffortField(consolidation.fields[1]));
+  assert.equal(effortLabel('turbo'), 'turbo');
+  for (const level of claude) assert.notEqual(effortLabel(level), level);
 });
 
 test('clearing the global provider does not reuse its former identity or model catalog', () => {

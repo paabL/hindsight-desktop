@@ -173,9 +173,11 @@ Under the diagram, on the same page: account connections, then two collapsed
 sections. **All roles and advanced settings** has one card per role for providers,
 keys, endpoints and custom models; the diagram's settings buttons open the same
 role. **Model installation and services** installs, starts and stops Hindsight
-models on this Mac or connects Hindsight Cloud. Provider and Model use dropdowns,
-and changing the provider updates the model choices. Custom identifiers require
-the explicit advanced **Other model…** option. Cancelling a dialog discards its
+models on this Mac or connects Hindsight Cloud. Provider, Model and Reasoning
+effort use dropdowns, and changing the provider updates the model choices and the
+effort levels it accepts. Custom identifiers require the explicit advanced
+**Other model…** option, and an unlisted effort level the **Other value…** option;
+a saved value outside the list stays visible. Cancelling a dialog discards its
 local edits.
 
 **Memory behavior** (Settings) shows the essentials of each tab. The rest is in

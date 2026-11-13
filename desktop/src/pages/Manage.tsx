@@ -47,11 +47,14 @@ import { saveExport } from '../transport';
 import { takeMemoryTab } from '../memory-tab';
 import { OBSERVATION_SCOPES } from '../observation-scopes';
 import {
+  type ModelOption,
   chooseProvider,
   modelOptions,
+  effortOptions,
   providerOptions,
   visibleRoleFields,
   isBooleanField,
+  isEffortField,
   decisionProviderValue,
   localDecisionURL,
   localDecisionStateLabel,
@@ -1613,6 +1616,53 @@ export function ModelManagement({
     setRoleRevision(data.modelWorkflow?.revision);
     setRoleScriptPath(data.scriptPath);
   }
+  /** Menu de valeurs connues (modèle, effort), avec « Autre… » pour saisir une valeur exacte. */
+  function choiceWithOther(
+    field: Row,
+    options: ModelOption[],
+    other: { option: string; name: string; placeholder: string },
+  ) {
+    const custom = customModels.has(field.name);
+    const value = fields[field.name] ?? field.value ?? '';
+    return (
+      <>
+        <select
+          aria-label={field.label}
+          value={custom ? '__custom_model__' : value}
+          onChange={(e) => {
+            const choice = e.target.value;
+            setCustomModels((old) => {
+              const next = new Set(old);
+              if (choice === '__custom_model__') next.add(field.name);
+              else next.delete(field.name);
+              return next;
+            });
+            if (choice !== '__custom_model__')
+              setFields((old) => ({ ...old, [field.name]: choice }));
+          }}
+        >
+          <option value="">
+            {t('Hérité / défaut du fournisseur', 'Inherited / provider default')}
+          </option>
+          {options.map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.title}
+            </option>
+          ))}
+          <option value="__custom_model__">{other.option}</option>
+        </select>
+        {custom && (
+          <input
+            aria-label={`${field.label} · ${other.name}`}
+            value={value}
+            autoComplete="off"
+            placeholder={other.placeholder}
+            onChange={(e) => setFields((old) => ({ ...old, [field.name]: e.target.value }))}
+          />
+        )}
+      </>
+    );
+  }
   // Le schéma ouvre le rôle sur place, ou montre les comptes et l'installation, sans quitter la page.
   useEffect(() => {
     if (!request) return;
@@ -1850,7 +1900,9 @@ export function ModelManagement({
                             : field.name.startsWith(`HINDSIGHT_API_${decisionTab.toUpperCase()}_`),
                       );
                 const essential = (field: Row) =>
-                  /_(PROVIDER|MODEL|PRUNE|DEDUP)$|_USE_DECISION_MODEL$/.test(field.name);
+                  /_(PROVIDER|MODEL|REASONING_EFFORT|PRUNE|DEDUP)$|_USE_DECISION_MODEL$/.test(
+                    field.name,
+                  );
                 const groups = [
                   { advanced: false, fields: selected.filter(essential) },
                   { advanced: true, fields: selected.filter((field: Row) => !essential(field)) },
@@ -1956,62 +2008,31 @@ export function ModelManagement({
                                 )}
                               </select>
                             ) : /MODEL$/.test(field.name) ? (
-                              <>
-                                <select
-                                  aria-label={field.label}
-                                  value={
-                                    customModels.has(field.name)
-                                      ? '__custom_model__'
-                                      : (fields[field.name] ?? field.value ?? '')
-                                  }
-                                  onChange={(e) => {
-                                    if (e.target.value === '__custom_model__')
-                                      setCustomModels((old) => new Set(old).add(field.name));
-                                    else {
-                                      setCustomModels((old) => {
-                                        const next = new Set(old);
-                                        next.delete(field.name);
-                                        return next;
-                                      });
-                                      setFields((old) => ({
-                                        ...old,
-                                        [field.name]: e.target.value,
-                                      }));
-                                    }
-                                  }}
-                                >
-                                  <option value="">
-                                    {t(
-                                      'Hérité / défaut du fournisseur',
-                                      'Inherited / provider default',
-                                    )}
-                                  </option>
-                                  {modelOptions(role, field, fields, data).map((option) => (
-                                    <option key={option.id} value={option.id}>
-                                      {option.id === 'local'
-                                        ? t('Local · sur ce Mac', 'Local · on this Mac')
-                                        : option.title}
-                                    </option>
-                                  ))}
-                                  <option value="__custom_model__">
-                                    {t('Autre modèle…', 'Other model…')}
-                                  </option>
-                                </select>
-                                {customModels.has(field.name) && (
-                                  <input
-                                    aria-label={`${field.label} · ${t('Nom personnalisé', 'Custom name')}`}
-                                    value={fields[field.name] ?? field.value ?? ''}
-                                    autoComplete="off"
-                                    placeholder={t('Nom exact du modèle', 'Exact model name')}
-                                    onChange={(e) =>
-                                      setFields((old) => ({
-                                        ...old,
-                                        [field.name]: e.target.value,
-                                      }))
-                                    }
-                                  />
-                                )}
-                              </>
+                              choiceWithOther(
+                                field,
+                                modelOptions(role, field, fields, data).map((option) =>
+                                  option.id === 'local'
+                                    ? {
+                                        ...option,
+                                        title: t('Local · sur ce Mac', 'Local · on this Mac'),
+                                      }
+                                    : option,
+                                ),
+                                {
+                                  option: t('Autre modèle…', 'Other model…'),
+                                  name: t('Nom personnalisé', 'Custom name'),
+                                  placeholder: t('Nom exact du modèle', 'Exact model name'),
+                                },
+                              )
+                            ) : isEffortField(field) ? (
+                              choiceWithOther(field, effortOptions(role, field, fields, data), {
+                                option: t('Autre valeur…', 'Other value…'),
+                                name: t('Valeur personnalisée', 'Custom value'),
+                                placeholder: t(
+                                  'Niveau exact attendu par le fournisseur',
+                                  'Exact level expected by the provider',
+                                ),
+                              })
                             ) : (
                               <input
                                 aria-label={field.label}

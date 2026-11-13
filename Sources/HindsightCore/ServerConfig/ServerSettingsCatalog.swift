@@ -64,7 +64,9 @@ public enum ServerSettingsCatalog {
             Field(name: "HINDSIGHT_API_\(prefix)API_KEY", label: "Clé d'API", help: "Conservée dans le script de lancement ; masquée dans l'app"),
             Field(name: "HINDSIGHT_API_\(prefix)MAX_CONCURRENT", label: "Requêtes simultanées", help: "Plafond de concurrence vers ce LLM"),
             Field(name: "HINDSIGHT_API_\(prefix)TIMEOUT", label: "Timeout (s)", help: ""),
-            Field(name: "HINDSIGHT_API_\(prefix)REASONING_EFFORT", label: "Effort de raisonnement", help: "Selon le fournisseur (low, medium, high…)"),
+            Field(
+                name: "HINDSIGHT_API_\(prefix)REASONING_EFFORT", label: "Effort de raisonnement",
+                help: "Niveaux du fournisseur choisi (low, medium, high…) ; vide = réglage hérité ou défaut du fournisseur. Hindsight 1.2 sans modification l'ignore pour claude-code, anthropic, gemini et cursor : un avertissement le signale dans le journal du serveur au démarrage."),
         ]
     }
 

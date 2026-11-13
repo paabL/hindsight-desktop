@@ -123,6 +123,56 @@ export function modelOptions(role: Row, field: Row, draft: Row, data: Row): Mode
     ...(selected ? [{ id: selected, title: selected }] : []),
   ]);
 }
+export function isEffortField(field: Row): boolean {
+  return /_REASONING_EFFORT$/.test(field.name);
+}
+/**
+ * Niveaux d’effort de raisonnement de chaque fournisseur : drapeau `--effort` du CLI Claude Code,
+ * liste validée par le serveur pour GitHub Copilot, `reasoning_effort` d’OpenAI (selon le modèle).
+ * Les autres fournisseurs reçoivent les trois niveaux communs ; « Autre valeur… » reste possible.
+ */
+const effortLevels: Record<string, string[]> = {
+  'claude-code': ['low', 'medium', 'high', 'xhigh', 'max'],
+  'github-copilot': ['low', 'medium', 'high', 'xhigh', 'max'],
+  ...Object.fromEntries(
+    ['openai', 'openai-responses', 'openai-codex', 'chatgpt'].map((provider) => [
+      provider,
+      ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'],
+    ]),
+  ),
+};
+export function effortLabel(level: string): string {
+  switch (level) {
+    case 'none':
+      return t('Sans raisonnement', 'No reasoning');
+    case 'minimal':
+      return t('Minimal', 'Minimal');
+    case 'low':
+      return t('Faible', 'Low');
+    case 'medium':
+      return t('Moyen', 'Medium');
+    case 'high':
+      return t('Élevé', 'High');
+    case 'xhigh':
+      return t('Très élevé', 'Extra high');
+    case 'max':
+      return t('Maximal', 'Max');
+    default:
+      return level;
+  }
+}
+/** Niveaux du fournisseur du rôle (brouillon compris), plus la valeur enregistrée ou saisie. */
+export function effortOptions(role: Row, field: Row, draft: Row, data: Row): ModelOption[] {
+  const providerName = field.name.replace(/REASONING_EFFORT$/, 'PROVIDER');
+  const provider = role.fields.some((f: Row) => f.name === providerName)
+    ? resolvedProvider(role, providerName, draft, data)
+    : '';
+  return unique(
+    [...(effortLevels[provider] || ['low', 'medium', 'high']), field.value, draft[field.name]]
+      .filter(Boolean)
+      .map((id) => ({ id, title: effortLabel(id) })),
+  );
+}
 export function chooseProvider(role: Row, field: Row, value: string, draft: Row, data: Row): Row {
   const next: Row = { ...draft, [field.name]: value };
   const model = role.fields.find((f: Row) => f.name === field.name.replace(/PROVIDER$/, 'MODEL'));

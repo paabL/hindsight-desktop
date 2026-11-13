@@ -62,6 +62,16 @@ export function modelWorkflowDemo() {
       fields: [
         { name: P + prefix + 'PROVIDER', label: 'Fournisseur', value: provider },
         { name: P + prefix + 'MODEL', label: 'Modèle', value: model },
+        // Comme le catalogue : la vision n'a pas d'effort de raisonnement.
+        ...(id === 'vlm'
+          ? []
+          : [
+              {
+                name: P + prefix + 'REASONING_EFFORT',
+                label: 'Effort de raisonnement',
+                value: id === 'consolidation' ? 'low' : '',
+              },
+            ]),
       ],
       models: modelsByProvider[provider],
     };
