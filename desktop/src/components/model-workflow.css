@@ -10,7 +10,7 @@
 }
 .mw-heading p {
   margin-top: 5px;
-  font-size: 12px;
+  font-size: var(--text-md);
 }
 .model-workflow > .tabs {
   margin: 0 24px;
@@ -36,14 +36,14 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--text-md);
   color: var(--secondary);
 }
 .mw-decision-toggle input {
   appearance: none;
-  width: 36px;
-  height: 22px;
-  min-height: 22px;
+  width: 32px;
+  height: 18px;
+  min-height: 18px;
   padding: 0;
   margin: 0;
   border: 0;
@@ -54,16 +54,16 @@
 .mw-decision-toggle input::after {
   content: '';
   position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 16px;
-  height: 16px;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   background: var(--surface);
   transition: transform 0.15s;
 }
 .mw-decision-toggle input:checked {
-  background: var(--amber);
+  background: var(--accent);
 }
 .mw-decision-toggle input:checked::after {
   transform: translateX(14px);
@@ -100,7 +100,7 @@
   color: var(--toast-ink);
   border-radius: 10px;
   padding: 10px 13px;
-  font-size: 12px;
+  font-size: var(--text-md);
   box-shadow: var(--shadow-popup);
   pointer-events: none;
 }
@@ -161,7 +161,7 @@
   flex-wrap: wrap;
   gap: 5px;
   align-items: center;
-  font-size: 11px;
+  font-size: var(--text-sm);
   margin-top: 5px;
   color: var(--secondary);
   text-align: left;
@@ -186,7 +186,7 @@
 .mw-row small {
   display: block;
   color: var(--secondary);
-  font-size: 11px;
+  font-size: var(--text-sm);
   margin-top: 4px;
 }
 .mw-related {
@@ -194,7 +194,7 @@
   align-items: center;
   gap: 4px;
   color: var(--secondary);
-  font-size: 12px;
+  font-size: var(--text-md);
   text-decoration: underline;
   text-underline-offset: 3px;
   padding: 3px 0;
@@ -220,7 +220,7 @@
   position: absolute;
   background: var(--surface-subtle);
   padding: 3px;
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--secondary);
   text-align: center;
   z-index: 2;
@@ -233,11 +233,11 @@
   flex-wrap: wrap;
   gap: 10px;
   padding-top: 20px;
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--secondary);
 }
 .mw-embeddings .mw-help {
-  font-size: 11px;
+  font-size: var(--text-sm);
 }
 .mw-embeddings > span {
   overflow-wrap: anywhere;
@@ -249,7 +249,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  font-size: 12px;
+  font-size: var(--text-md);
   color: var(--secondary);
 }
 .mw-footer > div {
@@ -261,7 +261,7 @@
   flex-wrap: wrap;
   gap: 20px;
   padding-top: 12px;
-  font-size: 12px;
+  font-size: var(--text-md);
 }
 .mw-recall-options label {
   display: flex;

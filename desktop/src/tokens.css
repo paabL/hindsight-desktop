@@ -1,5 +1,17 @@
 :root {
   color-scheme: light;
+  /* Échelle typographique unique : légende, secondaire, corps, titre de carte, section, page. */
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-lg: 15px;
+  --text-xl: 20px;
+  --text-2xl: 26px;
+  /* Hauteur commune des boutons, champs et menus ; rayon commun des contrôles. */
+  --control-height: 34px;
+  --control-radius: 7px;
+  --chevron-down: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235d707d' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  --chevron-right-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 6 6 6-6 6'/%3E%3C/svg%3E");
   --canvas: #f5f8fa;
   --sidebar: #edf3f5;
   --surface: #ffffff;
@@ -77,6 +89,7 @@
   --accent-soft: #1d3844;
   --accent-line: #345d6c;
   --accent-foreground: #10262d;
+  --chevron-down: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238ba1b1' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   --chart: #66b3c5;
   --sage: #6bb69b;
   --sage-ink: #95d0b7;

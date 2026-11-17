@@ -37,7 +37,6 @@ import {
   Search,
   Server,
   Settings2,
-  Sparkles,
   Sun,
   X,
 } from 'lucide-react';
@@ -464,6 +463,8 @@ export default function App() {
       !!(snapshot.data?.connectingAccount || snapshot.data?.hindsightModels?.local?.busy));
   const sourcesWork =
     route === 'sources' && !!(snapshot.data?.refreshing || snapshot.data?.collecting);
+  // Réponse en cours : Recherche se relit souvent pour l’afficher dès qu’elle arrive ; ailleurs, l’état suffit.
+  const answerWork = !!snapshot.answering;
   // Connaissances : une régénération en file ou en cours se suit jusqu'à la fin, sans recharger à la main.
   const knowledgeWork =
     route === 'models' &&
@@ -479,22 +480,32 @@ export default function App() {
       return;
     const seconds = sourcesWork
       ? 0.3
-      : route === 'settings' || serverWork
-        ? 2
-        : route === 'operations' || route === 'consolidation'
-          ? 20
-          : route === 'consumption'
-            ? 30
-            : route === 'models' && knowledgeWork
-              ? 10
-              : 0;
+      : answerWork
+        ? route === 'search'
+          ? 1.5
+          : 4
+        : route === 'settings' || serverWork
+          ? 2
+          : route === 'operations' || route === 'consolidation'
+            ? 20
+            : route === 'consumption'
+              ? 30
+              : route === 'models' && knowledgeWork
+                ? 10
+                : 0;
     if (!seconds) return;
     let polling = false;
     const interval = setInterval(async () => {
       if (!document.hidden && !polling) {
         polling = true;
         try {
-          if (route === 'settings' || serverWork || sourcesWork) await run('snapshot');
+          if (
+            route === 'settings' ||
+            serverWork ||
+            sourcesWork ||
+            (answerWork && route !== 'search')
+          )
+            await run('snapshot');
           else await refresh({ polling: true });
         } finally {
           polling = false;
@@ -502,7 +513,23 @@ export default function App() {
       }
     }, seconds * 1000);
     return () => clearInterval(interval);
-  }, [route, snapshot.app.connected, ready, demo, refresh, serverWork, sourcesWork, knowledgeWork]);
+  }, [
+    route,
+    snapshot.app.connected,
+    ready,
+    demo,
+    refresh,
+    serverWork,
+    sourcesWork,
+    knowledgeWork,
+    answerWork,
+  ]);
+  // Une réponse arrivée pendant qu’une autre page est ouverte : un message dit où la lire.
+  const answerReady = !!snapshot.answerReady;
+  useEffect(() => {
+    if (answerReady && routeRef.current !== 'search')
+      setToast(t('La réponse est prête dans Recherche.', 'The answer is ready in Search.'));
+  }, [answerReady, t]);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem('hindsight-desktop-theme-v2', theme);
@@ -761,7 +788,6 @@ export default function App() {
             <Logo />
             <div>
               <strong>Hindsight</strong>
-              <span>{t('ESPACE DE MÉMOIRE', 'MEMORY WORKSPACE')}</span>
             </div>
           </div>
           <div className="workspace-wrapper">
@@ -839,7 +865,7 @@ export default function App() {
               </>
             )}
           </div>
-          <div className="sidebar-label">{t('VOTRE MÉMOIRE', 'YOUR MEMORY')}</div>
+          <div className="sidebar-label">{t('Votre mémoire', 'Your memory')}</div>
           <nav aria-label={t('Navigation principale', 'Main navigation')}>
             {primary.filter(({ id }) => !generalViews.includes(id)).map((item) => navItem(item))}
           </nav>
@@ -1023,14 +1049,6 @@ export default function App() {
                 <Suspense fallback={<Loading />}>{page()}</Suspense>
               </PageBoundary>
             </div>
-            <footer className="page-brand-footer">
-              <Logo small />
-              <span>Hindsight Desktop</span>
-              <span className="spacer" />
-              <span>
-                {t('Version', 'Version')} {appVersion}
-              </span>
-            </footer>
           </div>
         </div>
       </main>
@@ -1144,9 +1162,6 @@ function ServerConnection({
   return (
     <section className="card settings-card">
       <div className="settings-section-heading">
-        <span className="category-icon sage">
-          <Server size={21} />
-        </span>
         <div>
           <h2>{t('Connexion à Hindsight', 'Connect to Hindsight')}</h2>
           <p>
@@ -1254,9 +1269,6 @@ function Settings({
       <Updates data={snapshot.updates || {}} run={run} demo={demo} busy={busy} />
       <section className="card settings-card">
         <div className="settings-section-heading">
-          <span className="category-icon peach">
-            <Sun size={21} />
-          </span>
           <div>
             <h2>{t('Apparence', 'Appearance')}</h2>
             <p>
@@ -1293,9 +1305,6 @@ function Settings({
       </section>
       <section className="card settings-card">
         <div className="settings-section-heading">
-          <span className="category-icon lavender">
-            <Sparkles size={21} />
-          </span>
           <div>
             <h2>{t('Explorer à votre rythme', 'Explore at your own pace')}</h2>
             <p>

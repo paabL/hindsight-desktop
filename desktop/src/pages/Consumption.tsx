@@ -11,7 +11,6 @@ import {
   Play,
   Settings2,
   ShieldCheck,
-  Trash2,
   Zap,
 } from 'lucide-react';
 import type { PageProps, PauseState, Row } from '../types';
@@ -99,9 +98,6 @@ export function PauseTools({
           </label>
           <div className="pause-options">
             <article>
-              <span className="category-icon peach">
-                <Pause size={21} />
-              </span>
               <div>
                 <h3>{scopePaused ? t('Reprendre', 'Resume') : t('Mettre en pause', 'Pause')}</h3>
                 <p>
@@ -133,9 +129,6 @@ export function PauseTools({
               </div>
             </article>
             <article>
-              <span className="category-icon neutral">
-                <Trash2 size={21} />
-              </span>
               <div>
                 <h3>{t('Vider les opérations en attente', 'Clear pending operations')}</h3>
                 <p>

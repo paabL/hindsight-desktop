@@ -203,6 +203,8 @@ const exact: Record<string, string> = {
     'Unencrypted HTTP connections over the internet are not allowed. Use https:// or an SSH tunnel to 127.0.0.1.',
   'Aucune mise à jour installée à relancer.': 'No installed update is ready to relaunch.',
   'Banque inconnue.': 'Unknown memory bank.',
+  'Une réponse est en cours de rédaction ; annulez-la pour lancer une autre recherche.':
+    'An answer is being written; cancel it to start another search.',
   'Choisissez un dossier absolu.': 'Choose an absolute folder path.',
   'Ce dossier est introuvable.': 'This folder cannot be found.',
   "Choisissez une banque avant d'ajouter un dossier.":

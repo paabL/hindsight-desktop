@@ -110,6 +110,14 @@ final class DesktopBridge {
     var updateTask: Task<Void, Never>?
     /// Installation ou démarrage du modèle de décision local : plusieurs minutes, hors du fil des commandes.
     var decisionTask: Task<Void, Never>?
+    /// Réponse rédigée (reflect) : souvent plus d'une minute. Elle tourne hors du fil des commandes pour que la
+    /// confirmation se ferme aussitôt et que la fenêtre reste utilisable ; Recherche suit son avancement.
+    var reflectTask: Task<Void, Never>?
+    var reflectRequestID: UUID?
+    var reflectStartedAt: Date?
+    weak var reflectSearch: SearchViewModel?
+    /// Une réponse est arrivée et n'a pas encore été vue dans Recherche : la fenêtre le signale ailleurs.
+    var reflectReady = false
     var sourcesTask: Task<Void, Never>?
     var sourcesGeneration = UUID()
     var collectionTask: Task<Void, Never>?
@@ -200,6 +208,8 @@ final class DesktopBridge {
         case "bank.select":
             guard app.banks.contains(where: { $0.bankId == str("id") }) else { throw BridgeFailure("Banque inconnue.") }
             clearConfirmations()
+            // Une réponse appartient à sa banque : changer de banque l'abandonne.
+            reflectTask?.cancel(); reflectReady = false
             closeFolder()
             app.selectBank(str("id"))
             if !testing { await app.services.estimator.refreshProfile(bank: str("id")) }
@@ -274,6 +284,7 @@ final class DesktopBridge {
         case "search":
             let s = try session()
             let search = s.search
+            if reflectTask != nil { throw BridgeFailure("Une réponse est en cours de rédaction ; annulez-la pour lancer une autre recherche.") }
             search.query = str("query")
             search.mode = SearchViewModel.Mode(rawValue: str("mode", "recall")) ?? .recall
             search.budget = str("budget", "mid")
@@ -295,8 +306,10 @@ final class DesktopBridge {
                     search.query = query; search.budget = budget; search.filter = filter; search.mode = .reflect
                     await search.run()
                 }
+                reflectRequestID = ownConfirmation?.id
             } else { await search.run() }
         case "search.more": await (try session()).search.loadMore()
+        case "search.cancel": reflectTask?.cancel()
         case "fact.open": return wire(try await app.client.memory(try session().bank, id: str("id")))
         case "document.open":
             let s = try session()
@@ -538,9 +551,20 @@ final class DesktopBridge {
             if backgroundService, serviceTask != nil || app.service.isBusy { throw BridgeFailure("Le service est déjà en cours de modification.") }
             let backgroundCollection = app.memoryFolder.confirmation?.id == request.id && p["background"] as? Bool == true
             let activateSync = autoSyncConfirmation == request.id
+            let backgroundReflect = reflectRequestID == request.id
             clearConfirmations()
             if backgroundUpdate { updateTask = Task { @MainActor in await request.perform(); self.updateTask = nil } }
             else if backgroundDecision { decisionTask = Task { @MainActor in await request.perform(); self.decisionTask = nil } }
+            else if backgroundReflect {
+                let search = app.session?.search
+                reflectSearch = search
+                reflectStartedAt = Date(); reflectReady = false
+                reflectTask = Task { @MainActor in
+                    await request.perform()
+                    self.reflectReady = !Task.isCancelled && search?.answer != nil
+                    self.reflectTask = nil; self.reflectStartedAt = nil; self.reflectSearch = nil
+                }
+            }
             else if backgroundService {
                 serviceTask = Task { @MainActor in
                     await request.perform()
@@ -698,6 +722,7 @@ final class DesktopBridge {
             await s.consolidation.reload(silently: p["polling"] as? Bool == true)
         case "memory": await s.memoryDesign.reload()
         case "search":
+            reflectReady = false
             await s.catalog.loadIfNeeded()
             if searchStale, p["polling"] as? Bool != true {
                 searchStale = false
@@ -720,7 +745,7 @@ final class DesktopBridge {
         workspace.confirmation = nil
         updater.confirmation = nil
         ownConfirmation = nil; app.confirmation = nil; app.memoryFolder.confirmation = nil
-        autoSyncConfirmation = nil
+        autoSyncConfirmation = nil; reflectRequestID = nil
         app.service.confirmation = nil; app.pause.confirmation = nil; app.coverage.confirmation = nil
         app.serverSettings.confirmation = nil; app.localDecision.confirmation = nil
         app.bankManagement.confirmation = nil
@@ -741,6 +766,7 @@ final class DesktopBridge {
                     // Mode consultation (en-tête `X-Hindsight-Mode`) : lu avec la Vue d'ensemble ou Traitements, dit partout.
                     "consultationOnly": app.session.map { $0.operations.consultationOnly || $0.consolidation.consultationOnly || $0.dashboard.snapshot?.consultationOnly == true } ?? false],
             "serviceBusy": serviceTask != nil || app.service.isBusy,
+            "answering": reflectTask != nil, "answerReady": reflectReady,
             "updates": updateSnapshot(),
             "section": section, "data": sectionData(sourceRevision: sourceRevision), "messages": messages.map { SecretMasker.mask($0) },
             "messageKeys": keys,
@@ -867,8 +893,12 @@ final class DesktopBridge {
                     "configWritable": s?.admin.configWritable ?? true,
                     "factTotal": wire(s?.admin.factTotal), "observationTotal": wire(s?.admin.observationTotal)]
         case "search":
+            // Réponse en cours pour la banque affichée : la page montre l'attente, sa durée et un bouton Annuler.
+            let answering = reflectTask != nil && reflectSearch != nil && reflectSearch === s?.search
             return ["hits": wire(s?.search.hits ?? []), "answer": wire(s?.search.answer), "total": s?.search.total ?? 0,
                     "canLoadMore": s?.search.canLoadMore ?? false, "error": wire(s?.search.state.errorMessage),
+                    "answering": answering, "answeringSince": wire(answering ? reflectStartedAt.map(HSDate.format) : nil),
+                    "answeringQuery": wire(answering ? s?.search.query : nil),
                     "entities": wire(s?.catalog.entities ?? []), "tags": wire(s?.catalog.plainTags ?? []), "tasks": wire(s?.catalog.tasks ?? []),
                     "serverIs120": s?.search.serverIs120 ?? false]
         case "documents":

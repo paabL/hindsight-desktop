@@ -27,6 +27,10 @@ export type Confirmation = {
 };
 export type Snapshot = {
   serviceBusy?: boolean;
+  /** Une réponse (reflect) est en cours de rédaction, hors du fil des commandes. */
+  answering?: boolean;
+  /** Une réponse est arrivée et n’a pas encore été vue dans Recherche. */
+  answerReady?: boolean;
   updates?: Row;
   app: {
     connected: boolean;

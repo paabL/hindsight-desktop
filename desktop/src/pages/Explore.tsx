@@ -6,7 +6,6 @@ import {
   CalendarDays,
   CheckCircle2,
   ChevronRight,
-  CircleDot,
   FileText,
   FolderPlus,
   GitBranch,
@@ -133,9 +132,6 @@ export function Dashboard({ data, navigate, run, busy }: PageProps) {
             <div className="memory-breakdown">
               {types.map(([key, count], i) => (
                 <div key={key}>
-                  <span className={`category-icon color-${i % 4}`}>
-                    <CircleDot size={21} />
-                  </span>
                   <div>
                     <strong>
                       {['world', 'experience', 'observation', 'opinion'].includes(key)
@@ -211,9 +207,6 @@ export function Dashboard({ data, navigate, run, busy }: PageProps) {
             className="source-row"
             onClick={() => void run('document.open', { id: doc.id }).then(setReader)}
           >
-            <span className="file-icon document">
-              <FileText size={19} />
-            </span>
             <span className="source-row-main">
               <strong>{doc.document_metadata?.title || doc.title || doc.id}</strong>
               <span>

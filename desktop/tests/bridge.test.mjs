@@ -9,6 +9,7 @@ import { BridgeClient } from './support/bridge-client.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 let bridge, server, folder;
+let slowReflect = false;
 const calls = [];
 before(async () => {
   folder = await mkdtemp(path.join(tmpdir(), 'hindsight-desktop-test-'));
@@ -78,9 +79,11 @@ before(async () => {
       );
     else if (url.pathname.endsWith('/config'))
       data = { bank_id: 'fixture', config: { enable_auto_consolidation: false }, overrides: {} };
-    else if (url.pathname.endsWith('/reflect'))
+    else if (url.pathname.endsWith('/reflect')) {
+      // Une réponse lente laisse le temps de suivre son attente et de l’annuler.
+      if (slowReflect) await new Promise((resolve) => setTimeout(resolve, 3000));
       data = { text: 'Réponse du faux serveur, sans appel de modèle.' };
-    else if (url.pathname.endsWith('/recall'))
+    } else if (url.pathname.endsWith('/recall'))
       data = { results: [{ id: 'fact-1', text: 'Un fait synthétique.', type: 'world' }] };
     else if (url.pathname.endsWith('/memories/list')) {
       const memories = [
@@ -211,10 +214,55 @@ test('reflect attend une confirmation et ne peut pas la rejouer', async () => {
   assert.equal(calls.filter((c) => c.path.endsWith('/reflect')).length, before);
   assert.equal(prepared.confirmations.length, 1);
   const id = prepared.confirmations[0].id;
-  const result = await bridge.request('confirm', { id, typed: '' });
+  // La réponse se rédige hors du fil des commandes : la confirmation revient sans l’attendre.
+  const confirmed = await bridge.request('confirm', { id, typed: '' });
+  assert.equal(confirmed.confirmations.length, 0);
+  // Depuis une autre page, l’état général dit seulement qu’une réponse est prête.
+  let state = confirmed;
+  for (let i = 0; i < 100 && state.answering; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    state = await bridge.request('snapshot');
+  }
+  assert.equal(state.answering, false);
+  assert.equal(state.answerReady, true);
+  const result = await bridge.request('section', { section: 'search', polling: true });
+  assert.equal(result.answerReady, false);
+  assert.equal(result.data.answering, false);
   assert.match(result.data.answer.text, /faux serveur/);
   assert.equal(calls.filter((c) => c.path.endsWith('/reflect')).length, before + 1);
   await assert.rejects(bridge.request('confirm', { id, typed: '' }), /expiré/);
+});
+
+test('une réponse en cours se suit, refuse une autre recherche et s’annule', async () => {
+  await bridge.request('section', { section: 'search' });
+  slowReflect = true;
+  try {
+    const prepared = await bridge.request('search', { query: 'Question lente', mode: 'reflect' });
+    const started = await bridge.request('confirm', {
+      id: prepared.confirmations[0].id,
+      typed: '',
+    });
+    assert.equal(started.answering, true);
+    assert.equal(started.data.answering, true);
+    assert.equal(started.data.answeringQuery, 'Question lente');
+    assert.ok(Date.parse(started.data.answeringSince) > 0);
+    await assert.rejects(
+      bridge.request('search', { query: 'Autre', mode: 'recall' }),
+      /en cours de rédaction/,
+    );
+    await bridge.request('search.cancel');
+    let result = started;
+    for (let i = 0; i < 100 && result.answering; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      result = await bridge.request('section', { section: 'search', polling: true });
+    }
+    assert.equal(result.answering, false);
+    assert.equal(result.answerReady, false);
+    assert.equal(result.data.answer, null);
+    assert.equal(result.data.error, null);
+  } finally {
+    slowReflect = false;
+  }
 });
 
 test('une suppression impose le texte requis côté natif', async () => {

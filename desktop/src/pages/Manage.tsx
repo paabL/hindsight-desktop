@@ -797,9 +797,6 @@ export function Admin({
             {data.directives?.length ? (
               data.directives.map((directive: Row) => (
                 <div className="directive-row" key={directive.id}>
-                  <span className="category-icon sage">
-                    <ShieldCheck size={20} />
-                  </span>
                   <div>
                     <strong>{directive.name}</strong>
                     <p>{directive.content}</p>
@@ -1374,9 +1371,6 @@ export function ServerSettings({
       {connection}
       <section className="card service-card">
         <div className="service-identity">
-          <span className="service-symbol">
-            <Server size={26} strokeWidth={1.5} />
-          </span>
           <div>
             <h2>{t('Service Hindsight', 'Hindsight service')}</h2>
             {/* Texte et badge lisent le même état du moteur : jamais « fonctionne » à côté de « Hors connexion ». */}

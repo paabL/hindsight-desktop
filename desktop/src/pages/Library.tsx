@@ -8,7 +8,6 @@ import {
   Check,
   CircleHelp,
   Clock3,
-  FileText,
   FolderPlus,
   Layers3,
   Pencil,
@@ -463,8 +462,10 @@ export function Models({ data, run, busy, notify }: PageProps) {
               }
             >
               <div className="model-card-top">
-                <span className={`model-glyph color-${i % 4}`}>
-                  <BookOpen size={23} strokeWidth={1.5} />
+                <span className="model-kind">
+                  {m.is_knowledge_page
+                    ? t('Page de connaissance', 'Knowledge page')
+                    : t('Modèle mental', 'Mental model')}
                 </span>
                 <Badge
                   tone={
@@ -488,11 +489,6 @@ export function Models({ data, run, busy, notify }: PageProps) {
                           : t('Jamais générée', 'Never generated')}
                 </Badge>
               </div>
-              <span className="model-kind">
-                {m.is_knowledge_page
-                  ? t('Page de connaissance', 'Knowledge page')
-                  : t('Modèle mental', 'Mental model')}
-              </span>
               <h2>{m.name}</h2>
               <p>
                 {m.source_query ||
@@ -734,6 +730,52 @@ export function Models({ data, run, busy, notify }: PageProps) {
   );
 }
 
+/** Réponse en cours : la question, le temps écoulé et l’annulation, à la place de la réponse attendue. */
+function AnswerPending({
+  since,
+  query,
+  onCancel,
+}: {
+  since?: string | null;
+  query?: string | null;
+  onCancel: () => void;
+}) {
+  const { t } = useI18n();
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const started = since ? new Date(since).getTime() : NaN;
+  const seconds = Number.isNaN(started) ? 0 : Math.max(0, Math.floor((now - started) / 1000));
+  const elapsed = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+  return (
+    <section className="card answer-card answer-pending" aria-busy="true">
+      <div className="answer-pending-head">
+        <h2 role="status">{t('Rédaction de la réponse…', 'Writing the answer…')}</h2>
+        <span className="answer-elapsed" aria-label={t('Temps écoulé', 'Elapsed time')}>
+          {elapsed}
+        </span>
+        <Button kind="ghost" onClick={onCancel}>
+          {t('Annuler', 'Cancel')}
+        </Button>
+      </div>
+      {query && <p className="answer-question">{query}</p>}
+      <div className="answer-skeleton" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </div>
+      <p className="answer-hint">
+        {t(
+          'Le serveur cherche les faits utiles, puis rédige. Comptez une à deux minutes, davantage pendant une consolidation. Vous pouvez changer de page : la réponse s’affichera ici.',
+          'The server looks for the relevant facts, then writes. Expect one to two minutes, longer during a consolidation. You can switch pages: the answer will appear here.',
+        )}
+      </p>
+    </section>
+  );
+}
+
 export function SearchPage({ data, run, busy, notify }: PageProps) {
   const { t } = useI18n();
   const [mode, setMode] = useState('recall');
@@ -758,6 +800,8 @@ export function SearchPage({ data, run, busy, notify }: PageProps) {
   const hits: Row[] = data.hits || [];
   // Réponses (reflect) n’applique ni l’entité ni la période : ces filtres sont masqués.
   const reflect = mode === 'reflect';
+  // Une réponse en cours de rédaction occupe la recherche jusqu’à sa fin ou son annulation.
+  const answering = !!data.answering;
   async function search(text = query) {
     setQuery(text);
     setSearched(true);
@@ -825,7 +869,7 @@ export function SearchPage({ data, run, busy, notify }: PageProps) {
             <Button
               kind="primary"
               icon={mode === 'reflect' ? Sparkles : ArrowRight}
-              disabled={busy || !query.trim()}
+              disabled={busy || answering || !query.trim()}
             >
               {mode === 'reflect'
                 ? t('Obtenir une réponse', 'Get an answer')
@@ -965,11 +1009,15 @@ export function SearchPage({ data, run, busy, notify }: PageProps) {
         </form>
       </div>
       <ErrorNotice message={data.error} />
-      {!searched && !hits.length && (
+      {answering && (
+        <AnswerPending
+          since={data.answeringSince}
+          query={data.answeringQuery}
+          onCancel={() => void run('search.cancel')}
+        />
+      )}
+      {!searched && !hits.length && !answering && (
         <div className="search-welcome">
-          <span className="search-welcome-icon">
-            <Sparkles size={28} strokeWidth={1.2} />
-          </span>
           <h2>{t('Rechercher dans la mémoire', 'Search memory')}</h2>
           <p>
             {' '}
@@ -1064,7 +1112,7 @@ export function SearchPage({ data, run, busy, notify }: PageProps) {
           )}
         </>
       )}
-      {searched && !hits.length && !busy && !data.error && !data.answer && (
+      {searched && !hits.length && !busy && !answering && !data.error && !data.answer && (
         <Empty
           icon={Search}
           title={t('Pas encore de résultat', 'No results yet')}
@@ -1206,9 +1254,6 @@ export function BankDocuments({
                             .catch(() => {})
                         }
                       >
-                        <span className="file-icon document">
-                          <FileText size={19} />
-                        </span>
                         <span>
                           <strong>{documentName(item)}</strong>
                           <small>

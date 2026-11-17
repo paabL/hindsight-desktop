@@ -94,12 +94,28 @@ export function bankLabel(
 }
 
 export function Logo({ small = false }: { small?: boolean }) {
+  // La spirale Iris de l'icône de l'application, en une couleur : la même marque partout.
   return (
     <span className={`brandmark ${small ? 'small' : ''}`} aria-hidden="true">
-      <svg viewBox="0 0 48 48" fill="none">
-        <path d="M7 24s6-11 17-11 17 11 17 11-6 11-17 11S7 24 7 24Z" />
-        <circle cx="24" cy="24" r="5.5" />
-        <path d="M24 5v3M24 40v3" />
+      <svg viewBox="21 22 86 86" fill="currentColor">
+        <circle cx="99.64" cy="69.32" r="5.6" opacity="1.0" />
+        <circle cx="96.1" cy="55.49" r="5.46" opacity="0.96" />
+        <circle cx="87.91" cy="43.81" r="5.33" opacity="0.92" />
+        <circle cx="76.07" cy="35.89" r="5.18" opacity="0.88" />
+        <circle cx="62.14" cy="32.95" r="5.04" opacity="0.85" />
+        <circle cx="48.17" cy="35.57" r="4.89" opacity="0.81" />
+        <circle cx="36.38" cy="43.49" r="4.73" opacity="0.77" />
+        <circle cx="28.87" cy="55.51" r="4.57" opacity="0.73" />
+        <circle cx="27.16" cy="69.56" r="4.4" opacity="0.69" />
+        <circle cx="31.79" cy="82.9" r="4.22" opacity="0.65" />
+        <circle cx="41.99" cy="92.61" r="4.04" opacity="0.62" />
+        <circle cx="55.55" cy="96.24" r="3.84" opacity="0.58" />
+        <circle cx="69.05" cy="92.58" r="3.64" opacity="0.54" />
+        <circle cx="78.5" cy="82.36" r="3.42" opacity="0.5" />
+        <path
+          fillRule="evenodd"
+          d="M46.64 69.32a12 12 0 1 0 24 0a12 12 0 1 0-24 0ZM53.48 69.32a5.16 5.16 0 1 0 10.32 0a5.16 5.16 0 1 0-10.32 0Z"
+        />
       </svg>
     </span>
   );
@@ -235,9 +251,6 @@ export function Metric({
     <>
       <div className="metric-top">
         <span>{label}</span>
-        <span className={`metric-icon ${tone}`}>
-          <Icon size={17} />
-        </span>
       </div>
       <strong>{value}</strong>
       {note && <p>{note}</p>}
@@ -313,6 +326,19 @@ export function Modal({
   const ref = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
+  const preferredFocus = useRef<() => HTMLElement | undefined>(() => undefined);
+  const openedAt = useRef(Date.now());
+  // Une boîte ouverte pendant une action a ses boutons désactivés : le focus les rejoint dès qu'ils sont
+  // utilisables, tant que personne n'a encore rien choisi.
+  useEffect(() => {
+    const active = document.activeElement;
+    if (
+      (active !== ref.current && active !== document.body) ||
+      Date.now() - openedAt.current > 3000
+    )
+      return;
+    preferredFocus.current()?.focus();
+  });
   useEffect(() => {
     const old = document.activeElement as HTMLElement;
     const container = ref.current;
@@ -336,12 +362,18 @@ export function Modal({
           getComputedStyle(element).visibility !== 'hidden',
       );
     };
-    const initial = focusable();
-    (
-      initial.find((element) => element.matches('[autofocus],input,textarea')) ||
-      initial[0] ||
-      container
-    )?.focus();
+    preferredFocus.current = () => {
+      // Le focus va au champ, sinon à l'action principale (Annuler pour une action destructive), jamais à
+      // la croix de fermeture : Retour confirme comme dans une alerte macOS.
+      const list = focusable();
+      return (
+        list.find((element) => element.matches('[autofocus],input,textarea')) ||
+        list.find((element) => element.matches('.modal-actions .button.primary')) ||
+        list.find((element) => element.matches('.modal-actions .button')) ||
+        list.find((element) => !element.closest('.modal-header'))
+      );
+    };
+    (preferredFocus.current() || container)?.focus();
     const listener = (event: KeyboardEvent) => {
       if (
         document.querySelectorAll('.modal').item(document.querySelectorAll('.modal').length - 1) !==

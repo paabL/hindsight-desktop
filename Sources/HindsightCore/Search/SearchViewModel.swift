@@ -106,7 +106,8 @@ public final class SearchViewModel {
         } catch is CancellationError {
             state = .idle
         } catch {
-            state = .failed(error.userMessage)
+            // Une réponse annulée interrompt sa requête : URLSession le signale par une erreur, pas par CancellationError.
+            state = Task.isCancelled ? .idle : .failed(error.userMessage)
         }
     }
 

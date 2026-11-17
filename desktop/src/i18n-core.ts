@@ -13,7 +13,13 @@ function preferredLanguage(): Language {
 let language = preferredLanguage();
 export const getLanguage = () => language;
 export const getLocale = () => (language === 'fr' ? 'fr-CA' : 'en-CA');
-export const translate = (fr: string, en: string) => (language === 'fr' ? fr : en);
+/** Espaces insécables du français : un « ? », un « ; » ou un « : » ne commence jamais une ligne. */
+export const frenchSpacing = (text: string) =>
+  text
+    .replace(/ ([;?!])/g, '\u202f$1')
+    .replace(/ ([:»])/g, '\u00a0$1')
+    .replace(/« /g, '«\u00a0');
+export const translate = (fr: string, en: string) => (language === 'fr' ? frenchSpacing(fr) : en);
 
 export function setLanguage(next: Language) {
   language = next;

@@ -46,7 +46,7 @@ test('le bandeau dit d’abord que le serveur est injoignable, puis la pause et 
   assert.equal(notice({ ...base, connected: false }).tone, 'red');
   assert.match(
     notice({ ...base, pause: { ...base.pause, banks: ['notes'] } }).text,
-    /En pause : Notes personnelles/,
+    /En pause\s: Notes personnelles/,
   );
   const capped = {
     ...base,

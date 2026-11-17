@@ -1189,11 +1189,11 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
           {query ? (
             <>
               <div className="atlas-inspector-heading">
-                <span className="atlas-kicker">{t('DANS CET ÉCHANTILLON', 'IN THIS SAMPLE')}</span>
                 <h2>
                   {number(matches.length)}
                   {t(' résultat', ' result')}
                   {matches.length > 1 ? 's' : ''}
+                  {t(' dans cet échantillon', ' in this sample')}
                 </h2>
                 <p>
                   {t(
@@ -1286,7 +1286,7 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
               {path.length > 1 && (
                 <div className="atlas-path-steps">
                   <span className="atlas-kicker">
-                    {t('LE FIL ENTRE CES IDÉES', 'THE THREAD BETWEEN THESE IDEAS')}
+                    {t('Le fil entre ces idées', 'The thread between these ideas')}
                   </span>
                   {path.map((nodeID, i) => (
                     <button key={nodeID} onClick={() => void choose(nodeID, true, true)}>
@@ -1453,9 +1453,6 @@ export default function Graph({ data, run, refresh, busy }: PageProps) {
           ) : (
             <>
               <div className="atlas-inspector-heading">
-                <span className="atlas-kicker">
-                  {t('UNE VUE, PLUSIEURS ENTRÉES', 'ONE MAP, MANY STARTING POINTS')}
-                </span>
                 <h2>{t('Où commencer ?', 'Where to start?')}</h2>
                 <p>
                   {t(

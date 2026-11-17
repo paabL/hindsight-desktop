@@ -1535,19 +1535,19 @@ function FolderList({
             )}
           />
         )}
+        <p className="form-hint sources-hint">
+          {t(
+            'Un même dossier peut alimenter plusieurs banques ; chacune garde son propre état. Rien n’est envoyé sans votre confirmation.',
+            'A folder can feed several memory banks; each keeps its own status. Nothing is uploaded without your confirmation.',
+          )}
+          {hasCatalog &&
+            ' ' +
+              t(
+                'Un dossier à catalogue passe par son catalogue : conversations, commits et rapports rassemblés par son collecteur (collect.py).',
+                'A folder with a catalog goes through its catalog: conversations, commits and reports gathered by its collector (collect.py).',
+              )}
+        </p>
       </section>
-      <p className="form-hint sources-hint">
-        {t(
-          'Un même dossier peut alimenter plusieurs banques ; chacune garde son propre état. Rien n’est envoyé sans votre confirmation.',
-          'A folder can feed several memory banks; each keeps its own status. Nothing is uploaded without your confirmation.',
-        )}
-        {hasCatalog &&
-          ' ' +
-            t(
-              'Un dossier à catalogue passe par son catalogue : conversations, commits et rapports rassemblés par son collecteur (collect.py).',
-              'A folder with a catalog goes through its catalog: conversations, commits and reports gathered by its collector (collect.py).',
-            )}
-      </p>
       {(data.warnings || []).map((warning: string) => (
         <div key={warning} className="notice">
           {warning}

@@ -13,7 +13,7 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
   background: var(--canvas);
   color: var(--ink);
-  font-size: 13px;
+  font-size: var(--text-md);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
@@ -48,8 +48,8 @@ input:focus-visible,
 textarea:focus-visible,
 select:focus-visible,
 [tabindex]:focus-visible {
-  outline: 3px solid var(--focus);
-  outline-offset: 3px;
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 button {
   transition:
@@ -70,16 +70,16 @@ h3 {
   font-weight: 600;
 }
 h1 {
-  font-size: 33px;
+  font-size: var(--text-2xl);
   line-height: 1.2;
   letter-spacing: -1.2px;
 }
 h2 {
-  font-size: 16px;
+  font-size: var(--text-lg);
   letter-spacing: -0.3px;
 }
 h3 {
-  font-size: 14px;
+  font-size: var(--text-lg);
   letter-spacing: -0.15px;
 }
 p {
@@ -94,10 +94,11 @@ textarea,
 select {
   color: var(--ink);
   border: 1px solid var(--line);
-  background: var(--surface);
-  border-radius: 9px;
-  min-height: 38px;
-  padding: 9px 12px;
+  background-color: var(--surface);
+  border-radius: var(--control-radius);
+  min-height: var(--control-height);
+  padding: 7px 11px;
+  line-height: 18px;
   max-width: 100%;
   transition: border-color 0.15s;
 }
@@ -131,11 +132,18 @@ textarea {
 }
 select {
   cursor: pointer;
-  padding-right: 28px;
+  padding-right: 30px;
+}
+select:not([multiple]) {
+  appearance: none;
+  background-image: var(--chevron-down);
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 13px;
 }
 kbd {
   font-family: inherit;
-  font-size: 10px;
+  font-size: var(--text-xs);
   line-height: 18px;
   color: var(--faint);
   border: 1px solid var(--line);
@@ -144,13 +152,13 @@ kbd {
   font-weight: 400;
 }
 small {
-  font-size: 11px;
+  font-size: var(--text-sm);
 }
 pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-family: 'SFMono-Regular', Consolas, monospace;
-  font-size: 11px;
+  font-size: var(--text-sm);
   line-height: 1.7;
   color: var(--secondary);
 }
@@ -158,7 +166,7 @@ label {
   display: flex;
   flex-direction: column;
   gap: 7px;
-  font-size: 12px;
+  font-size: var(--text-md);
   font-weight: 500;
 }
 label > small {
@@ -167,17 +175,35 @@ label > small {
 }
 summary {
   cursor: pointer;
-  list-style-position: inside;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
   font-weight: 500;
 }
-summary::marker {
-  color: var(--faint);
+summary::-webkit-details-marker {
+  display: none;
+}
+summary::before {
+  content: '';
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  background: currentColor;
+  opacity: 0.6;
+  -webkit-mask: var(--chevron-right-mask) center / 12px no-repeat;
+  mask: var(--chevron-right-mask) center / 12px no-repeat;
+  transition: transform 0.15s;
+}
+details[open] > summary::before {
+  transform: rotate(90deg);
 }
 dl {
   display: grid;
   grid-template-columns: 110px 1fr;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--text-md);
 }
 dt {
   color: var(--secondary);
@@ -189,11 +215,11 @@ dd {
 table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: var(--text-md);
   text-align: left;
 }
 th {
-  font-size: 10px;
+  font-size: var(--text-xs);
   letter-spacing: 0.5px;
   text-transform: uppercase;
   color: var(--faint);
@@ -296,8 +322,8 @@ tbody tr:hover {
   gap: 2px;
 }
 .brand strong {
-  font-size: 24px;
-  font-weight: 640;
+  font-size: var(--text-2xl);
+  font-weight: 600;
   letter-spacing: -1.2px;
   line-height: 1.1;
 }
@@ -339,7 +365,7 @@ tbody tr:hover {
   border-radius: 8px;
   background: var(--sage-light);
   color: var(--sage-ink);
-  font-size: 11px;
+  font-size: var(--text-sm);
   font-weight: 600;
   letter-spacing: 0.4px;
 }
@@ -351,14 +377,14 @@ tbody tr:hover {
   flex: 1;
 }
 .workspace-switch strong {
-  font-weight: 550;
-  font-size: 12px;
+  font-weight: 600;
+  font-size: var(--text-md);
   white-space: nowrap;
   text-overflow: ellipsis;
   overflow: hidden;
 }
 .workspace-switch small {
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--secondary);
 }
 .workspace-switch > svg {
@@ -366,9 +392,8 @@ tbody tr:hover {
 }
 .sidebar-label {
   color: var(--faint);
-  font-size: 9px;
-  letter-spacing: 1.05px;
-  font-weight: 550;
+  font-size: var(--text-xs);
+  font-weight: 600;
   padding: 0 12px 9px;
 }
 .sidebar nav {
@@ -385,7 +410,7 @@ tbody tr:hover {
   text-align: left;
   width: 100%;
   color: var(--secondary);
-  font-size: 12px;
+  font-size: var(--text-md);
   line-height: 18px;
   flex-shrink: 0;
 }
@@ -399,7 +424,7 @@ tbody tr:hover {
 .nav-item.active {
   background: var(--accent-soft);
   color: var(--accent-strong);
-  font-weight: 550;
+  font-weight: 600;
 }
 .nav-item kbd {
   border: 0;
@@ -418,7 +443,7 @@ tbody tr:hover {
   border: 1px solid var(--line);
   border-radius: 5px;
   background: var(--surface);
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 .advanced-nav {
   margin-top: 22px;
@@ -432,7 +457,7 @@ tbody tr:hover {
   width: 100%;
   padding: 10px 12px;
   color: var(--secondary);
-  font-size: 12px;
+  font-size: var(--text-md);
   text-align: left;
 }
 .advanced-toggle > span {
@@ -445,7 +470,7 @@ tbody tr:hover {
   transform: rotate(90deg);
 }
 .secondary-nav {
-  font-size: 11px;
+  font-size: var(--text-sm);
   padding: 8px 12px;
   gap: 10px;
 }
@@ -466,7 +491,7 @@ tbody tr:hover {
 }
 .sidebar-note p {
   color: var(--secondary);
-  font-size: 11px;
+  font-size: var(--text-sm);
   line-height: 1.9;
 }
 .sidebar-note strong {
@@ -487,13 +512,13 @@ tbody tr:hover {
 }
 .connection-footer strong {
   display: block;
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 500;
 }
 .connection-footer div > span {
   display: block;
   color: var(--faint);
-  font-size: 9px;
+  font-size: var(--text-xs);
   margin-top: 3px;
   line-height: 1.5;
 }
@@ -552,7 +577,7 @@ tbody tr:hover {
   border-radius: 6px;
   text-align: left;
   padding: 10px;
-  font-size: 12px;
+  font-size: var(--text-md);
 }
 .bank-menu button > span {
   flex: 1;
@@ -594,12 +619,12 @@ tbody tr:hover {
   display: flex;
   gap: 11px;
   align-items: center;
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--faint);
   pointer-events: none;
 }
 .breadcrumb strong {
-  font-weight: 450;
+  font-weight: 400;
   color: var(--secondary);
 }
 .breadcrumb > svg {
@@ -619,7 +644,7 @@ tbody tr:hover {
   border: 1px solid var(--line);
   background: var(--surface);
   border-radius: 7px;
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--faint);
   padding: 6px 7px 6px 10px;
 }
@@ -627,7 +652,7 @@ tbody tr:hover {
   padding-right: 32px;
 }
 .command-trigger kbd {
-  font-size: 9px;
+  font-size: var(--text-xs);
   line-height: 17px;
   background: var(--canvas);
 }
@@ -639,7 +664,7 @@ tbody tr:hover {
   width: 15px;
 }
 .host-badge {
-  font-size: 9px;
+  font-size: var(--text-xs);
   color: var(--faint);
   padding-right: 8px;
 }
@@ -648,7 +673,7 @@ tbody tr:hover {
   display: flex;
   gap: 6px;
   align-items: center;
-  font-size: 9px;
+  font-size: var(--text-xs);
   padding: 5px 8px;
   border-radius: 6px;
   background: var(--amber-light);
@@ -686,13 +711,13 @@ tbody tr:hover {
 }
 .eyebrow {
   text-transform: uppercase;
-  font-size: 9px;
-  font-weight: 550;
+  font-size: var(--text-xs);
+  font-weight: 600;
   letter-spacing: 1.15px;
   color: var(--faint);
 }
 .page-header p {
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--secondary);
   margin-top: 11px;
   max-width: 690px;
@@ -711,7 +736,7 @@ tbody tr:hover {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 9px 13px;
-  font-size: 11px;
+  font-size: var(--text-sm);
   font-weight: 500;
   line-height: 17px;
   white-space: nowrap;
@@ -762,15 +787,14 @@ tbody tr:hover {
 }
 .icon-button:hover:not(:disabled) {
   background: var(--hover);
-  border-color: var(--accent-line);
-  color: var(--accent-strong);
+  color: var(--ink);
 }
 .badge {
   display: inline-flex;
   gap: 5px;
   align-items: center;
   width: fit-content;
-  font-size: 9px;
+  font-size: var(--text-xs);
   font-weight: 500;
   line-height: 16px;
   white-space: nowrap;
@@ -816,11 +840,11 @@ tbody tr:hover {
   gap: 14px;
 }
 .card-header h2 {
-  font-size: 14px;
+  font-size: var(--text-lg);
   letter-spacing: -0.2px;
 }
 .card-header p {
-  font-size: 10px;
+  font-size: var(--text-xs);
   margin-top: 4px;
   color: var(--faint);
 }
@@ -830,7 +854,7 @@ tbody tr:hover {
   justify-content: space-between;
   padding: 12px 21px;
   border-top: 1px solid var(--line-soft);
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--faint);
 }
 .notice {
@@ -842,7 +866,7 @@ tbody tr:hover {
   border: 1px solid var(--amber-line);
   border-radius: 9px;
   color: var(--amber-ink);
-  font-size: 11px;
+  font-size: var(--text-sm);
   margin-bottom: 18px;
   line-height: 1.65;
   white-space: pre-wrap;
@@ -880,11 +904,11 @@ tbody tr:hover {
   margin-bottom: 17px;
 }
 .empty-state h3 {
-  font-size: 17px;
+  font-size: var(--text-lg);
   letter-spacing: -0.4px;
 }
 .empty-state p {
-  font-size: 11px;
+  font-size: var(--text-sm);
   line-height: 1.8;
   max-width: 390px;
   margin: 10px 0 19px;
@@ -896,7 +920,7 @@ tbody tr:hover {
   color: var(--secondary);
 }
 .subtle-label {
-  font-size: 9px;
+  font-size: var(--text-xs);
   color: var(--faint);
   display: flex;
   gap: 5px;
@@ -908,7 +932,7 @@ tbody tr:hover {
   align-items: center;
   justify-content: flex-start;
   gap: 7px;
-  font-size: 11px;
+  font-size: var(--text-sm);
   font-weight: 500;
   width: fit-content;
   padding: 0;
@@ -935,7 +959,7 @@ tbody tr:hover {
   background: transparent;
   min-height: 34px;
   width: 100%;
-  font-size: 11px;
+  font-size: var(--text-sm);
   padding-left: 0;
 }
 .input-with-icon:focus-within {
@@ -953,7 +977,7 @@ tbody tr:hover {
 }
 .list-toolbar select {
   min-height: 34px;
-  font-size: 10px;
+  font-size: var(--text-xs);
   max-width: 175px;
 }
 .list-toolbar .button {
@@ -967,7 +991,7 @@ tbody tr:hover {
   border-bottom: 1px solid var(--line-soft);
 }
 .filter-chips button {
-  font-size: 9px;
+  font-size: var(--text-xs);
   color: var(--secondary);
   border-radius: 5px;
   padding: 5px 9px;
@@ -978,10 +1002,10 @@ tbody tr:hover {
 .filter-chips button.active {
   background: var(--accent-soft);
   color: var(--accent-strong);
-  font-weight: 550;
+  font-weight: 600;
 }
 .filter-chips button > span {
-  font-size: 8px;
+  font-size: var(--text-xs);
   border: 1px solid var(--line);
   padding: 0 4px;
   border-radius: 3px;
@@ -994,13 +1018,13 @@ tbody tr:hover {
   padding: 31px 1px 22px;
   margin-top: auto;
   color: var(--faint);
-  font-size: 9px;
+  font-size: var(--text-xs);
 }
 .page-brand-footer .brandmark {
   opacity: 0.45;
 }
 .page-brand-footer > span:last-child {
-  font-size: 8px;
+  font-size: var(--text-xs);
 }
 .top-loading {
   position: absolute;
@@ -1025,7 +1049,7 @@ tbody tr:hover {
   gap: 10px;
   align-items: center;
   padding: 9px 38px;
-  font-size: 10px;
+  font-size: var(--text-xs);
   background: var(--amber-light);
   color: var(--amber-ink);
 }
@@ -1040,7 +1064,7 @@ tbody tr:hover {
   border-radius: 12px;
   background: var(--amber-light);
   color: var(--amber-ink);
-  font-size: 12px;
+  font-size: var(--text-md);
   line-height: 1.5;
 }
 .bank-mismatch p {
@@ -1065,7 +1089,7 @@ tbody tr:hover {
   gap: 12px;
   min-height: 220px;
   color: var(--faint);
-  font-size: 12px;
+  font-size: var(--text-md);
 }
 .spin {
   animation: spin 1s linear infinite;
@@ -1088,7 +1112,7 @@ tbody tr:hover {
 }
 .hero-copy .eyebrow {
   color: var(--accent-strong);
-  font-size: 8px;
+  font-size: var(--text-xs);
   display: flex;
   align-items: center;
   gap: 7px;
@@ -1115,7 +1139,7 @@ tbody tr:hover {
   letter-spacing: -0.6px;
 }
 .hero-copy p {
-  font-size: 10px;
+  font-size: var(--text-xs);
   line-height: 1.9;
   color: var(--hero-secondary);
 }
@@ -1133,7 +1157,7 @@ tbody tr:hover {
   border: 1px solid var(--hero-line);
   border-radius: 6px;
   padding: 6px 9px;
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 500;
   color: var(--accent-strong);
 }
@@ -1142,7 +1166,7 @@ tbody tr:hover {
   opacity: 0.55;
 }
 .hero-caption {
-  font-size: 8px;
+  font-size: var(--text-xs);
   color: var(--hero-secondary);
 }
 .memory-illustration {
@@ -1187,7 +1211,7 @@ tbody tr:hover {
   background: var(--note-back);
 }
 .note-back > span {
-  font-size: 10px;
+  font-size: var(--text-xs);
   margin: 14px 0;
 }
 .note-front {
@@ -1208,11 +1232,11 @@ tbody tr:hover {
   margin-bottom: 9px;
 }
 .note-front > span:nth-of-type(2) {
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--secondary);
 }
 .note-front > strong {
-  font-size: 12px;
+  font-size: var(--text-md);
   font-weight: 500;
   margin: 3px 0 7px;
   letter-spacing: -0.2px;
@@ -1261,7 +1285,7 @@ tbody tr:hover {
   gap: 5px;
   align-items: center;
   color: var(--hero-secondary);
-  font-size: 8px;
+  font-size: var(--text-xs);
   transform: rotate(-5deg);
   white-space: nowrap;
 }
@@ -1344,18 +1368,18 @@ tbody tr:hover {
   flex: 1;
 }
 .category-copy strong {
-  font-size: 11px;
-  font-weight: 550;
+  font-size: var(--text-sm);
+  font-weight: 600;
   white-space: nowrap;
   letter-spacing: -0.1px;
 }
 .category-copy > span {
-  font-size: 8px;
+  font-size: var(--text-xs);
   color: var(--faint);
   white-space: nowrap;
 }
 .category-count {
-  font-size: 18px;
+  font-size: var(--text-lg);
   font-weight: 500;
   letter-spacing: -0.6px;
 }
@@ -1372,7 +1396,7 @@ tbody tr:hover {
   padding-bottom: 20px;
 }
 .source-list .card-header h2 {
-  font-size: 15px;
+  font-size: var(--text-lg);
 }
 .source-row {
   display: flex;
@@ -1424,7 +1448,7 @@ tbody tr:hover {
   gap: 6px;
 }
 .source-row-main strong {
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 500;
   line-height: 1.5;
   overflow: hidden;
@@ -1432,7 +1456,7 @@ tbody tr:hover {
   white-space: nowrap;
 }
 .source-row-main > span {
-  font-size: 8px;
+  font-size: var(--text-xs);
   color: var(--faint);
   white-space: nowrap;
   overflow: hidden;
@@ -1443,7 +1467,7 @@ tbody tr:hover {
   opacity: 0.6;
 }
 .source-date {
-  font-size: 9px;
+  font-size: var(--text-xs);
   color: var(--faint);
   flex-shrink: 0;
 }
@@ -1467,13 +1491,13 @@ tbody tr:hover {
   margin-bottom: 15px;
 }
 .pipeline h3 {
-  font-size: 20px;
+  font-size: var(--text-xl);
   font-weight: 500;
   line-height: 1.3;
   letter-spacing: -0.6px;
 }
 .pipeline > p {
-  font-size: 10px;
+  font-size: var(--text-xs);
   line-height: 1.8;
   margin: 10px 0 22px;
 }
@@ -1501,7 +1525,7 @@ tbody tr:hover {
   height: 25px;
   border-radius: 50%;
   flex-shrink: 0;
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--faint);
   z-index: 1;
 }
@@ -1515,11 +1539,11 @@ tbody tr:hover {
   padding-top: 2px;
 }
 .pipeline-step strong {
-  font-size: 11px;
+  font-size: var(--text-sm);
   font-weight: 500;
 }
 .pipeline-step p {
-  font-size: 8px;
+  font-size: var(--text-xs);
   line-height: 1.8;
   margin-top: 4px;
   color: var(--faint);
@@ -1531,7 +1555,7 @@ tbody tr:hover {
   opacity: 0.7;
 }
 .pipeline > .text-button {
-  font-size: 9px;
+  font-size: var(--text-xs);
   padding-top: 15px;
   border-top: 1px solid var(--line);
   width: 100%;
@@ -1549,11 +1573,11 @@ tbody tr:hover {
   flex: 1;
 }
 .collection-health strong {
-  font-size: 9px;
+  font-size: var(--text-xs);
   font-weight: 500;
 }
 .collection-health p {
-  font-size: 8px;
+  font-size: var(--text-xs);
   margin-top: 4px;
   color: var(--faint);
 }
@@ -1576,7 +1600,7 @@ tbody tr:hover {
   gap: 12px;
   align-items: center;
   flex-wrap: wrap;
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--secondary);
   margin-bottom: 22px;
 }
@@ -1600,7 +1624,7 @@ tbody tr:hover {
   margin-top: 35px;
   border-top: 1px solid var(--line);
   padding-top: 18px;
-  font-size: 11px;
+  font-size: var(--text-sm);
 }
 .provenance dl {
   margin-top: 18px;
@@ -1626,11 +1650,11 @@ tbody tr:hover {
   flex: 1;
 }
 .section-callout strong {
-  font-size: 12px;
+  font-size: var(--text-md);
   font-weight: 500;
 }
 .section-callout p {
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--sage-ink);
   opacity: 0.8;
   margin-top: 5px;
@@ -1676,14 +1700,14 @@ tbody tr:hover {
   place-items: center;
 }
 .model-card h2 {
-  font-size: 18px;
+  font-size: var(--text-lg);
   line-height: 1.4;
   letter-spacing: -0.5px;
   font-weight: 500;
   margin-bottom: 10px;
 }
 .model-card > p {
-  font-size: 11px;
+  font-size: var(--text-sm);
   line-height: 1.8;
   color: var(--secondary);
   margin-bottom: 23px;
@@ -1696,7 +1720,7 @@ tbody tr:hover {
   padding-top: 15px;
   border-top: 1px solid var(--line-soft);
   color: var(--faint);
-  font-size: 9px;
+  font-size: var(--text-xs);
 }
 .model-card-bottom > span {
   display: flex;
@@ -1715,7 +1739,7 @@ tbody tr:hover {
   flex-shrink: 0;
 }
 .tabs button {
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--secondary);
   padding: 13px 0;
   position: relative;
@@ -1726,7 +1750,7 @@ tbody tr:hover {
 }
 .tabs button.active {
   color: var(--accent-strong);
-  font-weight: 550;
+  font-weight: 600;
 }
 .tabs button.active:after {
   content: '';
@@ -1739,7 +1763,7 @@ tbody tr:hover {
   border-radius: 2px;
 }
 .tabs button > span {
-  font-size: 9px;
+  font-size: var(--text-xs);
   padding: 1px 5px;
   border-radius: 4px;
   background: var(--neutral-light);
@@ -1794,7 +1818,7 @@ tbody tr:hover {
   min-width: 0;
   border: 0;
   padding: 6px 0;
-  font-size: 19px;
+  font-size: var(--text-xl);
   background: transparent;
   letter-spacing: -0.45px;
   outline: 0;
@@ -1811,7 +1835,7 @@ tbody tr:hover {
   gap: 16px;
   align-items: center;
   padding: 0 0 21px;
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--faint);
 }
 .search-bottom > span {
@@ -1820,7 +1844,7 @@ tbody tr:hover {
   align-items: center;
 }
 .search-bottom .text-button {
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--secondary);
 }
 .search-welcome {
@@ -1843,13 +1867,13 @@ tbody tr:hover {
 }
 .search-welcome h2 {
   font-family: Georgia, serif;
-  font-size: 29px;
+  font-size: var(--text-2xl);
   font-weight: 400;
   letter-spacing: -0.65px;
   margin-bottom: 10px;
 }
 .search-welcome > p {
-  font-size: 12px;
+  font-size: var(--text-md);
 }
 .suggestion-chips {
   display: flex;
@@ -1865,7 +1889,7 @@ tbody tr:hover {
   border: 1px solid var(--line);
   border-radius: 7px;
   padding: 9px 13px;
-  font-size: 10px;
+  font-size: var(--text-xs);
   background: var(--surface);
   color: var(--secondary);
 }
@@ -1881,11 +1905,11 @@ tbody tr:hover {
   border-top: 1px solid var(--line);
 }
 .filter-form label {
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 .filter-form input,
 .filter-form select {
-  font-size: 11px;
+  font-size: var(--text-sm);
 }
 .answer-card {
   padding-bottom: 25px;
@@ -1900,10 +1924,10 @@ tbody tr:hover {
   margin: 8px 0 19px;
 }
 .results-heading h2 {
-  font-size: 14px;
+  font-size: var(--text-lg);
 }
 .results-heading > span {
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--faint);
 }
 .fact-list {
@@ -1922,7 +1946,7 @@ tbody tr:hover {
   display: flex;
   gap: 12px;
   align-items: center;
-  font-size: 9px;
+  font-size: var(--text-xs);
   color: var(--faint);
 }
 .match-score {
@@ -1930,7 +1954,7 @@ tbody tr:hover {
   color: var(--sage-ink);
 }
 .fact-card > p {
-  font-size: 13px;
+  font-size: var(--text-md);
   line-height: 1.85;
   margin: 14px 0;
   color: var(--ink);
@@ -1946,11 +1970,11 @@ tbody tr:hover {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
-  font-size: 9px;
+  font-size: var(--text-xs);
   color: var(--faint);
 }
 .fact-card-bottom .text-button {
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 .document-cell {
   display: flex;
@@ -1966,7 +1990,7 @@ tbody tr:hover {
   min-width: 0;
 }
 .document-cell strong {
-  font-size: 11px;
+  font-size: var(--text-sm);
   font-weight: 500;
   line-height: 1.5;
   overflow: hidden;
@@ -1974,7 +1998,7 @@ tbody tr:hover {
   white-space: nowrap;
 }
 .document-cell small {
-  font-size: 9px;
+  font-size: var(--text-xs);
   color: var(--faint);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1989,17 +2013,17 @@ tbody tr:hover {
   align-items: center;
   padding: 17px 24px;
   border-top: 1px solid var(--line-soft);
-  font-size: 11px;
+  font-size: var(--text-sm);
   flex-wrap: wrap;
 }
 .root-row > strong {
   flex: 1;
-  font-size: 11px;
+  font-size: var(--text-sm);
   font-weight: 500;
   overflow-wrap: anywhere;
 }
 .root-row .checkbox-label {
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 
 .metrics-grid {
@@ -2021,7 +2045,7 @@ tbody tr:hover {
   align-items: center;
   gap: 6px;
   color: var(--secondary);
-  font-size: 10px;
+  font-size: var(--text-xs);
   margin-bottom: 17px;
 }
 .metric-icon {
@@ -2047,19 +2071,19 @@ tbody tr:hover {
 }
 .metric > strong {
   display: block;
-  font-size: 29px;
+  font-size: var(--text-2xl);
   font-weight: 500;
   line-height: 1.2;
   letter-spacing: -1px;
 }
 .metric > strong small {
-  font-size: 11px;
+  font-size: var(--text-sm);
   letter-spacing: 0;
   color: var(--faint);
   font-weight: 400;
 }
 .metric > p {
-  font-size: 8px;
+  font-size: var(--text-xs);
   color: var(--faint);
   margin-top: 10px;
 }
@@ -2092,7 +2116,7 @@ tbody tr:hover {
   grid-template-columns: minmax(0, 1fr) 270px;
   gap: 22px;
 }
-.chart-card .tabs {
+.card-header .tabs {
   border: 0;
   margin: 0;
   background: var(--canvas);
@@ -2100,17 +2124,18 @@ tbody tr:hover {
   gap: 0;
   padding: 3px;
 }
-.chart-card .tabs button {
-  padding: 5px 9px;
-  font-size: 9px;
-  border-radius: 4px;
+/* Un choix de période dans l'en-tête d'une carte est un sélecteur segmenté, pas une barre d'onglets. */
+.card-header .tabs button {
+  padding: 4px 10px;
+  font-size: var(--text-sm);
+  border-radius: 5px;
 }
-.chart-card .tabs button.active {
+.card-header .tabs button.active {
   background: var(--surface);
   box-shadow: var(--shadow-tiny);
   color: var(--ink);
 }
-.chart-card .tabs button.active:after {
+.card-header .tabs button.active:after {
   display: none;
 }
 .bar-chart {
@@ -2124,7 +2149,7 @@ tbody tr:hover {
   flex-direction: column;
   justify-content: space-between;
   padding: 0 0 25px;
-  font-size: 8px;
+  font-size: var(--text-xs);
   color: var(--faint);
   min-width: 25px;
 }
@@ -2169,7 +2194,7 @@ tbody tr:hover {
 .bar-column > small {
   position: absolute;
   top: calc(100% + 9px);
-  font-size: 8px;
+  font-size: var(--text-xs);
   white-space: nowrap;
   left: 0;
   color: var(--faint);
@@ -2180,7 +2205,7 @@ tbody tr:hover {
   align-items: center;
   padding: 0 25px 20px;
   color: var(--faint);
-  font-size: 8px;
+  font-size: var(--text-xs);
 }
 .legend-square {
   width: 6px;
@@ -2202,7 +2227,7 @@ tbody tr:hover {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--secondary);
   margin-bottom: 8px;
 }
@@ -2210,7 +2235,7 @@ tbody tr:hover {
   margin-left: auto;
   font-weight: 500;
   color: var(--ink);
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 .legend-dot {
   height: 6px;
@@ -2243,16 +2268,16 @@ tbody tr:hover {
   color: var(--faint);
 }
 .distribution-note p {
-  font-size: 9px;
+  font-size: var(--text-xs);
   line-height: 1.8;
   color: var(--faint);
 }
 .distribution-card > .text-button {
-  font-size: 9px;
+  font-size: var(--text-xs);
   margin: 0 24px;
 }
 .card-placeholder {
-  font-size: 11px;
+  font-size: var(--text-sm);
   padding: 12px 24px;
 }
 .budget-gauges {
@@ -2265,14 +2290,14 @@ tbody tr:hover {
   display: flex;
   flex-direction: column;
   gap: 7px;
-  font-size: 11px;
+  font-size: var(--text-sm);
 }
 .budget-gauges span {
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--secondary);
 }
 .page-footnote {
-  font-size: 9px;
+  font-size: var(--text-xs);
   line-height: 1.8;
   color: var(--faint);
   display: flex;
@@ -2281,7 +2306,7 @@ tbody tr:hover {
   margin-bottom: 24px;
 }
 .muted-details {
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--faint);
   margin: -8px 0 22px;
 }
@@ -2307,11 +2332,11 @@ tbody tr:hover {
   flex: 1;
 }
 .pause-options h3 {
-  font-size: 13px;
+  font-size: var(--text-md);
   margin-bottom: 8px;
 }
 .pause-options p {
-  font-size: 11px;
+  font-size: var(--text-sm);
   line-height: 1.8;
   margin-bottom: 13px;
 }
@@ -2327,7 +2352,7 @@ tbody tr:hover {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 10px;
-  font-size: 10px;
+  font-size: var(--text-xs);
   margin-bottom: 20px;
   flex-wrap: wrap;
 }
@@ -2338,12 +2363,12 @@ tbody tr:hover {
   color: var(--secondary);
 }
 .operations-summary strong {
-  font-size: 15px;
+  font-size: var(--text-lg);
   color: var(--ink);
   font-weight: 500;
 }
 .operations-summary .button {
-  font-size: 9px;
+  font-size: var(--text-xs);
 }
 .operation-row {
   padding: 21px 24px;
@@ -2388,23 +2413,23 @@ tbody tr:hover {
   gap: 12px;
 }
 .operation-main strong {
-  font-size: 12px;
+  font-size: var(--text-md);
   font-weight: 500;
 }
 .operation-main > p {
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--faint);
   margin-top: 7px;
   overflow-wrap: anywhere;
 }
 .operation-main small {
-  font-size: 9px;
+  font-size: var(--text-xs);
   color: var(--secondary);
   display: block;
   margin-top: 7px;
 }
 .operation-error {
-  font-size: 10px;
+  font-size: var(--text-xs);
   background: var(--red-light);
   color: var(--red);
   margin-top: 10px;
@@ -2420,10 +2445,10 @@ tbody tr:hover {
   color: var(--secondary);
 }
 .operation-error strong {
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 .operation-date {
-  font-size: 9px;
+  font-size: var(--text-xs);
   color: var(--faint);
   padding-top: 5px;
   white-space: nowrap;
@@ -2450,15 +2475,15 @@ tbody tr:hover {
   padding: 14px 0;
   border-top: 1px solid var(--line-soft);
 }
-.memory-breakdown > div > div:nth-child(2) {
+.memory-breakdown > div > div:first-child {
   flex: 1;
 }
 .memory-breakdown strong {
-  font-size: 11px;
+  font-size: var(--text-sm);
   font-weight: 500;
 }
 .memory-breakdown p {
-  font-size: 9px;
+  font-size: var(--text-xs);
   color: var(--faint);
   margin-top: 4px;
 }
@@ -2478,17 +2503,17 @@ tbody tr:hover {
   align-items: center;
   padding: 15px 0;
   border-top: 1px solid var(--line-soft);
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--secondary);
 }
 .queue-overview strong {
   margin-left: auto;
-  font-size: 20px;
+  font-size: var(--text-xl);
   font-weight: 500;
   color: var(--ink);
 }
 .queue-overview strong.small-value {
-  font-size: 12px;
+  font-size: var(--text-md);
 }
 .observation-scopes .scope-bar {
   display: flex;
@@ -2529,7 +2554,7 @@ tbody tr:hover {
   align-items: center;
   padding: 10px 0;
   border-top: 1px solid var(--line-soft);
-  font-size: 11px;
+  font-size: var(--text-sm);
 }
 .scope-legend li:first-child {
   border-top: 0;
@@ -2546,7 +2571,7 @@ tbody tr:hover {
   color: var(--secondary);
 }
 .scope-legend .scope-share {
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--faint);
   font-variant-numeric: tabular-nums;
 }
@@ -2579,17 +2604,17 @@ tbody tr:hover {
   color: var(--ink);
 }
 .search-pool span {
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--faint);
 }
 .search-pool strong {
-  font-size: 15px;
+  font-size: var(--text-lg);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 .search-pool small {
   grid-column: 1 / -1;
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--faint);
 }
 @media (max-width: 640px) {
@@ -2607,7 +2632,7 @@ tbody tr:hover {
   flex: 1;
 }
 .timeline-toolbar select {
-  font-size: 11px;
+  font-size: var(--text-sm);
 }
 .timeline-group {
   display: grid;
@@ -2615,7 +2640,7 @@ tbody tr:hover {
   gap: 24px;
 }
 .timeline-date {
-  font-size: 11px;
+  font-size: var(--text-sm);
   display: flex;
   flex-wrap: wrap;
   align-content: flex-start;
@@ -2631,7 +2656,7 @@ tbody tr:hover {
 .timeline-date > span {
   width: 100%;
   padding-left: 26px;
-  font-size: 9px;
+  font-size: var(--text-xs);
   color: var(--faint);
 }
 .timeline-date:after {
@@ -2647,13 +2672,13 @@ tbody tr:hover {
   margin-bottom: 15px;
 }
 .timeline-fact p {
-  font-size: 12px;
+  font-size: var(--text-md);
   line-height: 1.9;
   color: var(--ink);
   margin: 12px 0;
 }
 .timeline-fact .text-button {
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 .graph-toolbar {
   display: flex;
@@ -2732,9 +2757,9 @@ tbody tr:hover {
   stroke-width: 1;
 }
 .graph-node text {
-  font-size: 10px;
+  font-size: var(--text-xs);
   fill: var(--secondary);
-  font-weight: 450;
+  font-weight: 400;
   paint-order: stroke;
   stroke: var(--surface);
   stroke-width: 3px;
@@ -2756,7 +2781,7 @@ tbody tr:hover {
   box-shadow: var(--shadow-tiny);
 }
 .graph-controls > button:not(.icon-button) {
-  font-size: 10px;
+  font-size: var(--text-xs);
   padding: 0 8px;
   color: var(--secondary);
 }
@@ -2774,7 +2799,7 @@ tbody tr:hover {
   display: flex;
   gap: 6px;
   align-items: center;
-  font-size: 8px;
+  font-size: var(--text-xs);
   color: var(--faint);
 }
 .graph-inspector .card-header {
@@ -2793,7 +2818,7 @@ tbody tr:hover {
   padding: 9px 10px;
   width: 100%;
   text-align: left;
-  font-size: 10px;
+  font-size: var(--text-xs);
   border-radius: 6px;
   color: var(--secondary);
 }
@@ -2812,7 +2837,7 @@ tbody tr:hover {
 }
 .node-detail {
   padding: 18px;
-  font-size: 11px;
+  font-size: var(--text-sm);
 }
 .node-detail > p {
   margin-bottom: 18px;
@@ -2841,23 +2866,23 @@ tbody tr:hover {
   border-bottom: 1px solid var(--line);
 }
 .activity-list strong {
-  font-size: 12px;
+  font-size: var(--text-md);
 }
 .activity-list p {
-  font-size: 10px;
+  font-size: var(--text-xs);
   margin-top: 6px;
 }
 
 .settings-card {
-  padding: 25px 27px;
+  padding: 20px 24px 24px;
 }
 .settings-card > .card-header {
-  padding: 0 0 23px;
+  padding: 0 0 16px;
 }
 .settings-card .form-stack > h2 {
-  font-size: 20px;
-  letter-spacing: -0.5px;
-  font-weight: 500;
+  font-size: var(--text-lg);
+  letter-spacing: -0.2px;
+  font-weight: 600;
 }
 .form-stack {
   display: flex;
@@ -2873,13 +2898,13 @@ tbody tr:hover {
 .form-stack textarea,
 .form-stack select {
   width: 100%;
-  font-size: 12px;
+  font-size: var(--text-md);
 }
 .form-stack label > .badge {
   margin-left: 5px;
 }
 .form-hint {
-  font-size: 10px;
+  font-size: var(--text-xs);
   line-height: 1.8;
   color: var(--faint);
   max-width: 680px;
@@ -2911,16 +2936,16 @@ tbody tr:hover {
   gap: 7px;
 }
 .setting-toggle strong {
-  font-size: 12px;
+  font-size: var(--text-md);
   font-weight: 500;
 }
 .setting-toggle span {
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--faint);
 }
 .setting-toggle input {
-  width: 29px;
-  height: 17px;
+  width: 32px;
+  height: 18px;
   appearance: none;
   background: var(--line-strong);
   border: 0;
@@ -2933,10 +2958,10 @@ tbody tr:hover {
 .setting-toggle input:after {
   content: '';
   position: absolute;
-  top: 3px;
-  left: 3px;
-  height: 11px;
-  width: 11px;
+  top: 2px;
+  left: 2px;
+  height: 14px;
+  width: 14px;
   background: #fff;
   border-radius: 50%;
   box-shadow: 0 1px 2px #0001;
@@ -2946,14 +2971,14 @@ tbody tr:hover {
   background: var(--accent);
 }
 .setting-toggle input:checked:after {
-  transform: translateX(12px);
+  transform: translateX(14px);
 }
 .range-label {
   display: grid !important;
   grid-template-columns: 1fr auto;
 }
 .range-label > span {
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--secondary);
 }
 .range-label input {
@@ -2961,7 +2986,7 @@ tbody tr:hover {
 }
 .code-input {
   font-family: 'SFMono-Regular', Consolas, monospace;
-  font-size: 11px !important;
+  font-size: var(--text-sm) !important;
   line-height: 1.8;
   min-height: 180px;
   background: var(--canvas);
@@ -2980,7 +3005,7 @@ tbody tr:hover {
   display: flex !important;
   flex-direction: row !important;
   align-items: center;
-  font-size: 11px;
+  font-size: var(--text-sm);
   font-weight: 400;
   gap: 8px;
 }
@@ -3002,7 +3027,7 @@ tbody tr:hover {
   color: var(--red);
 }
 .danger-zone > p {
-  font-size: 11px;
+  font-size: var(--text-sm);
   margin-bottom: 20px;
   line-height: 1.9;
 }
@@ -3034,11 +3059,11 @@ tbody tr:hover {
   margin-bottom: 6px;
 }
 .transfer-grid strong {
-  font-size: 12px;
+  font-size: var(--text-md);
   font-weight: 500;
 }
 .transfer-grid span {
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--faint);
   font-weight: 400;
 }
@@ -3053,23 +3078,23 @@ tbody tr:hover {
   display: flex;
   gap: 15px;
   align-items: center;
-  padding: 21px 25px;
+  padding: 18px 24px;
   border-top: 1px solid var(--line-soft);
 }
 .directive-row > div {
   flex: 1;
 }
 .directive-row strong {
-  font-size: 12px;
+  font-size: var(--text-md);
   font-weight: 500;
 }
 .directive-row p {
-  font-size: 10px;
+  font-size: var(--text-xs);
   line-height: 1.8;
   margin-top: 6px;
 }
 .service-card {
-  padding: 25px;
+  padding: 20px 24px 24px;
 }
 .service-identity {
   display: flex;
@@ -3090,12 +3115,12 @@ tbody tr:hover {
   flex: 1;
 }
 .service-identity h2 {
-  font-size: 17px;
-  font-weight: 500;
-  letter-spacing: -0.4px;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  letter-spacing: -0.2px;
 }
 .service-identity p {
-  font-size: 11px;
+  font-size: var(--text-sm);
   margin-top: 5px;
 }
 .service-actions {
@@ -3112,11 +3137,11 @@ tbody tr:hover {
   margin: 6px 0 19px;
 }
 .section-heading h2 {
-  font-size: 17px;
+  font-size: var(--text-lg);
   font-weight: 500;
 }
 .section-heading p {
-  font-size: 10px;
+  font-size: var(--text-xs);
   margin-top: 7px;
 }
 .server-roles {
@@ -3151,11 +3176,11 @@ tbody tr:hover {
   min-width: 0;
 }
 .role-card h3 {
-  font-size: 12px;
+  font-size: var(--text-md);
   font-weight: 500;
 }
 .role-card p {
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--secondary);
   margin-top: 6px;
   overflow: hidden;
@@ -3169,7 +3194,7 @@ tbody tr:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 11px;
+  font-size: var(--text-sm);
   padding: 9px 0;
   border-bottom: 1px solid var(--line);
 }
@@ -3177,15 +3202,16 @@ tbody tr:hover {
   display: flex;
   gap: 14px;
   align-items: center;
-  margin-bottom: 24px;
+  margin-bottom: 18px;
 }
 .settings-section-heading h2 {
-  font-size: 16px;
-  font-weight: 500;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  letter-spacing: -0.2px;
 }
 .settings-section-heading p {
-  font-size: 10px;
-  margin-top: 5px;
+  font-size: var(--text-sm);
+  margin-top: 4px;
 }
 .inline-form {
   display: flex;
@@ -3197,7 +3223,7 @@ tbody tr:hover {
   flex: 1;
 }
 .inline-form > label input {
-  font-size: 12px;
+  font-size: var(--text-md);
 }
 .theme-choices {
   display: flex;
@@ -3220,9 +3246,9 @@ tbody tr:hover {
   gap: 8px;
   align-items: center;
   padding: 10px 5px 5px;
-  font-size: 11px;
+  font-size: var(--text-sm);
 }
-.theme-choices > button > span > svg:last-child {
+.theme-choices > button > span > svg:not(:first-child):last-child {
   margin-left: auto;
 }
 .theme-preview {
@@ -3276,7 +3302,7 @@ tbody tr:hover {
   display: flex;
   justify-content: space-between;
   gap: 15px;
-  font-size: 11px;
+  font-size: var(--text-sm);
   padding: 12px 0;
   border-bottom: 1px solid var(--line-soft);
 }
@@ -3284,7 +3310,7 @@ tbody tr:hover {
   border: 0;
 }
 .shortcut-list kbd {
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 
 .modal-backdrop {
@@ -3328,20 +3354,21 @@ tbody tr:hover {
   min-width: 0;
 }
 .modal-header h2 {
-  font-size: 18px;
-  font-weight: 550;
+  font-size: var(--text-lg);
+  font-weight: 600;
   letter-spacing: -0.5px;
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
 .modal-header p {
-  font-size: 11px;
+  font-size: var(--text-sm);
   line-height: 1.7;
   margin-top: 8px;
 }
 .modal-header .icon-button {
-  height: 26px;
-  width: 26px;
+  height: 28px;
+  width: 28px;
+  margin: -3px -6px 0 0;
 }
 .modal-body {
   padding: 25px 27px 28px;
@@ -3358,7 +3385,7 @@ tbody tr:hover {
 }
 .confirmation-message {
   white-space: pre-wrap;
-  font-size: 12px;
+  font-size: var(--text-md);
   line-height: 1.85;
   color: var(--secondary);
   margin-bottom: 23px;
@@ -3383,7 +3410,7 @@ tbody tr:hover {
   gap: 15px;
   z-index: 2000;
   padding: 11px 12px 11px 18px;
-  font-size: 11px;
+  font-size: var(--text-sm);
   line-height: 1.7;
   animation: fade-in 0.15s;
 }
@@ -3401,7 +3428,7 @@ tbody tr:hover {
 }
 .command-search input {
   min-height: 44px;
-  font-size: 14px;
+  font-size: var(--text-lg);
 }
 .command-list {
   display: flex;
@@ -3416,7 +3443,7 @@ tbody tr:hover {
   align-items: center;
   padding: 11px;
   border-radius: 7px;
-  font-size: 12px;
+  font-size: var(--text-md);
   text-align: left;
 }
 .command-list > button > span {
@@ -3430,23 +3457,23 @@ tbody tr:hover {
   color: var(--faint);
 }
 .markdown {
-  font-size: 13px;
+  font-size: var(--text-md);
   line-height: 1.95;
   color: var(--ink);
   overflow-wrap: anywhere;
 }
 .markdown h1 {
-  font-size: 27px;
+  font-size: var(--text-2xl);
   margin: 22px 0 18px;
   letter-spacing: -0.7px;
 }
 .markdown h2 {
-  font-size: 20px;
+  font-size: var(--text-xl);
   margin: 28px 0 13px;
   letter-spacing: -0.5px;
 }
 .markdown h3 {
-  font-size: 16px;
+  font-size: var(--text-lg);
   margin: 25px 0 10px;
 }
 .markdown p {
@@ -3478,7 +3505,7 @@ tbody tr:hover {
   overflow: auto;
 }
 .markdown code {
-  font-size: 11px;
+  font-size: var(--text-sm);
   background: var(--neutral-light);
   padding: 2px 5px;
   border-radius: 4px;
@@ -3494,12 +3521,12 @@ tbody tr:hover {
   margin: 20px 0;
 }
 .markdown th {
-  font-size: 11px;
+  font-size: var(--text-sm);
   text-transform: none;
   letter-spacing: 0;
 }
 .markdown td {
-  font-size: 11px;
+  font-size: var(--text-sm);
 }
 .markdown hr {
   border: 0;
@@ -3522,7 +3549,7 @@ tbody tr:hover {
 }
 .image-placeholder {
   display: block;
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--faint);
   border: 1px dashed var(--line);
   padding: 15px;
@@ -3575,7 +3602,7 @@ tbody tr:hover {
     font-size: 41px;
   }
   .hero-copy p {
-    font-size: 12px;
+    font-size: var(--text-md);
   }
   .memory-illustration {
     transform: scale(1.13);
@@ -3585,19 +3612,19 @@ tbody tr:hover {
     grid-template-columns: minmax(0, 1fr) 280px;
   }
   .source-row-main strong {
-    font-size: 12px;
+    font-size: var(--text-md);
   }
   .source-row-main > span {
-    font-size: 9px;
+    font-size: var(--text-xs);
   }
   .source-category {
     padding: 22px;
   }
   .category-copy strong {
-    font-size: 13px;
+    font-size: var(--text-md);
   }
   .category-copy > span {
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
   .source-categories {
     gap: 22px;
@@ -3613,7 +3640,7 @@ tbody tr:hover {
     gap: 9px;
   }
   .brand strong {
-    font-size: 22px;
+    font-size: var(--text-xl);
   }
   .brand div > span {
     font-size: 6px;
@@ -3629,7 +3656,7 @@ tbody tr:hover {
     align-items: flex-start;
   }
   .page-header p {
-    font-size: 10px;
+    font-size: var(--text-xs);
     max-width: 480px;
   }
   .header-actions {
@@ -3642,7 +3669,7 @@ tbody tr:hover {
     padding: 25px;
   }
   .hero-copy h2 {
-    font-size: 31px;
+    font-size: var(--text-2xl);
   }
   .hero-caption {
     display: none;
@@ -3655,7 +3682,7 @@ tbody tr:hover {
     font-size: 7px;
   }
   .category-copy strong {
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
   .source-category .category-icon {
     height: 35px;
@@ -3663,7 +3690,7 @@ tbody tr:hover {
     border-radius: 9px;
   }
   .category-count {
-    font-size: 16px;
+    font-size: var(--text-lg);
   }
   .source-category > svg {
     display: none;
@@ -3676,17 +3703,17 @@ tbody tr:hover {
     padding: 21px 18px;
   }
   .pipeline h3 {
-    font-size: 18px;
+    font-size: var(--text-lg);
   }
   .source-row {
     padding: 14px 18px;
     gap: 9px;
   }
   .source-row-main strong {
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
   .source-list .subtle-label {
-    font-size: 8px;
+    font-size: var(--text-xs);
   }
   .source-list .subtle-label > svg {
     display: none;
@@ -3704,10 +3731,10 @@ tbody tr:hover {
     padding: 17px 15px;
   }
   .metric-top {
-    font-size: 9px;
+    font-size: var(--text-xs);
   }
   .metric > strong {
-    font-size: 25px;
+    font-size: var(--text-2xl);
   }
   .metric > p {
     font-size: 7.5px;
@@ -3749,16 +3776,16 @@ tbody tr:hover {
     border-radius: 10px;
   }
   .brand strong {
-    font-size: 20px;
+    font-size: var(--text-xl);
   }
   .brand div > span {
     font-size: 5.3px;
   }
   .sidebar-label {
-    font-size: 8px;
+    font-size: var(--text-xs);
   }
   .nav-item {
-    font-size: 11px;
+    font-size: var(--text-sm);
     padding: 10px;
   }
   .nav-item svg {
@@ -3768,17 +3795,17 @@ tbody tr:hover {
     display: none;
   }
   .secondary-nav {
-    font-size: 10px;
+    font-size: var(--text-xs);
     padding: 8px 10px;
   }
   .connection-footer {
     gap: 7px;
   }
   .connection-footer strong {
-    font-size: 8px;
+    font-size: var(--text-xs);
   }
   .connection-footer div > span {
-    font-size: 8px;
+    font-size: var(--text-xs);
   }
   .page-content {
     padding: 27px 22px 0;
@@ -3790,7 +3817,7 @@ tbody tr:hover {
     padding-right: 8px;
   }
   .breadcrumb {
-    font-size: 9px;
+    font-size: var(--text-xs);
     gap: 7px;
   }
   .source-layout {
@@ -3800,10 +3827,10 @@ tbody tr:hover {
     display: none;
   }
   .hero-copy h2 {
-    font-size: 29px;
+    font-size: var(--text-2xl);
   }
   .hero-copy p {
-    font-size: 9px;
+    font-size: var(--text-xs);
   }
   .source-hero {
     min-height: 245px;
@@ -3821,26 +3848,26 @@ tbody tr:hover {
     gap: 8px;
   }
   .category-copy strong {
-    font-size: 9px;
+    font-size: var(--text-xs);
   }
   .category-copy > span {
     display: none;
   }
   .page-header h1 {
-    font-size: 29px;
+    font-size: var(--text-2xl);
   }
   .header-actions .button {
-    font-size: 10px;
+    font-size: var(--text-xs);
     padding: 8px 10px;
   }
   .metrics-grid {
     gap: 10px;
   }
   .metric > strong {
-    font-size: 22px;
+    font-size: var(--text-xl);
   }
   .metric-top {
-    font-size: 8px;
+    font-size: var(--text-xs);
   }
   .metric-icon {
     height: 25px;
@@ -3875,7 +3902,7 @@ tbody tr:hover {
     padding: 16px;
   }
   .role-card p {
-    font-size: 9px;
+    font-size: var(--text-xs);
   }
   .transfer-grid {
     gap: 10px;
@@ -3885,10 +3912,10 @@ tbody tr:hover {
     padding: 18px 13px;
   }
   .transfer-grid strong {
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
   .transfer-grid span {
-    font-size: 9px;
+    font-size: var(--text-xs);
   }
   .service-actions {
     flex-wrap: wrap;
@@ -3924,7 +3951,7 @@ tbody tr:hover {
   border-radius: 4px;
 }
 .brand strong {
-  font-size: 21px;
+  font-size: var(--text-xl);
   font-weight: 600;
   letter-spacing: -0.65px;
 }
@@ -3947,23 +3974,23 @@ tbody tr:hover {
   width: 30px;
   height: 30px;
   border-radius: 5px;
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 .workspace-switch strong {
-  font-size: 12px;
+  font-size: var(--text-md);
 }
 .workspace-switch small {
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 .workspace-wrapper {
   margin-bottom: 25px;
 }
 .sidebar-label {
-  font-size: 9px;
-  letter-spacing: 1.1px;
+  font-size: var(--text-xs);
+  letter-spacing: 0;
 }
 .nav-item {
-  font-size: 12px;
+  font-size: var(--text-md);
   border-radius: 6px;
   padding: 10px 11px;
   gap: 11px;
@@ -3984,10 +4011,10 @@ tbody tr:hover {
   left: 17px;
 }
 .nav-item kbd {
-  font-size: 9px;
+  font-size: var(--text-xs);
 }
 .secondary-nav {
-  font-size: 11px;
+  font-size: var(--text-sm);
   padding: 8px 11px;
 }
 .advanced-nav {
@@ -4000,10 +4027,10 @@ tbody tr:hover {
   padding-top: 17px;
 }
 .connection-footer strong {
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 .connection-footer div > span {
-  font-size: 9px;
+  font-size: var(--text-xs);
 }
 .main-shell {
   background: var(--canvas);
@@ -4014,13 +4041,13 @@ tbody tr:hover {
   padding: 0 36px;
 }
 .breadcrumb {
-  font-size: 11px;
+  font-size: var(--text-sm);
 }
 .topbar-actions {
   gap: 12px;
 }
 .command-trigger {
-  font-size: 11px;
+  font-size: var(--text-sm);
   border-radius: 5px;
   padding: 6px 8px;
 }
@@ -4032,7 +4059,7 @@ tbody tr:hover {
   background: var(--amber-light);
   color: var(--amber-ink);
   border: 1px solid var(--amber-line);
-  font-size: 10px;
+  font-size: var(--text-xs);
   border-radius: 5px;
 }
 .demo-badge > span {
@@ -4047,22 +4074,24 @@ tbody tr:hover {
   flex-wrap: wrap;
 }
 .page-header h1 {
-  font-size: 28px;
-  font-weight: 550;
+  font-size: var(--text-2xl);
+  font-weight: 600;
   letter-spacing: -0.85px;
 }
 .page-header p {
-  font-size: 12px;
+  font-size: var(--text-md);
   line-height: 1.7;
   margin-top: 9px;
   color: var(--secondary);
 }
 .button {
-  border-radius: 6px;
-  font-size: 12px;
+  border-radius: var(--control-radius);
+  font-size: var(--text-md);
   font-weight: 500;
   box-shadow: none;
-  padding: 8px 12px;
+  min-height: var(--control-height);
+  padding: 7px 12px;
+  line-height: 18px;
 }
 .button.primary {
   color: var(--accent-foreground);
@@ -4084,19 +4113,19 @@ tbody tr:hover {
   box-shadow: none;
 }
 .card-header {
-  padding: 21px 22px 18px;
+  padding: 20px 24px 16px;
 }
 .card-header h2 {
-  font-size: 13px;
-  font-weight: 550;
-  letter-spacing: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  letter-spacing: -0.2px;
 }
 .card-header p {
-  font-size: 11px;
-  color: var(--faint);
+  font-size: var(--text-sm);
+  color: var(--secondary);
 }
 .badge {
-  font-size: 10px;
+  font-size: var(--text-xs);
   border-radius: 4px;
   padding: 2px 6px;
 }
@@ -4170,15 +4199,15 @@ tbody tr:hover {
   height: 20px;
 }
 .category-copy strong {
-  font-size: 12px;
+  font-size: var(--text-md);
   font-weight: 500;
 }
 .category-copy > span {
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 .category-count {
-  font-size: 23px;
-  font-weight: 450;
+  font-size: var(--text-xl);
+  font-weight: 400;
   letter-spacing: -0.8px;
   font-variant-numeric: tabular-nums;
 }
@@ -4194,14 +4223,14 @@ tbody tr:hover {
   gap: 20px;
 }
 .source-list .subtle-label {
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 .source-list .card-header h2 {
-  font-size: 14px;
+  font-size: var(--text-lg);
 }
 .source-list .input-with-icon input,
 .list-toolbar select {
-  font-size: 11px;
+  font-size: var(--text-sm);
 }
 .source-row {
   padding: 16px 21px;
@@ -4209,16 +4238,16 @@ tbody tr:hover {
   min-height: 78px;
 }
 .source-row-main strong {
-  font-size: 12px;
-  font-weight: 450;
+  font-size: var(--text-md);
+  font-weight: 400;
   line-height: 1.5;
 }
 .source-row-main > span {
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--faint);
 }
 .source-date {
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 .source-row .file-icon {
   height: 31px;
@@ -4231,12 +4260,12 @@ tbody tr:hover {
   gap: 6px;
 }
 .filter-chips button {
-  font-size: 10px;
+  font-size: var(--text-xs);
   border-radius: 4px;
   padding: 5px 9px;
 }
 .filter-chips button > span {
-  font-size: 9px;
+  font-size: var(--text-xs);
 }
 .source-list .list-toolbar {
   padding-bottom: 17px;
@@ -4275,13 +4304,13 @@ tbody tr:hover {
   margin-bottom: 7px;
 }
 .archive-heading h2 {
-  font-size: 16px;
-  font-weight: 550;
+  font-size: var(--text-lg);
+  font-weight: 600;
   letter-spacing: -0.35px;
 }
 .archive-identity p {
   font-family: 'SFMono-Regular', Consolas, monospace;
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--faint);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4307,19 +4336,19 @@ tbody tr:hover {
   padding-right: 0;
 }
 .archive-stats span {
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--faint);
 }
 .archive-stats strong {
-  font-size: 26px;
+  font-size: var(--text-2xl);
   line-height: 1.15;
-  font-weight: 450;
+  font-weight: 400;
   letter-spacing: -0.7px;
   font-variant-numeric: tabular-nums;
 }
 .archive-updated strong {
-  font-size: 12px;
-  font-weight: 450;
+  font-size: var(--text-md);
+  font-weight: 400;
   letter-spacing: 0;
   padding-top: 8px;
 }
@@ -4343,14 +4372,14 @@ tbody tr:hover {
   min-width: 0;
 }
 .collector-status-list strong {
-  font-size: 11px;
-  font-weight: 450;
+  font-size: var(--text-sm);
+  font-weight: 400;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .collector-status-list div > span:not(.status-dot) {
-  font-size: 9px;
+  font-size: var(--text-xs);
   color: var(--faint);
 }
 .collector-more {
@@ -4362,14 +4391,14 @@ tbody tr:hover {
   padding: 14px 18px;
   width: 100%;
   text-align: left;
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--secondary);
 }
 .collector-more:hover {
   background: var(--hover);
 }
 .collector-empty {
-  font-size: 11px;
+  font-size: var(--text-sm);
   line-height: 1.8;
   padding: 10px 18px 20px;
 }
@@ -4383,35 +4412,35 @@ tbody tr:hover {
   color: var(--accent-strong);
 }
 .processing-note h3 {
-  font-size: 12px;
+  font-size: var(--text-md);
   font-weight: 500;
 }
 .processing-note p {
-  font-size: 11px;
+  font-size: var(--text-sm);
   line-height: 1.85;
   margin: 14px 0 18px;
   color: var(--faint);
 }
 .processing-note .text-button {
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--accent-strong);
   gap: 10px;
 }
 .page-brand-footer {
   border-top: 1px solid var(--line-soft);
   margin-top: 32px;
-  font-size: 9px;
+  font-size: var(--text-xs);
   padding-top: 19px;
 }
 .page-brand-footer .brandmark {
   display: none;
 }
 .page-brand-footer > span:last-child {
-  font-size: 9px;
+  font-size: var(--text-xs);
 }
 .text-button {
   color: var(--accent-strong);
-  font-size: 11px;
+  font-size: var(--text-sm);
 }
 .section-callout {
   background: var(--sage-light);
@@ -4423,11 +4452,11 @@ tbody tr:hover {
   color: var(--sage-ink);
 }
 .section-callout strong {
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 .section-callout p {
   color: var(--sage-ink);
-  font-size: 11px;
+  font-size: var(--text-sm);
   opacity: 1;
 }
 .model-card {
@@ -4443,16 +4472,16 @@ tbody tr:hover {
   border-color: var(--lavender-line);
 }
 .model-card h2 {
-  font-size: 18px;
+  font-size: var(--text-lg);
   font-weight: 500;
   letter-spacing: -0.5px;
 }
 .model-card > p {
-  font-size: 12px;
+  font-size: var(--text-md);
   line-height: 1.8;
 }
 .model-card-bottom {
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 .model-card-top {
   margin-bottom: 24px;
@@ -4467,7 +4496,7 @@ tbody tr:hover {
   gap: 25px;
 }
 .tabs button {
-  font-size: 12px;
+  font-size: var(--text-md);
 }
 .tabs button.active {
   color: var(--accent-strong);
@@ -4480,7 +4509,7 @@ tbody tr:hover {
   margin: 28px 0 23px;
 }
 .search-large > input {
-  font-size: 20px;
+  font-size: var(--text-xl);
   letter-spacing: -0.4px;
 }
 .search-large > svg {
@@ -4499,34 +4528,34 @@ tbody tr:hover {
 }
 .search-welcome h2 {
   font-family: inherit;
-  font-size: 23px;
-  font-weight: 450;
+  font-size: var(--text-xl);
+  font-weight: 400;
   letter-spacing: -0.6px;
 }
 .search-welcome > p {
-  font-size: 12px;
+  font-size: var(--text-md);
 }
 .suggestion-chips > button {
   border-radius: 5px;
-  font-size: 11px;
+  font-size: var(--text-sm);
   background: var(--surface);
 }
 .search-bottom {
-  font-size: 11px;
+  font-size: var(--text-sm);
 }
 .metric {
   border-radius: 8px;
   padding: 21px;
 }
 .metric-top {
-  font-size: 11px;
+  font-size: var(--text-sm);
 }
 .metric > strong {
-  font-size: 30px;
-  font-weight: 450;
+  font-size: var(--text-2xl);
+  font-weight: 400;
 }
 .metric > p {
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 .metric-icon {
   background: var(--accent-soft);
@@ -4549,11 +4578,11 @@ tbody tr:hover {
 .chart-y,
 .bar-column > small,
 .chart-legend {
-  font-size: 9px;
+  font-size: var(--text-xs);
 }
 .distribution-row > div:first-child,
 .distribution-row strong {
-  font-size: 11px;
+  font-size: var(--text-sm);
 }
 .progress-track > .color-0,
 .legend-dot.color-0 {
@@ -4575,10 +4604,10 @@ tbody tr:hover {
   background: var(--chart);
 }
 .distribution-note p {
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 .distribution-card > .text-button {
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 .modal {
   border-radius: 10px;
@@ -4587,12 +4616,12 @@ tbody tr:hover {
   padding: 22px 25px;
 }
 .modal-header h2 {
-  font-size: 18px;
-  letter-spacing: -0.35px;
-  font-weight: 500;
+  font-size: var(--text-lg);
+  letter-spacing: -0.2px;
+  font-weight: 600;
 }
 .modal-header p {
-  font-size: 12px;
+  font-size: var(--text-md);
 }
 .modal-body {
   padding: 25px;
@@ -4601,46 +4630,46 @@ tbody tr:hover {
   border-radius: 8px;
 }
 .fact-card-top {
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 .fact-card > p {
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 .tag-list,
 .fact-card-bottom .text-button {
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 .document-cell strong {
-  font-size: 12px;
-  font-weight: 450;
+  font-size: var(--text-md);
+  font-weight: 400;
 }
 .document-cell small {
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 th {
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 td {
-  font-size: 12px;
+  font-size: var(--text-md);
 }
 .settings-card {
   border-radius: 8px;
 }
 .service-identity h2 {
-  font-size: 17px;
+  font-size: var(--text-lg);
 }
 .role-card h3 {
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 .role-card p {
-  font-size: 11px;
+  font-size: var(--text-sm);
 }
 .setting-toggle span,
 .form-hint {
-  font-size: 11px;
+  font-size: var(--text-sm);
 }
 .page-footnote {
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 .empty-icon {
   border: 1px solid var(--accent-line);
@@ -4649,11 +4678,11 @@ td {
   border-radius: 12px;
 }
 .empty-state h3 {
-  font-size: 17px;
-  font-weight: 450;
+  font-size: var(--text-lg);
+  font-weight: 400;
 }
 .empty-state p {
-  font-size: 12px;
+  font-size: var(--text-md);
 }
 .empty-state {
   min-height: 250px;
@@ -4668,13 +4697,13 @@ td {
   fill: var(--chart);
 }
 .graph-node text {
-  font-size: 11px;
+  font-size: var(--text-sm);
 }
 .graph-node.selected circle {
   fill: var(--ink);
 }
 .node-list > button {
-  font-size: 11px;
+  font-size: var(--text-sm);
 }
 .graph-node:hover .node-halo,
 .graph-node.selected .node-halo {
@@ -4682,7 +4711,7 @@ td {
   stroke: var(--accent-line);
 }
 .timeline-fact p {
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 .theme-preview > i:first-child {
   background: #b7d6df;
@@ -4698,7 +4727,7 @@ td {
 }
 .toast {
   border-radius: 7px;
-  font-size: 12px;
+  font-size: var(--text-md);
 }
 @media (max-width: 1200px) {
   .sidebar {
@@ -4712,19 +4741,19 @@ td {
     gap: 16px;
   }
   .category-copy strong {
-    font-size: 11px;
+    font-size: var(--text-sm);
   }
   .category-copy > span {
-    font-size: 9px;
+    font-size: var(--text-xs);
   }
   .category-count {
-    font-size: 21px;
+    font-size: var(--text-xl);
   }
   .source-row-main strong {
-    font-size: 11px;
+    font-size: var(--text-sm);
   }
   .source-row-main > span {
-    font-size: 9px;
+    font-size: var(--text-xs);
   }
   .archive-identity {
     padding: 21px;
@@ -4742,16 +4771,16 @@ td {
     padding: 18px;
   }
   .metric-top {
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
   .metric > strong {
-    font-size: 26px;
+    font-size: var(--text-2xl);
   }
   .metric > p {
-    font-size: 9px;
+    font-size: var(--text-xs);
   }
   .source-list .subtle-label {
-    font-size: 9px;
+    font-size: var(--text-xs);
   }
 }
 @media (max-width: 1020px) {
@@ -4777,40 +4806,40 @@ td {
     gap: 10px;
   }
   .category-copy strong {
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
   .category-copy > span {
     display: none;
   }
   .source-row-main strong {
-    font-size: 12px;
+    font-size: var(--text-md);
   }
   .source-row-main > span {
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
   .source-list .subtle-label {
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
   .brand strong {
-    font-size: 19px;
+    font-size: var(--text-xl);
   }
   .brand div > span {
     font-size: 6px;
   }
   .header-actions .button {
-    font-size: 11px;
+    font-size: var(--text-sm);
   }
   .topbar {
     padding: 0 24px;
   }
   .breadcrumb {
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
   .command-trigger > span {
     padding-right: 10px;
   }
   .page-header p {
-    font-size: 11px;
+    font-size: var(--text-sm);
   }
   .graph-layout {
     display: grid;
@@ -4827,10 +4856,10 @@ td {
     width: 25px;
   }
   .archive-identity .button {
-    font-size: 10px;
+    font-size: var(--text-xs);
   }
   .metric > p {
-    font-size: 8px;
+    font-size: var(--text-xs);
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -4861,7 +4890,7 @@ td {
 }
 .document-image figcaption {
   margin-top: 9px;
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--faint);
 }
 .attachment-file {
@@ -4873,7 +4902,7 @@ td {
   padding: 15px;
   border: 1px solid var(--line);
   border-radius: 6px;
-  font-size: 11px;
+  font-size: var(--text-sm);
 }
 .attachment-file > span:first-child {
   display: flex;
@@ -4925,19 +4954,19 @@ td {
   min-width: 0;
 }
 .account-rows strong {
-  font-size: 12px;
+  font-size: var(--text-md);
   font-weight: 500;
   color: var(--ink);
 }
 .account-rows p {
   color: color-mix(in srgb, var(--account-status) 75%, var(--ink));
-  font-size: 10px;
+  font-size: var(--text-xs);
   line-height: 1.8;
   margin-top: 5px;
   overflow-wrap: anywhere;
 }
 .account-rows .button {
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 .section-heading {
   display: flex;
@@ -4964,13 +4993,13 @@ td {
 }
 .model-rows strong,
 .local-decision strong {
-  font-size: 12px;
+  font-size: var(--text-md);
   font-weight: 500;
   color: var(--ink);
 }
 .model-rows p,
 .local-decision p {
-  font-size: 10px;
+  font-size: var(--text-xs);
   line-height: 1.8;
   margin-top: 5px;
   color: var(--secondary);
@@ -4988,7 +5017,7 @@ td {
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 10px;
+  font-size: var(--text-xs);
   padding: 7px 11px;
   color: var(--secondary);
   white-space: nowrap;
@@ -4999,14 +5028,14 @@ td {
 .model-choices button[aria-checked='true'] {
   background: var(--accent-soft);
   color: var(--accent-strong);
-  font-weight: 550;
+  font-weight: 600;
 }
 .model-choices button[aria-checked='true']:disabled {
   opacity: 1;
   cursor: default;
 }
 .local-decision .button {
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 .local-decision-log {
   margin: 0 24px 22px;
@@ -5015,14 +5044,14 @@ td {
   border-radius: 9px;
 }
 .local-decision-log > summary {
-  font-size: 11px;
+  font-size: var(--text-sm);
   cursor: pointer;
 }
 .local-decision-log[open] > summary {
   margin-bottom: 14px;
 }
 .local-decision-log > p {
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--faint);
   margin: 10px 0 14px;
   overflow-wrap: anywhere;
@@ -5049,18 +5078,18 @@ td {
   gap: 12px;
   padding: 12px;
   border-bottom: 1px solid var(--line-soft);
-  font-size: 12px;
+  font-size: var(--text-md);
 }
 .update-commits code {
   color: var(--faint);
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 .update-commits span {
   flex: 1;
 }
 .update-commits small {
   color: var(--faint);
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 
 /* The catalog can combine a project and repository filter on smaller windows. */
@@ -5101,7 +5130,7 @@ td {
   padding: 18px;
   border-radius: 12px;
   background: var(--surface-subtle);
-  font-size: 13px;
+  font-size: var(--text-md);
   line-height: 1.65;
 }
 
@@ -5131,7 +5160,7 @@ td {
 }
 .workspace-bulk > span {
   margin-right: auto;
-  font-size: 12px;
+  font-size: var(--text-md);
   color: var(--secondary);
 }
 
@@ -5186,7 +5215,7 @@ td {
   margin-bottom: 12px;
 }
 .field-explanation {
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--secondary);
   margin-top: 4px;
 }
@@ -5241,15 +5270,15 @@ button.folder-row > svg:last-child {
   min-width: 0;
 }
 .folder-row-title strong {
-  font-size: 13px;
-  font-weight: 550;
+  font-size: var(--text-md);
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .folder-row-path {
   font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--faint);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5258,12 +5287,17 @@ button.folder-row > svg:last-child {
 .folder-row-summary {
   flex-shrink: 0;
   max-width: 42%;
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--secondary);
   text-align: right;
 }
+/* La note sur les dossiers ferme leur carte : son filet en prend toute la largeur. */
 .sources-hint {
-  margin: 14px 2px 0;
+  margin: 0;
+  max-width: none;
+  padding: 14px 24px 18px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--secondary);
 }
 .back-link {
   display: inline-flex;
@@ -5271,7 +5305,7 @@ button.folder-row > svg:last-child {
   gap: 6px;
   margin: 0 0 10px;
   padding: 4px 0;
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--secondary);
 }
 .back-link:hover {
@@ -5280,7 +5314,7 @@ button.folder-row > svg:last-child {
 .folder-path-line {
   margin: -10px 0 18px;
   font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--faint);
   overflow-wrap: anywhere;
 }
@@ -5290,7 +5324,7 @@ button.folder-row > svg:last-child {
   align-items: center;
   gap: 12px;
   margin: 0 2px 16px;
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--secondary);
 }
 .file-cell strong {
@@ -5300,7 +5334,7 @@ button.folder-row > svg:last-child {
 .file-cell small {
   display: block;
   margin-top: 2px;
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--faint);
 }
 /* Barre latérale : ce qui vaut pour tout le serveur, sous un trait discret. */
@@ -5348,19 +5382,19 @@ button.folder-row > svg:last-child {
 }
 .fact-row-main p {
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--text-md);
   line-height: 1.6;
   color: var(--ink);
 }
 .fact-row-main small {
   display: block;
   margin-top: 3px;
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--faint);
 }
 .fact-row-date {
   padding-top: 4px;
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--faint);
   text-align: right;
   white-space: nowrap;
@@ -5378,13 +5412,13 @@ button.folder-row > svg:last-child {
   gap: 10px;
 }
 .consolidation-headline strong {
-  font-size: 15px;
-  font-weight: 550;
+  font-size: var(--text-lg);
+  font-weight: 600;
   color: var(--ink);
 }
 .consolidation-last {
   margin-left: auto;
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--faint);
 }
 .consolidation-advance {
@@ -5395,7 +5429,7 @@ button.folder-row > svg:last-child {
 }
 .consolidation-advance p {
   margin: 9px 0 0;
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--secondary);
   font-variant-numeric: tabular-nums;
 }
@@ -5410,7 +5444,7 @@ button.folder-row > svg:last-child {
   margin-top: 16px;
   padding-top: 14px;
   border-top: 1px solid var(--line-soft);
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--secondary);
 }
 .consolidation-failed .button {
@@ -5456,7 +5490,7 @@ button.folder-row > svg:last-child {
   padding-top: 1px;
 }
 .change-row-main .change-text {
-  font-size: 12.5px;
+  font-size: var(--text-md);
   line-height: 1.6;
   color: var(--ink);
   display: -webkit-box;
@@ -5470,12 +5504,12 @@ button.folder-row > svg:last-child {
 .change-row-main small {
   display: block;
   margin-top: 3px;
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--faint);
 }
 .change-row-date {
   padding-top: 3px;
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--faint);
   white-space: nowrap;
 }
@@ -5484,8 +5518,8 @@ button.folder-row > svg:last-child {
 }
 .change-detail h3 {
   margin: 12px 0 6px;
-  font-size: 10px;
-  font-weight: 550;
+  font-size: var(--text-xs);
+  font-weight: 600;
   letter-spacing: 0.2px;
   text-transform: uppercase;
   color: var(--faint);
@@ -5495,7 +5529,7 @@ button.folder-row > svg:last-child {
   padding: 10px 12px;
   border: 1px solid var(--line-soft);
   border-radius: 8px;
-  font-size: 12px;
+  font-size: var(--text-md);
   line-height: 1.7;
   color: var(--secondary);
   white-space: pre-wrap;
@@ -5524,18 +5558,18 @@ button.folder-row > svg:last-child {
   gap: 10px;
   align-items: flex-start;
   padding: 6px 0;
-  font-size: 11.5px;
+  font-size: var(--text-sm);
   line-height: 1.6;
   color: var(--ink);
 }
 .change-sources small {
   display: block;
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--faint);
 }
 .change-empty {
   margin: 4px 0 0;
-  font-size: 10.5px;
+  font-size: var(--text-xs);
   color: var(--faint);
 }
 .queue-overview > button.queue-row-link {
@@ -5548,14 +5582,14 @@ button.folder-row > svg:last-child {
   border: 0;
   border-top: 1px solid var(--line-soft);
   font: inherit;
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--secondary);
   text-align: left;
   cursor: pointer;
 }
 .queue-overview > button.queue-row-link strong {
   margin-left: auto;
-  font-size: 12px;
+  font-size: var(--text-md);
   font-weight: 500;
   color: var(--ink);
 }
@@ -5587,11 +5621,11 @@ button.folder-row > svg:last-child {
   align-items: center;
   min-height: 20px;
   margin: -6px 0 16px;
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--secondary);
 }
 .list-summary .text-button {
-  font-size: 11px;
+  font-size: var(--text-sm);
 }
 .facts-toolbar {
   padding: 0;
@@ -5632,7 +5666,7 @@ button.folder-row > svg:last-child {
 }
 .toolbar-count {
   margin-left: auto;
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--faint);
   white-space: nowrap;
 }
@@ -5646,15 +5680,8 @@ button.folder-row > svg:last-child {
   margin: 0;
 }
 .model-kind {
-  display: block;
-  margin: -10px 0 0;
-  font-size: 9.5px;
-  letter-spacing: 0.4px;
-  text-transform: uppercase;
-  color: var(--faint);
-}
-.model-kind + h2 {
-  margin-top: 4px;
+  font-size: var(--text-xs);
+  color: var(--secondary);
 }
 
 /* Réglages : repères de valeurs modifiées, options avancées repliées, champs à la largeur de leur contenu. */
@@ -5669,7 +5696,7 @@ button.folder-row > svg:last-child {
   padding: 1px 7px;
   border-radius: 999px;
   border: 1px solid var(--line);
-  font-size: 9px;
+  font-size: var(--text-xs);
   font-weight: 500;
   letter-spacing: 0.1px;
   color: var(--secondary);
@@ -5686,7 +5713,7 @@ button.folder-row > svg:last-child {
   margin-left: 8px;
 }
 .setting-toggle span.setting-mark {
-  font-size: 9px;
+  font-size: var(--text-xs);
 }
 .setting-compact input,
 .setting-compact select {
@@ -5701,7 +5728,7 @@ button.folder-row > svg:last-child {
 }
 .settings-advanced > summary {
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--text-md);
   font-weight: 500;
   color: var(--secondary);
   list-style-position: outside;
@@ -5719,7 +5746,7 @@ button.folder-row > svg:last-child {
   align-items: center;
   justify-content: space-between;
   margin: 4px 0 24px;
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--secondary);
 }
 .file-table th:first-child,
@@ -5746,7 +5773,7 @@ button.folder-row > svg:last-child {
   gap: 3px;
 }
 .queue-overview .queue-label small {
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--faint);
 }
 .notice.consolidation-off {
@@ -5785,4 +5812,111 @@ button.folder-row > svg:last-child {
   display: flex;
   gap: 10px;
   align-items: center;
+}
+
+/* Système commun : ce qui suit s'applique à toute la fenêtre et prime sur les réglages plus anciens ci-dessus.
+   Icônes nues (la couleur seule dit le type ou l'état), marque sans tuile, réponse en cours. */
+.file-icon,
+.operation-icon,
+.role-icon,
+.category-icon,
+.metric-icon,
+.model-glyph {
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0;
+  width: auto;
+  height: auto;
+}
+.file-icon {
+  color: var(--faint);
+}
+.empty-icon {
+  background: transparent;
+  border: 0;
+  width: auto;
+  height: auto;
+  color: var(--faint);
+  margin-bottom: 12px;
+}
+.brandmark {
+  background: transparent;
+  border: 0;
+  width: 28px;
+  height: 28px;
+  color: var(--accent);
+}
+.brandmark svg {
+  width: 28px;
+  height: 28px;
+  stroke: none;
+}
+.brand {
+  align-items: center;
+}
+/* Un menu de réglage garde la largeur de son contenu, pas celle de la carte. */
+.settings-card select:not([multiple]),
+.form-stack > label > select:not([multiple]) {
+  max-width: 360px;
+}
+
+/* Recherche › Réponses : la réponse attendue, son temps écoulé et l'annulation. */
+.answer-pending-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 24px 0;
+}
+.answer-pending-head h2 {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  letter-spacing: -0.2px;
+  flex: 1;
+}
+.answer-elapsed {
+  font-size: var(--text-sm);
+  color: var(--secondary);
+  font-variant-numeric: tabular-nums;
+}
+.answer-question {
+  padding: 6px 24px 0;
+  font-size: var(--text-md);
+  color: var(--secondary);
+}
+.answer-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 24px 4px;
+}
+.answer-skeleton span {
+  height: 10px;
+  border-radius: 5px;
+  background: linear-gradient(90deg, var(--line-soft), var(--line), var(--line-soft));
+  background-size: 200% 100%;
+  animation: answer-shimmer 1.6s ease-in-out infinite;
+}
+.answer-skeleton span:nth-child(2) {
+  width: 86%;
+}
+.answer-skeleton span:nth-child(3) {
+  width: 62%;
+}
+.answer-hint {
+  padding: 12px 24px 20px;
+  font-size: var(--text-sm);
+  color: var(--faint);
+}
+@keyframes answer-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .answer-skeleton span {
+    animation: none;
+  }
 }

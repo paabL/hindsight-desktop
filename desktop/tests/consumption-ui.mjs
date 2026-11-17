@@ -146,7 +146,7 @@ try {
     const today = page
       .locator('.metric')
       .filter({ hasText: fr ? 'Coût estimé aujourd’hui' : 'Estimated cost today' });
-    await expect(today).toContainText(fr ? /Plafond : 5,00\s/ : /Limit: (US)?\$5\.00 per day/);
+    await expect(today).toContainText(fr ? /Plafond\s: 5,00\s/ : /Limit: (US)?\$5\.00 per day/);
     await expect(today).toContainText(fr ? 'par jour (8 %)' : 'per day (8%)');
     await expect(page.locator('body')).not.toContainText(/Claude Code tokens|Quota Codex/);
     async function noQuotas() {
