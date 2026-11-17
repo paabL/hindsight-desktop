@@ -12,6 +12,9 @@ PyTorch, sur le GPU du Mac (MPS) ou à défaut sur le CPU.
 dans `--key-file` ; `GET /health` ne renvoie aucun contenu de la mémoire. Rien du contenu des requêtes
 n'est journalisé : une ligne par requête, avec le nombre de questions, de jetons et la durée.
 
+Les requêtes passent une à une sur le modèle. Une recherche (recall, son dédoublonnage) passe avant les
+lots de consolidation qui attendent : pendant une consolidation, elle n'attend plus que le lot en cours.
+
 Les poids ne sont chargés qu'à la première requête, qui attend ce chargement (quelques secondes) au lieu
 d'échouer : le démarrage ne prend que le tokenizer. Après `--idle-unload` secondes sans requête (20 min par
 défaut), ils quittent la mémoire, celle du GPU comprise, et la requête suivante les recharge.
@@ -31,6 +34,8 @@ import signal
 import sys
 import threading
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -80,8 +85,49 @@ def pick_device(requested: str) -> str:
     return "mps" if torch.backends.mps.is_available() else "cpu"
 
 
+def is_background(request: schema.SystemOneRequest) -> bool:
+    """Lot de consolidation : le tri d'un fait nouveau parmi les observations existantes.
+
+    Le serveur Hindsight ne dit pas qui l'appelle, mais la forme de l'état suffit : la consolidation envoie
+    un état structuré avec `new_fact`, une recherche envoie le texte de sa question.
+    """
+    return isinstance(request.state, dict) and "new_fact" in request.state
+
+
+class PriorityGate:
+    """Verrou du modèle à deux files : une requête prioritaire passe avant les requêtes de fond en attente.
+
+    Les recherches sont rares et courtes ; la consolidation reprend juste après. Le fil qui libère les
+    poids passe en fond, lui aussi.
+    """
+
+    def __init__(self) -> None:
+        self._condition = threading.Condition()
+        self._busy = False
+        self._urgent = 0
+
+    @contextmanager
+    def hold(self, urgent: bool) -> Iterator[None]:
+        with self._condition:
+            if urgent:
+                self._urgent += 1
+            try:
+                while self._busy or (not urgent and self._urgent):
+                    self._condition.wait()
+            finally:
+                if urgent:
+                    self._urgent -= 1
+            self._busy = True
+        try:
+            yield
+        finally:
+            with self._condition:
+                self._busy = False
+                self._condition.notify_all()
+
+
 class Decider:
-    """Le modèle et ses requêtes, qui passent l'une après l'autre (verrou).
+    """Le modèle et ses requêtes, qui passent l'une après l'autre (verrou à priorité).
 
     Les poids se chargent à la première requête. Avec `idle_unload` > 0, un fil de fond les libère après
     autant de secondes sans requête, et la requête suivante les recharge. Le tokenizer reste chargé.
@@ -96,7 +142,7 @@ class Decider:
         self.slot_id = slot_token(self.tokenizer)
         self.max_tokens = min(max_tokens, self.settings.max_request_tokens)
         self.idle_unload = idle_unload
-        self.lock = threading.Lock()
+        self.lock = PriorityGate()
         self.decoder: Any = None
         self.head: Any = None
         self.last_used = time.monotonic()
@@ -127,7 +173,7 @@ class Decider:
 
     def _unload_when_idle(self) -> None:
         while True:
-            with self.lock:
+            with self.lock.hold(urgent=False):
                 remaining = self.last_used + self.idle_unload - time.monotonic()
                 if self.loaded and remaining <= 0:
                     self._unload()
@@ -143,7 +189,7 @@ class Decider:
         slots = [question.slot for question in rendered.questions]
         if any(rendered.ids[slot] != self.slot_id for slot in slots):
             raise RuntimeError("a question slot is not a ':' token")
-        with self.lock:
+        with self.lock.hold(urgent=not is_background(request)):
             try:
                 if not self.loaded:
                     self._load()
@@ -239,8 +285,9 @@ class Handler(BaseHTTPRequestHandler):
             log.exception("decision failed")
             self.send_json(500, {"error": "the decision failed; see the server log"})
             return
-        log.info("%d questions, %d tokens, %.0f ms", len(request.questions),
-                 response["usage"]["input_tokens"], (time.monotonic() - started) * 1000)
+        log.info("%d questions, %d tokens, %.0f ms%s", len(request.questions),
+                 response["usage"]["input_tokens"], (time.monotonic() - started) * 1000,
+                 " (consolidation)" if is_background(request) else "")
         self.send_json(200, response)
 
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A002 (signature de http.server)
