@@ -545,20 +545,23 @@ export default function App() {
     if (host === 'Navigateur') return;
     let stop: (() => void) | undefined;
     let stopped = false;
-    void import('@tauri-apps/api/event').then(({ listen }) =>
-      listen<{ kind: string; section?: string; id?: string }>('menu-action', ({ payload }) => {
-        const { navigate, run, app } = fromMenu.current;
-        if (payload.kind === 'open' && baseSections.some((s) => s.id === payload.section))
-          navigate(payload.section as Section);
-        else if (
-          payload.kind === 'bank' &&
-          payload.id !== app.bank &&
-          app.banks.some((b) => b.bank_id === payload.id)
-        )
-          void run('bank.select', { id: payload.id });
-        else if (payload.kind === 'changed') void run('snapshot');
-      }).then((unlisten) => (stopped ? unlisten() : (stop = unlisten))),
-    );
+    void import('@tauri-apps/api/event')
+      .then(({ listen }) =>
+        listen<{ kind: string; section?: string; id?: string }>('menu-action', ({ payload }) => {
+          const { navigate, run, app } = fromMenu.current;
+          if (payload.kind === 'open' && baseSections.some((s) => s.id === payload.section))
+            navigate(payload.section as Section);
+          else if (
+            payload.kind === 'bank' &&
+            payload.id !== app.bank &&
+            app.banks.some((b) => b.bank_id === payload.id)
+          )
+            void run('bank.select', { id: payload.id });
+          else if (payload.kind === 'changed') void run('snapshot');
+        }).then((unlisten) => (stopped ? unlisten() : (stop = unlisten))),
+      )
+      // Sans l’API d’événements de Tauri (aperçus et tests avec un Tauri simulé), la fenêtre se passe du volet.
+      .catch(() => {});
     return () => {
       stopped = true;
       stop?.();

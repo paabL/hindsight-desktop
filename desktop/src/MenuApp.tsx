@@ -175,21 +175,23 @@ export default function MenuApp() {
     if (!tauri) return;
     let stop: (() => void) | undefined;
     let stopped = false;
-    void import('@tauri-apps/api/event').then(({ listen }) =>
-      listen<boolean>('menu-visibility', ({ payload }) => {
-        if (payload) {
-          // À chaque ouverture : aucun bouton ne garde l’anneau de focus, aucun ancien message.
-          (document.activeElement as HTMLElement | null)?.blur();
-          setFeedback(null);
-          setTheme(storedTheme());
-          if (storedLanguage() && storedLanguage() !== getLanguage()) location.reload();
-        } else {
-          setAsked(null);
-          closePopover(banks.current);
-        }
-        setOpen(payload);
-      }).then((unlisten) => (stopped ? unlisten() : (stop = unlisten))),
-    );
+    void import('@tauri-apps/api/event')
+      .then(({ listen }) =>
+        listen<boolean>('menu-visibility', ({ payload }) => {
+          if (payload) {
+            // À chaque ouverture : aucun bouton ne garde l’anneau de focus, aucun ancien message.
+            (document.activeElement as HTMLElement | null)?.blur();
+            setFeedback(null);
+            setTheme(storedTheme());
+            if (storedLanguage() && storedLanguage() !== getLanguage()) location.reload();
+          } else {
+            setAsked(null);
+            closePopover(banks.current);
+          }
+          setOpen(payload);
+        }).then((unlisten) => (stopped ? unlisten() : (stop = unlisten))),
+      )
+      .catch(() => {});
     return () => {
       stopped = true;
       stop?.();
