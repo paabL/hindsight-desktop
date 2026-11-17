@@ -1256,6 +1256,13 @@ name = "hindsight-desktop"
 version = "0.2.5"
 dependencies = [
  "base64 0.22.1",
+ "block2",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "objc2-quartz-core",
+ "raw-window-handle",
+ "serde",
  "serde_json",
  "tauri",
  "tauri-build",
@@ -1263,6 +1270,7 @@ dependencies = [
  "tauri-plugin-updater",
  "tempfile",
  "tokio",
+ "window-vibrancy",
 ]
 
 [[package]]

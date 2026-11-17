@@ -1,7 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde_json::Value;
-use tauri::{Manager, State};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Manager, RunEvent, State, WindowEvent};
 use tauri_plugin_dialog::DialogExt;
 use base64::Engine;
 use tokio::{io::{AsyncBufReadExt, AsyncWriteExt, BufReader}, process::{Child, ChildStdin, ChildStdout, Command}, sync::Mutex};
@@ -9,6 +10,9 @@ use tokio::{io::{AsyncBufReadExt, AsyncWriteExt, BufReader}, process::{Child, Ch
 mod release_update;
 mod relaunch;
 mod macos_install;
+mod menubar;
+#[cfg(target_os = "macos")]
+mod panel;
 
 struct NativeBridge { _child: Child, stdin: ChildStdin, stdout: BufReader<ChildStdout>, next: u64 }
 struct BridgeState(Mutex<Option<NativeBridge>>);
@@ -107,15 +111,84 @@ async fn save_export(app: tauri::AppHandle, state: State<'_, BridgeState>, filen
     Ok(true)
 }
 
+/// Consigne sur la sortie d’erreur sans jamais échouer, même si elle est fermée.
+fn log(message: &str) {
+    use std::io::Write;
+    let _ = writeln!(std::io::stderr(), "{message}");
+}
+
+/// Montre la fenêtre principale, masquée quand on la ferme.
+fn show_main(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+/// Icône de la barre des menus : un clic ouvre ou referme le volet.
+fn tray(app: &AppHandle) -> tauri::Result<()> {
+    TrayIconBuilder::with_id(menubar::TRAY)
+        .icon(menubar::icon(menubar::TrayLook::Idle))
+        .icon_as_template(true)
+        .tooltip("Hindsight")
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click { rect, button: MouseButton::Left | MouseButton::Right, button_state: MouseButtonState::Up, .. } = event {
+                if let Err(error) = menubar::toggle(tray.app_handle(), rect) {
+                    log(&format!("Volet de la barre des menus : {error}"));
+                    show_main(tray.app_handle());
+                }
+            }
+        })
+        .build(app)?;
+    Ok(())
+}
+
+fn on_run_event(app: &AppHandle, event: RunEvent) {
+    match event {
+        // La boucle d’événements tourne : préparer le volet pour un premier clic immédiat.
+        RunEvent::Ready => menubar::prepare(app),
+        // Un clic sur l’icône du Dock rouvre la fenêtre masquée.
+        #[cfg(target_os = "macos")]
+        RunEvent::Reopen { .. } => show_main(app),
+        _ => {}
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(BridgeState(Mutex::new(None)))
         .manage(release_update::ReleaseUpdateState::default())
-        .invoke_handler(tauri::generate_handler![bridge, save_export, release_update::release_update_check, release_update::release_update_install])
-        .run(tauri::generate_context!())
-        .expect("Impossible de démarrer Hindsight Desktop");
+        .manage(menubar::MenuState::default())
+        .setup(|app| Ok(tray(app.handle())?))
+        .on_window_event(|window, event| {
+            // Sur macOS la fenêtre du volet n’est jamais montrée : le panneau natif décide seul de sa fermeture.
+            #[cfg(not(target_os = "macos"))]
+            if window.label() == menubar::WINDOW && matches!(event, WindowEvent::Focused(false)) {
+                menubar::hide_outside(window.app_handle(), "perte du focus");
+            }
+            // Fermer la fenêtre la masque : Hindsight reste dans la barre des menus, ⌘Q quitte.
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                if window.label() == menubar::WINDOW { menubar::hide(window.app_handle()); } else { let _ = window.hide(); }
+            }
+        })
+        .invoke_handler(tauri::generate_handler![
+            bridge,
+            save_export,
+            release_update::release_update_check,
+            release_update::release_update_install,
+            menubar::menu_action,
+            menubar::menu_hide,
+            menubar::menu_resize,
+            menubar::menu_theme,
+            menubar::tray_state,
+        ])
+        .build(tauri::generate_context!())
+        .expect("Impossible de démarrer Hindsight Desktop")
+        .run(on_run_event);
 }
 
 #[cfg(test)]

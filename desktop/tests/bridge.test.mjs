@@ -436,3 +436,35 @@ test('un texte collé avec des séparateurs Unicode reste une seule requête et 
   assert.equal(next.app.connected, true);
   await bridge.request('section', { section: 'documents', query: '' });
 });
+
+test('le volet de la barre des menus lit l’état sans écrire ni changer la vue de la fenêtre', async () => {
+  await bridge.request('section', { section: 'facts' });
+  const before = calls.length;
+  const status = await bridge.request('menu.status', { live: true });
+  assert.equal(status.connected, true);
+  assert.equal(status.bank, 'fixture');
+  assert.deepEqual(status.confirmations, []);
+  assert.equal(status.pause.all, false);
+  assert.ok(status.activity && status.usage && status.service, 'relevé complet du volet');
+  assert.equal(status.data, undefined, 'pas de données de section dans le relevé du volet');
+  await bridge.request('menu.status', { live: false });
+  assert.ok(calls.slice(before).every((c) => c.method === 'GET'));
+  assert.equal(
+    (await bridge.request('snapshot')).section,
+    'facts',
+    'la vue de la fenêtre est inchangée',
+  );
+});
+
+test('une pause demandée depuis le volet attend sa confirmation et rend le relevé du volet', async () => {
+  const before = calls.length;
+  const asked = await bridge.request('pause.pause', { all: true, menu: true });
+  assert.equal(asked.data, undefined);
+  assert.equal(asked.confirmations.length, 1);
+  assert.equal(asked.confirmations[0].title, 'Mettre toutes les banques en pause ?');
+  assert.equal(asked.pause.all, false, 'rien n’est mis en pause avant la confirmation');
+  const cancelled = await bridge.request('cancel', { menu: true });
+  assert.deepEqual(cancelled.confirmations, []);
+  assert.equal(cancelled.pause.all, false);
+  assert.equal(calls.slice(before).filter((c) => c.method !== 'GET').length, 0);
+});

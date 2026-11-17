@@ -1,0 +1,673 @@
+/* Volet de la barre des menus : en-tête, bandeau, cartes (banque, activité, aujourd’hui), action principale
+   puis commandes de l’app. Hauteur ajustée au contenu par le panneau natif, verre natif dessous ; l’aperçu
+   navigateur imite le verre en CSS. Les couleurs viennent de tokens.css, comme la fenêtre. */
+@import url('./tokens.css');
+
+* {
+  box-sizing: border-box;
+}
+html {
+  /* Même rayon que RADIUS dans src-tauri/src/panel.rs. */
+  --menu-radius: 18px;
+  --menu-glass: rgb(20 28 35 / 0.82);
+  --menu-native-tint: rgb(18 26 33 / 0.5);
+  --menu-rim: rgb(255 255 255 / 0.14);
+  --menu-card: rgb(255 255 255 / 0.055);
+  --menu-card-line: rgb(255 255 255 / 0.07);
+  --menu-hover: rgb(255 255 255 / 0.08);
+  --menu-pressed: rgb(255 255 255 / 0.13);
+  --menu-divider: rgb(255 255 255 / 0.09);
+  --menu-track: rgb(255 255 255 / 0.1);
+  background: transparent;
+}
+html[data-theme='light'] {
+  --menu-glass: rgb(244 248 250 / 0.86);
+  --menu-native-tint: rgb(246 249 251 / 0.55);
+  --menu-rim: rgb(255 255 255 / 0.9);
+  --menu-card: rgb(255 255 255 / 0.68);
+  --menu-card-line: rgb(16 40 56 / 0.07);
+  --menu-hover: rgb(16 40 56 / 0.055);
+  --menu-pressed: rgb(16 40 56 / 0.09);
+  --menu-divider: rgb(16 40 56 / 0.09);
+  --menu-track: rgb(16 40 56 / 0.09);
+}
+html,
+body,
+#root {
+  margin: 0;
+  background: transparent;
+}
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.35;
+  -webkit-font-smoothing: antialiased;
+  /* Un volet se lit, il ne se sélectionne pas comme une page. */
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+button {
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: default;
+  text-align: left;
+}
+button:disabled {
+  opacity: 0.45;
+}
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.menu-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-height: 100vh;
+  padding: 10px;
+  border: 1px solid var(--menu-rim);
+  border-radius: var(--menu-radius);
+  overflow: hidden auto;
+  background: var(--menu-glass);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.08),
+    var(--shadow-popup);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
+  backdrop-filter: blur(28px) saturate(160%);
+  scrollbar-width: none;
+}
+/* Aperçu navigateur : le volet à sa largeur réelle. */
+html:not([data-native='true']) .menu-panel {
+  width: 340px;
+  margin: 16px;
+}
+/* Le verre natif dessine déjà le bord, l’ombre et le flou : la page ne pose qu’une teinte, assez dense pour
+   garder le texte lisible quel que soit le fond derrière le verre. */
+html[data-native='true'] .menu-panel {
+  border: 0;
+  box-shadow: none;
+  background: var(--menu-native-tint);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.menu-panel > * {
+  flex-shrink: 0;
+}
+
+/* En-tête : icône de l’app, nom, état de la connexion, actualisation */
+.menu-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 2px 2px 4px;
+}
+.menu-brand {
+  flex: none;
+  border-radius: 8px;
+}
+.menu-title {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+.menu-title strong {
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+.menu-title span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  color: var(--secondary);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.menu-icon-button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--secondary);
+}
+.menu-icon-button:not(:disabled):hover {
+  background: var(--menu-hover);
+  color: var(--ink);
+}
+.menu-icon-button:disabled {
+  opacity: 1;
+}
+.spin {
+  animation: menu-spin 0.9s linear infinite;
+}
+@keyframes menu-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Pastilles d’état */
+.menu-dot {
+  --tone: var(--faint);
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--tone);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--tone) 20%, transparent);
+}
+.menu-dot[data-tone='sage'] {
+  --tone: var(--sage);
+}
+.menu-dot[data-tone='blue'] {
+  --tone: var(--blue);
+}
+.menu-dot[data-tone='amber'] {
+  --tone: var(--amber);
+}
+.menu-dot[data-tone='red'] {
+  --tone: var(--red);
+}
+.menu-dot[data-tone='neutral'] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--faint);
+}
+.menu-dot.pulse {
+  animation: menu-pulse 1.8s ease-in-out infinite;
+}
+@keyframes menu-pulse {
+  50% {
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--tone) 6%, transparent);
+  }
+}
+
+/* Bandeau : hors connexion, pause, mode consultation, plafond */
+.menu-notice {
+  --tone-ink: var(--amber-ink);
+  --tone-soft: var(--amber-light);
+  --tone-line: var(--amber-line);
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--tone-line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--tone-soft) 82%, transparent);
+  color: var(--tone-ink);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.menu-notice[data-tone='red'] {
+  --tone-ink: var(--red);
+  --tone-soft: var(--red-light);
+  --tone-line: var(--red-line);
+}
+.menu-notice > svg {
+  flex: none;
+  margin-top: 1px;
+}
+.menu-notice span {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+}
+
+/* Cartes */
+.menu-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 4px 4px;
+  border: 1px solid var(--menu-card-line);
+  border-radius: 12px;
+  background: var(--menu-card);
+}
+.menu-card-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 20px;
+  padding: 0 6px 4px 10px;
+}
+.menu-card-heading h2 {
+  flex: none;
+  margin: 0;
+  color: var(--secondary);
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.menu-count {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--faint);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.menu-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 8px;
+}
+.menu-row:hover {
+  background: var(--menu-hover);
+}
+.menu-row:active {
+  background: var(--menu-pressed);
+}
+.menu-line {
+  color: var(--ink);
+  font-size: 12.5px;
+}
+.menu-line span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.menu-quiet {
+  color: var(--secondary);
+}
+.menu-empty,
+.menu-footnote {
+  margin: 0;
+  padding: 2px 10px 6px;
+  color: var(--secondary);
+  font-size: 12px;
+}
+.menu-footnote {
+  padding-top: 0;
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+/* Banque : son nom, ses faits ; consolidation et échecs en dessous */
+.menu-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  color: var(--accent-strong);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.menu-switch:hover {
+  background: var(--accent-soft);
+}
+.menu-bank-main {
+  align-items: baseline;
+  justify-content: space-between;
+  min-height: 32px;
+}
+.menu-bank-name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.menu-bank-facts {
+  flex: none;
+  color: var(--secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.menu-popover {
+  position: fixed;
+  inset: auto;
+  min-width: 200px;
+  max-width: 280px;
+  max-height: 260px;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow-popup);
+  color: var(--ink);
+}
+.menu-popover-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 7px;
+}
+.menu-popover-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.menu-popover-item small {
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.menu-popover-item[aria-checked='true'] {
+  font-weight: 600;
+}
+.menu-popover-item[aria-checked='true']::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-right: -4px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.menu-popover-item:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+.menu-popover-item:hover small {
+  color: inherit;
+}
+
+/* Activité : opérations en cours, avancement quand le serveur le donne */
+.menu-op {
+  min-height: 36px;
+}
+.menu-op-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.menu-op-title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.menu-op-title strong {
+  flex: none;
+  max-width: 70%;
+  overflow: hidden;
+  font-weight: 550;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.menu-op-title span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--secondary);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.menu-op-count {
+  flex: none;
+  color: var(--secondary);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.menu-progress {
+  display: block;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--menu-track);
+}
+.menu-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--sage);
+  transition: width 0.4s ease;
+}
+
+/* Aujourd’hui : trois chiffres et la jauge du plafond */
+.menu-figures {
+  justify-content: space-between;
+  gap: 6px;
+  padding-top: 2px;
+  padding-bottom: 6px;
+}
+.menu-figures > span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.menu-figures strong {
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.menu-figures small {
+  overflow: hidden;
+  color: var(--faint);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.menu-gauge {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 10px 6px;
+}
+.menu-gauge small {
+  color: var(--faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.menu-gauge > .menu-progress > span {
+  background: var(--accent);
+}
+.menu-gauge[data-level='1'] > .menu-progress > span {
+  background: var(--amber);
+}
+.menu-gauge[data-level='2'] > .menu-progress > span {
+  background: var(--red);
+}
+
+/* Action principale et serveur local */
+.menu-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.menu-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 30px;
+  padding: 0 14px;
+  border: 1px solid var(--menu-card-line);
+  border-radius: 9px;
+  background: var(--menu-card);
+  font-weight: 550;
+}
+.menu-button:not(:disabled):hover {
+  background: var(--menu-hover);
+}
+.menu-button.primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+.menu-button.primary:not(:disabled):hover {
+  background: var(--accent-strong);
+}
+.menu-button.primary.danger {
+  background: var(--red);
+  color: #fff;
+}
+.menu-button.wide {
+  width: 100%;
+  min-height: 34px;
+}
+.menu-button.wide span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.menu-service {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  padding: 0 10px;
+  color: var(--secondary);
+  font-size: 12px;
+}
+.menu-service > span:nth-child(2) {
+  flex: 1;
+}
+.menu-link {
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 6px;
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 600;
+}
+.menu-link:not(:disabled):hover {
+  background: var(--accent-soft);
+}
+.menu-spinner {
+  width: 13px;
+  height: 13px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: menu-spin 0.8s linear infinite;
+}
+
+/* Confirmation demandée depuis le volet */
+.menu-confirm {
+  gap: 8px;
+  padding: 12px 14px;
+}
+.menu-confirm h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+}
+.menu-confirm p {
+  margin: 0;
+  color: var(--secondary);
+  font-size: 12.5px;
+  line-height: 1.45;
+  white-space: pre-line;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.menu-typed {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+.menu-typed input {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  user-select: text;
+  -webkit-user-select: text;
+}
+.menu-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+/* Retour d’action, puis commandes de l’app comme des éléments de menu */
+.menu-feedback {
+  margin: 0 10px;
+  color: var(--secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.menu-footer {
+  display: flex;
+  flex-direction: column;
+  padding-top: 6px;
+  border-top: 1px solid var(--menu-divider);
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+}
+.menu-item:hover {
+  background: var(--menu-hover);
+}
+.menu-item:active {
+  background: var(--menu-pressed);
+}
+.menu-item:focus-visible {
+  outline: none;
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+.menu-item kbd {
+  color: var(--faint);
+  font-family: inherit;
+  font-size: 12px;
+}
+.menu-item:focus-visible kbd {
+  color: inherit;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .menu-panel,
+  html[data-native='true'] .menu-panel {
+    background: var(--surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .menu-panel *,
+  .menu-panel *::before {
+    animation: none !important;
+    transition: none !important;
+  }
+}

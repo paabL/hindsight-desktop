@@ -128,6 +128,11 @@ final class DesktopBridge {
     var messageSerial = 0
     let messageSession = String(UUID().uuidString.prefix(8))
     var banksRefreshedAt = Date.distantPast
+    /// Volet de la barre des menus : ouvert (relevés plus fréquents), dernier état lu de la banque choisie et
+    /// dernière vérification du service local (voir MenuStatus.swift).
+    var menuLive = false
+    var menuBank: MenuBankReading?
+    var menuServiceCheckedAt = Date.distantPast
     let testing = ProcessInfo.processInfo.environment["HINDSIGHT_DESKTOP_TEST_MODE"] == "1"
 
     init() {
@@ -157,9 +162,12 @@ final class DesktopBridge {
         func str(_ key: String, _ fallback: String = "") -> String { p[key] as? String ?? fallback }
         func strings(_ key: String) -> [String] { p[key] as? [String] ?? [] }
         // Lectures et sondages ne touchent pas aux messages ; toute autre commande repart de résultats neufs.
-        if !["bootstrap", "snapshot", "section", "updates.releaseReady", "document.status"].contains(command) { forgetEmittedMessages() }
+        if !["bootstrap", "snapshot", "section", "updates.releaseReady", "document.status", "menu.status"].contains(command) { forgetEmittedMessages() }
+        // Une action lancée depuis le volet de la barre des menus relit aussitôt l'état de la banque.
+        if p["menu"] as? Bool == true { menuBank = nil }
         switch command {
         case "bootstrap", "snapshot": break
+        case "menu.status": return await menuStatus(live: p["live"] as? Bool)
         case "connect":
             await app.connect()
             await connected()
@@ -559,6 +567,8 @@ final class DesktopBridge {
         case "cancel": clearConfirmations()
         default: throw BridgeFailure("Action inconnue : \(command)")
         }
+        // Le volet n'a besoin que de son relevé, pas des données de la section ouverte dans la fenêtre.
+        if p["menu"] as? Bool == true { return await menuStatus(live: nil) }
         return snapshot(sourceRevision: p["sourceRevision"] as? String)
     }
     /// Banque dont Sources montre les dossiers : la banque choisie, ou hors connexion la dernière choisie.
@@ -723,14 +733,7 @@ final class DesktopBridge {
         var connected = false, error: String?
         if case .connected = app.connection { connected = true }
         if case .failed(let text) = app.connection { error = text }
-        let messages = currentMessages()
-        // Une clé par occurrence : un message encore affiché garde la sienne, un message réapparu en reçoit une neuve.
-        var keys: [String: String] = [:]
-        for message in messages where keys[message] == nil {
-            if let key = messageKeys[message] { keys[message] = key }
-            else { messageSerial += 1; keys[message] = "\(messageSession)-\(messageSerial)" }
-        }
-        messageKeys = keys
+        let (messages, keys) = emittedMessages()
         return [
             "app": ["connected": connected, "connectionError": wire(error), "serverURLNotice": wire(app.serverURLNotice), "serverURL": app.serverURL.absoluteString,
                     "version": wire(app.connection.version), "banks": wire(app.banks), "bank": wire(app.selectedBankID),
@@ -740,11 +743,28 @@ final class DesktopBridge {
             "serviceBusy": serviceTask != nil || app.service.isBusy,
             "updates": updateSnapshot(),
             "section": section, "data": sectionData(sourceRevision: sourceRevision), "messages": messages.map { SecretMasker.mask($0) },
-            "messageKeys": messages.map { keys[$0] ?? "" },
-            "confirmations": pending().map { ["id": $0.id.uuidString, "title": $0.title, "message": SecretMasker.mask($0.message),
-                                               "confirmTitle": $0.confirmTitle, "destructive": $0.severity == .destructive,
-                                               "requiredText": wire($0.requiredText)] }
+            "messageKeys": keys,
+            "confirmations": confirmationsPayload()
         ]
+    }
+
+    /// Messages à afficher et leur clé d'occurrence : un message encore affiché garde la sienne, un message
+    /// réapparu en reçoit une neuve. Les mêmes clés valent pour la fenêtre et le volet de la barre des menus.
+    func emittedMessages() -> (messages: [String], keys: [String]) {
+        let messages = currentMessages()
+        var keys: [String: String] = [:]
+        for message in messages where keys[message] == nil {
+            if let key = messageKeys[message] { keys[message] = key }
+            else { messageSerial += 1; keys[message] = "\(messageSession)-\(messageSerial)" }
+        }
+        messageKeys = keys
+        return (messages, messages.map { keys[$0] ?? "" })
+    }
+
+    func confirmationsPayload() -> [[String: Any]] {
+        pending().map { ["id": $0.id.uuidString, "title": $0.title, "message": SecretMasker.mask($0.message),
+                         "confirmTitle": $0.confirmTitle, "destructive": $0.severity == .destructive,
+                         "requiredText": wire($0.requiredText)] }
     }
 
     /// État réel de la pause (ce que le garde-fou applique), pas seulement où la consolidation a été coupée.
