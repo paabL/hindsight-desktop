@@ -348,6 +348,8 @@ public final class LocalDecisionModel {
         beginOperation()
         defer { endOperation() }
         do {
+            // Le script de cette version de l'app : une mise à jour l'apporte sans réinstaller le modèle.
+            try writeScript()
             try writePlist()
             try await load()
         } catch {

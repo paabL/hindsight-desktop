@@ -12,6 +12,10 @@ PyTorch, sur le GPU du Mac (MPS) ou à défaut sur le CPU.
 dans `--key-file` ; `GET /health` ne renvoie aucun contenu de la mémoire. Rien du contenu des requêtes
 n'est journalisé : une ligne par requête, avec le nombre de questions, de jetons et la durée.
 
+Les poids ne sont chargés qu'à la première requête, qui attend ce chargement (quelques secondes) au lieu
+d'échouer : le démarrage ne prend que le tokenizer. Après `--idle-unload` secondes sans requête (20 min par
+défaut), ils quittent la mémoire, celle du GPU comprise, et la requête suivante les recharge.
+
 Usage : python hindsight-decision-serve.py --model <dossier du modèle> --key-file <fichier> [--port 8766]
         python hindsight-decision-serve.py --model <dossier du modèle> --check
 """
@@ -19,6 +23,7 @@ Usage : python hindsight-decision-serve.py --model <dossier du modèle> --key-fi
 from __future__ import annotations
 
 import argparse
+import gc
 import hmac
 import json
 import logging
@@ -76,22 +81,58 @@ def pick_device(requested: str) -> str:
 
 
 class Decider:
-    """Un modèle chargé une fois ; les requêtes passent l'une après l'autre (verrou)."""
+    """Le modèle et ses requêtes, qui passent l'une après l'autre (verrou).
 
-    def __init__(self, folder: Path, device: str, max_tokens: int) -> None:
+    Les poids se chargent à la première requête. Avec `idle_unload` > 0, un fil de fond les libère après
+    autant de secondes sans requête, et la requête suivante les recharge. Le tokenizer reste chargé.
+    """
+
+    def __init__(self, folder: Path, device: str, max_tokens: int, idle_unload: float = 0) -> None:
+        self.folder = folder
         self.tokenizer = AutoTokenizer.from_pretrained(folder, local_files_only=True)
         self.settings = load_settings(folder)
         self.device = device
-        dtype = torch.bfloat16 if device != "cpu" else torch.float32
-        model = AutoModelForCausalLM.from_pretrained(folder, dtype=dtype, local_files_only=True)
-        model.to(device).eval()
-        self.decoder = model.get_decoder()
         self.ids = classifier_ids(self.tokenizer)
-        # Lignes de la tête de langue des codes de réponse : le classifieur que vLLM en tire.
-        self.head = model.get_output_embeddings().weight[self.ids].detach().clone()
         self.slot_id = slot_token(self.tokenizer)
         self.max_tokens = min(max_tokens, self.settings.max_request_tokens)
+        self.idle_unload = idle_unload
         self.lock = threading.Lock()
+        self.decoder: Any = None
+        self.head: Any = None
+        self.last_used = time.monotonic()
+        if idle_unload > 0:
+            threading.Thread(target=self._unload_when_idle, name="idle-unload", daemon=True).start()
+
+    @property
+    def loaded(self) -> bool:
+        return self.decoder is not None
+
+    def _load(self) -> None:
+        """Charge les poids sur l'appareil (verrou tenu)."""
+        started = time.monotonic()
+        dtype = torch.bfloat16 if self.device != "cpu" else torch.float32
+        model = AutoModelForCausalLM.from_pretrained(self.folder, dtype=dtype, local_files_only=True)
+        model.to(self.device).eval()
+        self.decoder = model.get_decoder()
+        # Lignes de la tête de langue des codes de réponse : le classifieur que vLLM en tire.
+        self.head = model.get_output_embeddings().weight[self.ids].detach().clone()
+        log.info("model loaded on %s in %.1f s", self.device, time.monotonic() - started)
+
+    def _unload(self) -> None:
+        """Rend la mémoire des poids, GPU compris (verrou tenu)."""
+        self.decoder = self.head = None
+        gc.collect()
+        if self.device == "mps":
+            torch.mps.empty_cache()
+
+    def _unload_when_idle(self) -> None:
+        while True:
+            with self.lock:
+                remaining = self.last_used + self.idle_unload - time.monotonic()
+                if self.loaded and remaining <= 0:
+                    self._unload()
+                    log.info("model unloaded after %.0f s without requests", self.idle_unload)
+            time.sleep(remaining if remaining > 0 else self.idle_unload)
 
     def respond(self, request: schema.SystemOneRequest) -> dict[str, Any]:
         rendered = render_request(self.tokenizer, request, self.settings)
@@ -102,12 +143,18 @@ class Decider:
         slots = [question.slot for question in rendered.questions]
         if any(rendered.ids[slot] != self.slot_id for slot in slots):
             raise RuntimeError("a question slot is not a ':' token")
-        with self.lock, torch.inference_mode():
-            input_ids = torch.tensor([rendered.ids], device=self.device)
-            hidden = self.decoder(input_ids=input_ids, use_cache=False).last_hidden_state[0]
-            logits = (hidden[slots] @ self.head.T).float().cpu().tolist()
-            if self.device == "mps" and rendered.tokens() > 4096:
-                torch.mps.empty_cache()
+        with self.lock:
+            try:
+                if not self.loaded:
+                    self._load()
+                with torch.inference_mode():
+                    input_ids = torch.tensor([rendered.ids], device=self.device)
+                    hidden = self.decoder(input_ids=input_ids, use_cache=False).last_hidden_state[0]
+                    logits = (hidden[slots] @ self.head.T).float().cpu().tolist()
+                    if self.device == "mps" and rendered.tokens() > 4096:
+                        torch.mps.empty_cache()
+            finally:
+                self.last_used = time.monotonic()
         answers = {}
         for question, row in zip(
             rendered.questions, question_logits(logits, rendered, self.ids), strict=True
@@ -145,7 +192,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802 (nom imposé par http.server)
         if self.path == "/health":
             self.send_json(200, {"status": "ok", "model": MODEL_NAME, "device": self.decider.device,
-                                 "max_tokens": self.decider.max_tokens})
+                                 "max_tokens": self.decider.max_tokens, "loaded": self.decider.loaded})
         elif self.path == "/v1/models":
             if not self.authorized():
                 self.send_json(401, {"error": "invalid API key"})
@@ -218,13 +265,15 @@ def main() -> int:
     parser.add_argument("--max-tokens", type=int, default=8192,
                         help="Au-delà, refus max_tokens_exceeded : Hindsight découpe alors la requête")
     parser.add_argument("--device", default="auto", choices=["auto", "mps", "cpu"])
+    parser.add_argument("--idle-unload", type=float, default=1200,
+                        help="Secondes sans requête avant de libérer les poids (0 : jamais) ; "
+                             "la requête suivante les recharge")
     parser.add_argument("--check", action="store_true", help="Répond à l'exemple du modèle puis quitte")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-    started = time.monotonic()
-    decider = Decider(args.model.expanduser(), pick_device(args.device), args.max_tokens)
-    log.info("model loaded on %s in %.1f s", decider.device, time.monotonic() - started)
+    decider = Decider(args.model.expanduser(), pick_device(args.device), args.max_tokens,
+                      0 if args.check else args.idle_unload)
     if args.check:
         return check(decider)
     if args.host not in ("127.0.0.1", "::1", "localhost"):
@@ -234,7 +283,6 @@ def main() -> int:
     key = args.key_file.expanduser().read_text().strip()
     if len(key) < 16:
         parser.error("the key file must hold a key of at least 16 characters")
-    decider.respond(schema.SystemOneRequest.model_validate(CHECK_REQUEST))  # préchauffe les noyaux
 
     Handler.decider, Handler.key = decider, key
     server = ThreadingHTTPServer((args.host, args.port), Handler)

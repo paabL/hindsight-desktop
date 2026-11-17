@@ -158,8 +158,11 @@ final class LocalDecisionModelTests: XCTestCase {
         try await XCTUnwrap(e.model.confirmation).perform()
         XCTAssertEqual(e.model.phase, .stopped)
         XCTAssertFalse(e.loaded.value)
+        try "ancien script\n".write(to: e.paths.script, atomically: true, encoding: .utf8)
         await e.model.start()
         XCTAssertEqual(e.model.phase, .running)
+        XCTAssertEqual(try String(contentsOf: e.paths.script, encoding: .utf8), DecisionServerScript.source + "\n",
+                       "démarrer remet le script de cette version de l'app")
 
         e.model.requestUninstall()
         let confirmation = try XCTUnwrap(e.model.confirmation)
