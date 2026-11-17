@@ -18,7 +18,8 @@ final class Server120Tests: XCTestCase {
         let names = ServerSettingsCatalog.knownNames
         for n in [
             "HINDSIGHT_API_RECALL_DECISION_MODEL_PROVIDER", "HINDSIGHT_API_RECALL_DECISION_MODEL_PRUNE",
-            "HINDSIGHT_API_RECALL_DECISION_MODEL_DEDUP", "HINDSIGHT_API_EMBEDDINGS_HINDSIGHT_API_KEY",
+            "HINDSIGHT_API_RECALL_DECISION_MODEL_DEDUP", "HINDSIGHT_API_RECALL_DECISION_MODEL_FALLBACK",
+            "HINDSIGHT_API_EMBEDDINGS_HINDSIGHT_API_KEY",
             "HINDSIGHT_API_RERANKER_HINDSIGHT_API_KEY",
         ] { XCTAssertTrue(names.contains(n), n) }
         let decision = ServerSettingsCatalog.roles.first { $0.id == "decision" }

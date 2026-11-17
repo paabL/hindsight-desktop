@@ -82,7 +82,7 @@ final class ModelWorkflowTests: XCTestCase {
         let (vm, file) = try await make(); defer { try? FileManager.default.removeItem(at: file); for backup in vm.backups { try? FileManager.default.removeItem(at: backup.url) } }
         let original = vm.original!.text
         let embeddings = vm.original!.lines.filter { $0.contains("EMBEDDINGS_") }
-        try vm.prepareModelWorkflow([p + "REFLECT_LLM_MODEL": "claude-haiku-5-5", p + "RECALL_DECISION_MODEL_PRUNE": "true", p + "RECALL_DECISION_MODEL_DEDUP": "true"], revision: vm.modelWorkflow!.revision)
+        try vm.prepareModelWorkflow([p + "REFLECT_LLM_MODEL": "claude-haiku-5-5", p + "RECALL_DECISION_MODEL_PRUNE": "true", p + "RECALL_DECISION_MODEL_DEDUP": "true", p + "RECALL_DECISION_MODEL_FALLBACK": "true"], revision: vm.modelWorkflow!.revision)
         vm.requestSave()
         XCTAssertNotNil(vm.confirmation)
         XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), original)

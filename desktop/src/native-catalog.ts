@@ -82,6 +82,9 @@ const catalog: Record<string, string> = {
   'Recherche : retirer les doublons': 'Search: remove duplicates',
   'true / false (défaut) ; une requête de plus par recherche. Serveur 1.2.0':
     'true / false (default); one additional request per search. Server 1.2.0',
+  'Recherche : reranker si la décision échoue': 'Search: reranker if the decision model fails',
+  'true / false (défaut : la recherche échoue avec la décision) ; le reranker configuré se charge alors dès le démarrage du serveur et reste en mémoire. Serveur 1.2.1':
+    'true / false (default: search fails with the decision model); the configured reranker then loads when the server starts and stays in memory. Server 1.2.1',
   'Ignoré par un serveur 1.0.0. Le fournisseur hindsight et les options prune/dedup demandent un serveur 1.2.0 ; sans URL locale, il envoie le contenu des faits à Hindsight Inference (Vectorize).':
     'Ignored by server 1.0.0. The hindsight provider and prune/dedup options require server 1.2.0; without a local URL, fact content is sent to Hindsight Inference (Vectorize).',
   'Vectorisation des faits.': 'Fact vectorization.',

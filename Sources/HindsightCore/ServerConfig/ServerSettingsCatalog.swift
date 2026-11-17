@@ -2,7 +2,7 @@ import Foundation
 
 /// Réglages serveur connus (variables d'environnement `HINDSIGHT_API_*`), regroupés par rôle.
 ///
-/// Source : `hindsight-api-slim/hindsight_api/config.py` du dépôt vectorize-io/hindsight (tag v1.2.0,
+/// Source : `hindsight-api-slim/hindsight_api/config.py` du dépôt vectorize-io/hindsight (tag v1.2.1,
 /// novembre 2026). Les noms peuvent différer selon la version installée : toute variable présente dans le
 /// script est de toute façon affichée et éditable, même absente de ce catalogue.
 public enum ServerSettingsCatalog {
@@ -116,6 +116,9 @@ public enum ServerSettingsCatalog {
                 Field(
                     name: "HINDSIGHT_API_RECALL_DECISION_MODEL_DEDUP", label: "Recherche : retirer les doublons",
                     help: "true / false (défaut) ; une requête de plus par recherche. Serveur 1.2.0"),
+                Field(
+                    name: "HINDSIGHT_API_RECALL_DECISION_MODEL_FALLBACK", label: "Recherche : reranker si la décision échoue",
+                    help: "true / false (défaut : la recherche échoue avec la décision) ; le reranker configuré se charge alors dès le démarrage du serveur et reste en mémoire. Serveur 1.2.1"),
             ] + ["RECALL", "REFLECT", "CONSOLIDATION"].flatMap { operation in
                 // Noms des fonctions tels que l'app les affiche partout (Recherche, Réponses, Consolidation).
                 let name = ["RECALL": "Recherche", "REFLECT": "Réponses"][operation] ?? "Consolidation"

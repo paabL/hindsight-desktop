@@ -13,7 +13,7 @@ export function decisionProviderValue(role: Row, draft: Row): string {
     : provider;
 }
 export function isBooleanField(field: Row): boolean {
-  return /_(ENABLED|PRUNE|DEDUP)$|_USE_DECISION_MODEL$/.test(field.name);
+  return /_(ENABLED|PRUNE|DEDUP)$|_USE_DECISION_MODEL$|_DECISION_MODEL_FALLBACK$/.test(field.name);
 }
 const genericRoles = ['default', 'retain', 'consolidation', 'reflect', 'mental_model', 'vlm'];
 const serviceProviders: Record<string, string[]> = {

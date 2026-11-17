@@ -126,6 +126,11 @@ export function modelWorkflowDemo() {
       value: 'false',
     },
     {
+      name: P + 'RECALL_DECISION_MODEL_FALLBACK',
+      label: 'Recherche : reranker si la décision échoue',
+      value: 'false',
+    },
+    {
       name: P + 'MENTAL_MODEL_DELTA_USE_DECISION_MODEL',
       label: 'Pages de connaissance : filtrage des nouveaux faits',
       value: 'true',
