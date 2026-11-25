@@ -41,8 +41,6 @@ import signal
 import sys
 import threading
 import time
-from collections.abc import Iterator
-from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -123,40 +121,8 @@ def is_background(request: schema.SystemOneRequest) -> bool:
     return isinstance(request.state, dict) and "new_fact" in request.state
 
 
-class PriorityGate:
-    """Verrou du modèle à deux files : une requête prioritaire passe avant les requêtes de fond en attente.
-
-    Les recherches sont rares et courtes ; la consolidation reprend juste après. Le fil qui libère les
-    poids passe en fond, lui aussi.
-    """
-
-    def __init__(self) -> None:
-        self._condition = threading.Condition()
-        self._busy = False
-        self._urgent = 0
-
-    @contextmanager
-    def hold(self, urgent: bool) -> Iterator[None]:
-        with self._condition:
-            if urgent:
-                self._urgent += 1
-            try:
-                while self._busy or (not urgent and self._urgent):
-                    self._condition.wait()
-            finally:
-                if urgent:
-                    self._urgent -= 1
-            self._busy = True
-        try:
-            yield
-        finally:
-            with self._condition:
-                self._busy = False
-                self._condition.notify_all()
-
-
 class Decider:
-    """Le modèle et ses requêtes, qui passent l'une après l'autre (verrou à priorité).
+    """Le modèle et ses requêtes, qui passent l'une après l'autre.
 
     Les poids se chargent à la première requête. Avec `idle_unload` > 0, un fil de fond les libère après
     autant de secondes sans requête, et la requête suivante les recharge. Le tokenizer reste chargé.
@@ -173,7 +139,7 @@ class Decider:
         self.slot_id = slot_token(self.tokenizer)
         self.max_tokens = min(max_tokens, self.settings.max_request_tokens)
         self.idle_unload = idle_unload
-        self.lock = PriorityGate()
+        self.lock = threading.Lock()
         self.decoder: Any = None
         self.head: Any = None
         self.last_used = time.monotonic()
@@ -219,7 +185,7 @@ class Decider:
 
     def _unload_when_idle(self) -> None:
         while True:
-            with self.lock.hold(urgent=False):
+            with self.lock:
                 remaining = self.last_used + self.idle_unload - time.monotonic()
                 if self.loaded and remaining <= 0:
                     self._unload()
@@ -255,7 +221,7 @@ class Decider:
         slots = [question.slot for question in rendered.questions]
         if any(rendered.ids[slot] != self.slot_id for slot in slots):
             raise RuntimeError("a question slot is not a ':' token")
-        with self.lock.hold(urgent=not is_background(request)):
+        with self.lock:
             try:
                 if not self.loaded:
                     self._load()
