@@ -64,7 +64,7 @@ SERVERS = {
     "embeddings": {"label": "local.hindsight.embed", "port": 8768, "test_port": 8778},
 }
 # Mesures du 17 nov. 2026 sur un M4 16 Go à vide : qualité nDCG@10 sur 15 requêtes réelles étiquetées de la
-# banque savoirs (bench-rerank), latence médiane pour ~80 candidats ; embeddings : une requête et 64 passages ;
+# banque réelle du mainteneur (bench-rerank), latence médiane pour ~80 candidats ; embeddings : une requête et 64 passages ;
 # décision : une passe de 5 500 jetons et des requêtes réelles de 2,5 à 3,7 k jetons.
 CATALOG: Dict[str, List[Dict[str, Any]]] = {
     "reranker": [
@@ -101,7 +101,7 @@ CATALOG: Dict[str, List[Dict[str, Any]]] = {
          "model": "hindsight-ai/hs-decide-1-flash", "engine": "mlx", "latency": "4,4 s / 5 500 jetons",
          "memory": "~2 Go",
          "note": "1,6× plus rapide ; scores à 0,01 près de PyTorch, mêmes 5 premiers sur des requêtes réelles."},
-        # Modèles System One ouverts, ≤ 1 B, mesurés le 17-18 nov. 2026 sur savoirs (tri : 15 requêtes étiquetées ;
+        # Modèles System One ouverts, ≤ 1 B, mesurés le 17-18 nov. 2026 sur une banque réelle (tri : 15 requêtes étiquetées ;
         # doublons : 197 paires proches ; reflect : 2 reflects réels rejoués). Installés dans ~/.hindsight/candidates.
         {"id": "startlux-0.8b/mlx", "label": "StartLux-Decision v1.1 0.8B Instant · MLX 8-bit", "engine": "external",
          "candidate": "startlux-0.8b", "served_model": "StartLux-Decision-v1.1-0.8B-Instant-MLX-8bit",
@@ -363,9 +363,11 @@ def running_operations() -> List[str]:
 
 
 def probe_bank() -> str:
+    """Banque des recherches de vérification (lecture seule) : HINDSIGHT_MODELS_PROBE_BANK, sinon la première."""
     names = banks()
-    if "savoirs" in names:
-        return "savoirs"
+    wanted = os.environ.get("HINDSIGHT_MODELS_PROBE_BANK", "")
+    if wanted in names:
+        return wanted
     if not names:
         raise Failure("aucune banque pour vérifier la recherche")
     return names[0]
