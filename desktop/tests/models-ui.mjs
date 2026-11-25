@@ -101,8 +101,10 @@ try {
   ]);
   await writing.selectOption({ label: 'GPT-6 Luna' });
   await expect(workflow.locator('.mw-provider', { hasText: 'ChatGPT / Codex' })).toHaveCount(1);
-  await page.getByText('Installation et services des modèles', { exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Modèles Hindsight', exact: true })).toBeVisible();
+  // Un seul endroit : la carte Modèles Hindsight porte le service de décision et les modèles de ce Mac.
+  await expect(page.locator('[data-model-tools]')).toHaveCount(1);
+  await expect(page.getByText('Service du modèle de décision', { exact: true })).toBeVisible();
   await mkdir(path.join(root, 'screenshots'), { recursive: true });
   for (const width of [1440, 1000]) {
     await page.setViewportSize({ width, height: 1000 });

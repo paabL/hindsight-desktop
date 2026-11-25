@@ -2,7 +2,6 @@ import { useI18n } from '../i18n';
 import { translate as tr } from '../i18n-core';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
-  ArrowDownToLine,
   BookOpen,
   Check,
   ChevronDown,
@@ -57,7 +56,6 @@ import {
   isEffortField,
   decisionProviderValue,
   localDecisionURL,
-  localDecisionStateLabel,
 } from '../model-field-options';
 
 const memoryFields = {
@@ -1133,210 +1131,6 @@ export function Admin({
   );
 }
 
-function ModelChoices({
-  value,
-  options,
-  onChange,
-  disabled,
-}: {
-  value: string;
-  options: { id: string; label: string; disabled?: boolean }[];
-  onChange: (id: string) => void;
-  disabled: boolean;
-}) {
-  return (
-    <div className="model-choices" role="radiogroup">
-      {options.map((option) => (
-        <button
-          key={option.id}
-          type="button"
-          role="radio"
-          aria-checked={value === option.id}
-          disabled={disabled || option.disabled}
-          onClick={() => value !== option.id && onChange(option.id)}
-        >
-          {value === option.id && <Check size={13} />}
-          {option.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-// Choix préparés dans le script : rien ne change avant l’enregistrement et le redémarrage du serveur.
-function HindsightModels({ models, run, busy }: Pick<PageProps, 'run' | 'busy'> & { models: Row }) {
-  const { t } = useI18n();
-  const local = models.local || {};
-  const running = local.phase === 'running';
-  const old = !models.serverIs120;
-  return (
-    <section className="card hindsight-models">
-      <CardHeader
-        title={t('Modèles Hindsight', 'Hindsight models')}
-        subtitle={t(
-          'Modèles spécialisés, sur Hindsight Cloud (facturés au compte) ou sur ce Mac. Chaque choix prépare le script : enregistrez-le, puis redémarrez le serveur.',
-          'Specialized models, on Hindsight Cloud (billed to your account) or on this Mac. Each choice prepares the script: save it, then restart the server.',
-        )}
-      />
-      {old && (
-        <div className="notice">
-          {' '}
-          {t(
-            'Ces modèles demandent le serveur Hindsight 1.2.0 ; seul le reranker local est déjà disponible.',
-            'These models require Hindsight server 1.2.0; only the local reranker is available on older versions.',
-          )}
-        </div>
-      )}
-      <div className="model-rows">
-        <div>
-          <div>
-            <strong>
-              {' '}
-              {t('Modèle de décision · hs-decide-1-flash', 'Decision model · hs-decide-1-flash')}
-            </strong>
-            <p>
-              {' '}
-              {t(
-                'Tranche les choix de la consolidation, des Réponses et des pages de connaissance sans appel LLM : moins de jetons et moins d’attente.',
-                'Makes consolidation, Answers and knowledge page decisions without LLM calls: fewer tokens and less waiting.',
-              )}
-              {models.decision === 'other' &&
-                t(
-                  ' Réglage personnalisé dans le rôle ci-dessous.',
-                  ' Custom settings in the role below.',
-                )}
-            </p>
-          </div>
-          <ModelChoices
-            value={models.decision}
-            disabled={busy}
-            onChange={(source) => void run('server.decision', { source })}
-            options={[
-              { id: 'cloud', label: 'Hindsight Cloud', disabled: old },
-              { id: 'local', label: t('Sur ce Mac', 'On this Mac'), disabled: old || !running },
-              { id: 'off', label: t('Désactivé', 'Off') },
-            ]}
-          />
-        </div>
-        <div>
-          <div>
-            <strong>Reranker · hs-rerank-1</strong>
-            <p>
-              {' '}
-              {t(
-                'Classe les résultats de recherche, sans ré-indexation. Sur ce Mac, le serveur le télécharge à son premier démarrage.',
-                'Ranks search results without reindexing. On this Mac, the server downloads it at first startup.',
-              )}
-              {models.reranker === 'other' &&
-                t(' Autre reranker configuré.', ' Another reranker is configured.')}
-            </p>
-          </div>
-          <ModelChoices
-            value={models.reranker}
-            disabled={busy}
-            onChange={(source) => void run('server.reranker', { source })}
-            options={[
-              { id: 'cloud', label: 'Hindsight Cloud', disabled: old },
-              { id: 'local', label: t('Sur ce Mac', 'On this Mac') },
-            ]}
-          />
-        </div>
-      </div>
-      {models.needsCloudAccount && (
-        <div className="notice">
-          {' '}
-          {t(
-            'Connectez le compte Hindsight Cloud ci-dessus : sans sa clé, le serveur refusera de démarrer avec ces choix.',
-            'Connect your Hindsight Cloud account above: without its key, the server cannot start with these choices.',
-          )}
-        </div>
-      )}
-      {models.decision === 'local' && !running && (
-        <div className="notice">
-          {' '}
-          {t(
-            'Le modèle de décision de ce Mac n’est pas en marche : démarrez-le avant le serveur.',
-            'The decision model on this Mac is not running: start it before the server.',
-          )}
-        </div>
-      )}
-      <div className="local-decision">
-        <div>
-          <strong>{t('Modèle de décision sur ce Mac', 'Decision model on this Mac')}</strong>
-          <p>
-            {local.summary}
-            {local.installed
-              ? t(
-                  ' · 127.0.0.1:8766, environ 2 Go de mémoire',
-                  ' · 127.0.0.1:8766, about 2 GB of memory',
-                )
-              : t(
-                  ' · environ 2 Go à télécharger, puis rien ne sort du Mac',
-                  ' · about 2 GB to download, then processing stays on this Mac',
-                )}
-          </p>
-        </div>
-        <Badge tone={running ? 'sage' : local.installed ? 'amber' : 'neutral'}>
-          <span className={`status-dot ${running ? 'green' : 'warning'}`} />
-          {localDecisionStateLabel(local.phase)}
-        </Badge>
-        {!local.installed ? (
-          <Button
-            icon={ArrowDownToLine}
-            disabled={busy || local.busy}
-            onClick={() => void run('decision.install')}
-          >
-            {' '}
-            {t('Installer…', 'Install…')}
-          </Button>
-        ) : running ? (
-          <Button
-            icon={Pause}
-            disabled={busy || local.busy}
-            onClick={() => void run('decision.stop')}
-          >
-            {' '}
-            {t('Arrêter', 'Stop')}
-          </Button>
-        ) : (
-          <Button
-            icon={Play}
-            disabled={busy || local.busy}
-            onClick={() => void run('decision.start')}
-          >
-            {' '}
-            {t('Démarrer', 'Start')}
-          </Button>
-        )}
-      </div>
-      <ErrorNotice message={local.problem} />
-      {(local.log || local.installed) && (
-        <details className="advanced-details local-decision-log">
-          <summary>{t('Journal du modèle local', 'Local model log')}</summary>
-          <pre className="json-view">
-            {local.log || t('Aucun journal disponible.', 'No log available.')}
-          </pre>
-          <p>
-            {' '}
-            {t('Dossier :', 'Folder:')} {local.root} {t('· journal :', '· log:')} {local.logPath}
-          </p>
-          {local.installed && (
-            <Button
-              kind="danger"
-              icon={Trash2}
-              disabled={busy || local.busy}
-              onClick={() => void run('decision.uninstall')}
-            >
-              {' '}
-              {t('Désinstaller le modèle local', 'Uninstall local model')}
-            </Button>
-          )}
-        </details>
-      )}
-    </section>
-  );
-}
-
 /** Réglages › Serveur : l'adresse du serveur et, s'il tourne sur ce Mac, son service, son script et ses sauvegardes. */
 export function ServerSettings({
   data,
@@ -1539,7 +1333,6 @@ export function ModelManagement({
   const [role, setRole] = useState<Row | null>(null);
   const [fields, setFields] = useState<Row>({});
   const [customModels, setCustomModels] = useState<Set<string>>(new Set());
-  const [modelToolsOpen, setModelToolsOpen] = useState(false);
   const [rolesOpen, setRolesOpen] = useState(false);
   const accountsRef = useRef<HTMLElement>(null);
   const rolesRef = useRef<HTMLDetailsElement>(null);
@@ -1669,7 +1462,6 @@ export function ModelManagement({
       setRolesOpen(true);
       rolesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } else {
-      setModelToolsOpen(true);
       accountsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1820,19 +1612,6 @@ export function ModelManagement({
           />
         )}
       </details>
-      {data.hindsightModels && (
-        <details
-          className="card advanced-details"
-          data-model-tools
-          open={modelToolsOpen}
-          onToggle={(e) => setModelToolsOpen(e.currentTarget.open)}
-        >
-          <summary>
-            {t('Installation et services des modèles', 'Model installation and services')}
-          </summary>
-          <HindsightModels models={data.hindsightModels} run={run} busy={busy} />
-        </details>
-      )}
       {data.hasChanges && (
         <details className="card advanced-details">
           <summary>{t('Détail des modifications préparées', 'Prepared changes in detail')}</summary>
