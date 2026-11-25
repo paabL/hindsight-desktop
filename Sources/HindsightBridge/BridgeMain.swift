@@ -486,6 +486,12 @@ final class DesktopBridge {
             if decisionTask == nil { decisionTask = Task { @MainActor in await self.app.localDecision.start(); self.decisionTask = nil } }
         case "decision.stop": app.localDecision.requestStop()
         case "decision.uninstall": app.localDecision.requestUninstall()
+        case "models.local.apply":
+            guard !app.localModels.jobRunning else { throw BridgeFailure("Un changement de modèle est déjà en cours.") }
+            app.localModels.requestApply(role: str("role"), option: str("option"))
+        case "models.local.rollback":
+            guard !app.localModels.jobRunning else { throw BridgeFailure("Un changement de modèle est déjà en cours.") }
+            app.localModels.requestRollback(role: str("role"))
         case "server.revert": app.serverSettings.revertAll()
         case "server.save": app.serverSettings.requestSave()
         case "server.restore":
@@ -678,6 +684,7 @@ final class DesktopBridge {
             await app.service.refresh()
             app.serverSettings.reconcilePendingRestart()
             await app.localDecision.refresh()
+            await app.localModels.refresh()
             await app.serverSettings.connections.refresh(app.serverSettings.connectionContext)
             return
         }
@@ -736,7 +743,7 @@ final class DesktopBridge {
         let s = app.session
         return [workspace.confirmation, updater.confirmation, ownConfirmation, app.confirmation, app.memoryFolder.confirmation, app.service.confirmation,
                 app.pause.confirmation, app.coverage.confirmation,
-                app.serverSettings.confirmation, app.localDecision.confirmation, app.bankManagement.confirmation,
+                app.serverSettings.confirmation, app.localDecision.confirmation, app.localModels.confirmation, app.bankManagement.confirmation,
                 s?.operations.confirmation, s?.consolidation.confirmation, s?.admin.confirmation, s?.memoryDesign.confirmation,
                 s?.documents.reader?.confirmation, s?.audit.confirmation].compactMap { $0 }
     }
@@ -747,7 +754,7 @@ final class DesktopBridge {
         ownConfirmation = nil; app.confirmation = nil; app.memoryFolder.confirmation = nil
         autoSyncConfirmation = nil; reflectRequestID = nil
         app.service.confirmation = nil; app.pause.confirmation = nil; app.coverage.confirmation = nil
-        app.serverSettings.confirmation = nil; app.localDecision.confirmation = nil
+        app.serverSettings.confirmation = nil; app.localDecision.confirmation = nil; app.localModels.confirmation = nil
         app.bankManagement.confirmation = nil
         app.session?.operations.confirmation = nil; app.session?.consolidation.confirmation = nil; app.session?.admin.confirmation = nil
         app.session?.memoryDesign.confirmation = nil; app.session?.documents.reader?.confirmation = nil
@@ -1141,7 +1148,9 @@ final class DesktopBridge {
                     && ![.unchecked, .checking, .connecting].contains(cloud),
                 "local": ["phase": phase, "summary": local.phase.summary, "busy": local.isBusy || decisionTask != nil,
                           "installed": local.isInstalled, "problem": wire(local.problem), "log": local.log,
-                          "root": local.paths.root.path, "logPath": local.paths.log.path]]
+                          "root": local.paths.root.path, "logPath": local.paths.log.path],
+                "localModels": ["available": app.localModels.isAvailable, "status": app.localModels.status ?? NSNull(),  // déjà du JSON (sortie du gestionnaire)
+                                "problem": wire(app.localModels.problem)]]
     }
 
     func readerSnapshot(_ reader: DocumentReaderViewModel) -> [String: Any] {

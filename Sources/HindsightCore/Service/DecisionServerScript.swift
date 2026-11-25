@@ -10,7 +10,10 @@ fait pas tourner sur un Mac. Ce serveur reprend le rendu officiel du greffon (pa
 `hindsight_decision`, installé depuis ce dossier) et remplace seulement le pooling de vLLM : vLLM lit
 l'état caché au jeton « : » de chaque question et le multiplie par les lignes de la tête de langue
 des codes de réponse (`classifier_from_token`, sans post-traitement). Le même calcul est fait ici avec
-PyTorch, sur le GPU du Mac (MPS) ou à défaut sur le CPU.
+PyTorch, sur le GPU du Mac (MPS) ou à défaut sur le CPU, ou avec MLX (`--engine mlx`, paquet `mlx-lm`) :
+même rendu, mêmes questions, passe avant environ 1,6 fois plus rapide sur une puce Apple. `--engine auto`
+(défaut) suit le choix « decision » du gestionnaire de modèles (~/.hindsight/models/selection.json) et
+reste sur PyTorch sans ce fichier, ou si MLX ne se charge pas (`/health` dit alors le moteur réel).
 
 Écoute 127.0.0.1 seulement. `POST /v1/systemone` exige `Authorization: Bearer <clé>`, la clé étant lue
 dans `--key-file` ; `GET /health` ne renvoie aucun contenu de la mémoire. Rien du contenu des requêtes
@@ -54,6 +57,8 @@ from hindsight_decision.typed import classifier_ids, question_logits, slot_token
 from hindsight_decision.typed_render import render_request
 
 MODEL_NAME = "hs-decide-1-flash"
+SELECTION = Path.home() / ".hindsight" / "models" / "selection.json"
+ENGINES = ("torch", "mlx")
 MAX_BODY_BYTES = 64 * 1024 * 1024
 log = logging.getLogger("hindsight-decision")
 
@@ -87,6 +92,26 @@ def pick_device(requested: str) -> str:
     if requested != "auto":
         return requested
     return "mps" if torch.backends.mps.is_available() else "cpu"
+
+
+def pick_engine(requested: str, selection: Path = SELECTION) -> str:
+    """`auto` : le moteur choisi pour « decision » dans le gestionnaire de modèles, sinon PyTorch."""
+    if requested != "auto":
+        return requested
+    try:
+        choice = json.loads(selection.read_text()).get("decision", "")
+    except (OSError, ValueError, AttributeError):
+        return "torch"
+    engine = choice.rpartition("/")[2] if isinstance(choice, str) else ""
+    if engine not in ENGINES:
+        return "torch"
+    if engine == "mlx":
+        try:
+            import mlx_lm  # noqa: F401
+        except ImportError:
+            log.error("MLX choisi dans %s mais mlx-lm est absent : PyTorch à la place", selection)
+            return "torch"
+    return engine
 
 
 def is_background(request: schema.SystemOneRequest) -> bool:
@@ -137,8 +162,10 @@ class Decider:
     autant de secondes sans requête, et la requête suivante les recharge. Le tokenizer reste chargé.
     """
 
-    def __init__(self, folder: Path, device: str, max_tokens: int, idle_unload: float = 0) -> None:
+    def __init__(self, folder: Path, device: str, max_tokens: int, idle_unload: float = 0,
+                 engine: str = "torch") -> None:
         self.folder = folder
+        self.engine = engine
         self.tokenizer = AutoTokenizer.from_pretrained(folder, local_files_only=True)
         self.settings = load_settings(folder)
         self.device = device
@@ -160,6 +187,17 @@ class Decider:
     def _load(self) -> None:
         """Charge les poids sur l'appareil (verrou tenu)."""
         started = time.monotonic()
+        if self.engine == "mlx":
+            import mlx.core as mx
+            from mlx_lm import load
+
+            model, _ = load(str(self.folder), model_config={"model_type": "qwen3_5"})
+            model.set_dtype(mx.float16)
+            self.decoder = model.language_model.model
+            # Tête liée aux plongements d'entrée (tie_word_embeddings) : mêmes lignes que sous PyTorch.
+            self.head = self.decoder.embed_tokens.weight[mx.array(self.ids)].astype(mx.float32)
+            log.info("model loaded with MLX (float16) in %.1f s", time.monotonic() - started)
+            return
         dtype = torch.bfloat16 if self.device != "cpu" else torch.float32
         model = AutoModelForCausalLM.from_pretrained(self.folder, dtype=dtype, local_files_only=True)
         model.to(self.device).eval()
@@ -172,7 +210,11 @@ class Decider:
         """Rend la mémoire des poids, GPU compris (verrou tenu)."""
         self.decoder = self.head = None
         gc.collect()
-        if self.device == "mps":
+        if self.engine == "mlx":
+            import mlx.core as mx
+
+            mx.clear_cache()
+        elif self.device == "mps":
             torch.mps.empty_cache()
 
     def _unload_when_idle(self) -> None:
@@ -183,6 +225,26 @@ class Decider:
                     self._unload()
                     log.info("model unloaded after %.0f s without requests", self.idle_unload)
             time.sleep(remaining if remaining > 0 else self.idle_unload)
+
+    def _torch_logits(self, ids: list[int], slots: list[int]) -> list[list[float]]:
+        """États cachés aux jetons « : » des questions, multipliés par les lignes de la tête (verrou tenu)."""
+        with torch.inference_mode():
+            hidden = self.decoder(input_ids=torch.tensor([ids], device=self.device), use_cache=False).last_hidden_state[0]
+            logits = (hidden[slots] @ self.head.T).float().cpu().tolist()
+        if self.device == "mps" and len(ids) > 4096:
+            torch.mps.empty_cache()
+        return logits
+
+    def _mlx_logits(self, ids: list[int], slots: list[int]) -> list[list[float]]:
+        """Le même calcul avec MLX (float16, produit par la tête en float32)."""
+        import mlx.core as mx
+
+        hidden = self.decoder(mx.array([ids]))[0]
+        logits = hidden[mx.array(slots)].astype(mx.float32) @ self.head.T
+        mx.eval(logits)
+        if len(ids) > 4096:
+            mx.clear_cache()
+        return logits.tolist()
 
     def respond(self, request: schema.SystemOneRequest) -> dict[str, Any]:
         rendered = render_request(self.tokenizer, request, self.settings)
@@ -197,12 +259,8 @@ class Decider:
             try:
                 if not self.loaded:
                     self._load()
-                with torch.inference_mode():
-                    input_ids = torch.tensor([rendered.ids], device=self.device)
-                    hidden = self.decoder(input_ids=input_ids, use_cache=False).last_hidden_state[0]
-                    logits = (hidden[slots] @ self.head.T).float().cpu().tolist()
-                    if self.device == "mps" and rendered.tokens() > 4096:
-                        torch.mps.empty_cache()
+                compute = self._mlx_logits if self.engine == "mlx" else self._torch_logits
+                logits = compute(rendered.ids, slots)
             finally:
                 self.last_used = time.monotonic()
         answers = {}
@@ -241,7 +299,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 (nom imposé par http.server)
         if self.path == "/health":
-            self.send_json(200, {"status": "ok", "model": MODEL_NAME, "device": self.decider.device,
+            self.send_json(200, {"status": "ok", "model": MODEL_NAME, "engine": self.decider.engine,
+                                 "device": "mlx" if self.decider.engine == "mlx" else self.decider.device,
                                  "max_tokens": self.decider.max_tokens, "loaded": self.decider.loaded})
         elif self.path == "/v1/models":
             if not self.authorized():
@@ -303,7 +362,8 @@ def check(decider: Decider) -> int:
     answers = decider.respond(schema.SystemOneRequest.model_validate(CHECK_REQUEST))["answers"]
     print(json.dumps(answers, indent=2, ensure_ascii=False))
     ok = answers["latest"]["choice"] == "D00" and answers["moved"]["noul"] > 0.5
-    print(f"{'OK' if ok else 'ÉCHEC'} en {(time.monotonic() - started) * 1000:.0f} ms ({decider.device})")
+    where = "mlx" if decider.engine == "mlx" else decider.device
+    print(f"{'OK' if ok else 'ÉCHEC'} en {(time.monotonic() - started) * 1000:.0f} ms ({where})")
     return 0 if ok else 1
 
 
@@ -316,6 +376,8 @@ def main() -> int:
     parser.add_argument("--max-tokens", type=int, default=8192,
                         help="Au-delà, refus max_tokens_exceeded : Hindsight découpe alors la requête")
     parser.add_argument("--device", default="auto", choices=["auto", "mps", "cpu"])
+    parser.add_argument("--engine", default="auto", choices=["auto", *ENGINES],
+                        help="Moteur de calcul ; auto : choix du gestionnaire de modèles, sinon torch")
     parser.add_argument("--idle-unload", type=float, default=1200,
                         help="Secondes sans requête avant de libérer les poids (0 : jamais) ; "
                              "la requête suivante les recharge")
@@ -323,8 +385,9 @@ def main() -> int:
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
+    engine = pick_engine(args.engine)
     decider = Decider(args.model.expanduser(), pick_device(args.device), args.max_tokens,
-                      0 if args.check else args.idle_unload)
+                      0 if args.check else args.idle_unload, engine)
     if args.check:
         return check(decider)
     if args.host not in ("127.0.0.1", "::1", "localhost"):
@@ -339,7 +402,7 @@ def main() -> int:
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     server.daemon_threads = True
     signal.signal(signal.SIGTERM, lambda *_: threading.Thread(target=server.shutdown, daemon=True).start())
-    log.info("listening on http://%s:%d", args.host, args.port)
+    log.info("listening on http://%s:%d (engine %s)", args.host, args.port, decider.engine)
     server.serve_forever()
     return 0
 

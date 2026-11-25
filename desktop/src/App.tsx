@@ -460,7 +460,10 @@ export default function App() {
   const serverWork =
     !!snapshot.serviceBusy ||
     (route === 'server' &&
-      !!(snapshot.data?.connectingAccount || snapshot.data?.hindsightModels?.local?.busy));
+      !!(snapshot.data?.connectingAccount || snapshot.data?.hindsightModels?.local?.busy)) ||
+    // Modèles : un changement de modèle local se suit jusqu'à sa vérification (ou son retour arrière).
+    (route === 'model-settings' &&
+      snapshot.data?.hindsightModels?.localModels?.status?.job?.status === 'running');
   const sourcesWork =
     route === 'sources' && !!(snapshot.data?.refreshing || snapshot.data?.collecting);
   // Réponse en cours : Recherche se relit souvent pour l’afficher dès qu’elle arrive ; ailleurs, l’état suffit.

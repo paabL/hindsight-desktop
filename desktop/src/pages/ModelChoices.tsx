@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Settings2 } from 'lucide-react';
+import { LocalModels } from '../components/LocalModels';
 import { ModelWorkflowSettings } from '../components/ModelWorkflow';
 import { useI18n } from '../i18n';
 import type { PageProps } from '../types';
@@ -52,6 +53,9 @@ export default function ModelChoices(props: PageProps) {
             </Button>
           }
         />
+      )}
+      {data.hindsightModels?.localModels && (
+        <LocalModels models={data.hindsightModels.localModels} run={run} busy={busy} />
       )}
       {configured && <ModelManagement {...props} request={request} />}
     </>

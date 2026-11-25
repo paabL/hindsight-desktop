@@ -44,6 +44,8 @@ public final class AppModel {
     public private(set) var service: HindsightServiceViewModel!
     /// Modèle de décision servi sur ce Mac (son installation et son service launchd).
     public private(set) var localDecision: LocalDecisionModel!
+    /// Modèles locaux choisis rôle par rôle (reranker, embeddings, décision) : ~/.hindsight/models.
+    public private(set) var localModels: LocalModelManager!
     /// Renommer / fusionner des banques.
     public private(set) var bankManagement: BankManagementViewModel!
     /// Mises à jour de l'app depuis son dépôt git.
@@ -106,6 +108,7 @@ public final class AppModel {
         }
         self.serverSettings.service = self.service
         self.localDecision = LocalDecisionModel(runner: processRunner, paths: .standard(service: servicePaths))
+        self.localModels = LocalModelManager(runner: processRunner)
         self.pause = PauseController(
             settings: settings, client: { [unowned self] in self.client }, banks: { [unowned self] in self.banks.map(\.bankId) },
             server: { [unowned self] in self.serverURL.absoluteString },

@@ -5920,3 +5920,67 @@ button.folder-row > svg:last-child {
     animation: none;
   }
 }
+/* Modèles › Modèles sur ce Mac (gestionnaire des modèles locaux) */
+.local-model-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 16px 24px;
+  border-top: 1px solid var(--line);
+}
+.local-model-row > div:first-child {
+  flex: 1;
+  min-width: 0;
+}
+.local-model-row select {
+  max-width: 300px;
+  font-size: var(--text-xs);
+}
+.local-model-row .button {
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+.local-model-note {
+  color: var(--accent-strong);
+}
+.local-model-job {
+  margin: 0 24px 18px;
+  padding: 14px 18px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+.local-model-job-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.local-model-job ol {
+  list-style: none;
+  display: grid;
+  gap: 6px;
+  font-size: var(--text-xs);
+  color: var(--secondary);
+}
+.local-model-job li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  overflow-wrap: anywhere;
+}
+.local-model-job > p {
+  font-size: var(--text-sm);
+  margin: 10px 0;
+}
+.local-models-files {
+  font-size: var(--text-xs);
+  color: var(--faint);
+  padding: 0 24px 18px;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 1020px) {
+  .local-model-row {
+    flex-wrap: wrap;
+  }
+}
