@@ -33,7 +33,6 @@ extension ServerSettingsViewModel {
         "HINDSIGHT_API_MENTAL_MODEL_DELTA_USE_DECISION_MODEL",
         "HINDSIGHT_API_RECALL_DECISION_MODEL_PRUNE",
         "HINDSIGHT_API_RECALL_DECISION_MODEL_DEDUP",
-        "HINDSIGHT_API_RECALL_DECISION_MODEL_FALLBACK",
     ]
 
     /// Fournisseur de chaque usage : choisi avec son modèle dans le même menu du schéma.

@@ -576,13 +576,6 @@ export function ModelWorkflowSettings({
               {[
                 ['PRUNE', t('Écarter les faits inutiles', 'Remove irrelevant facts')],
                 ['DEDUP', t('Retirer les doublons', 'Remove duplicates')],
-                [
-                  'FALLBACK',
-                  t(
-                    'Classer avec le reranker si la décision échoue',
-                    'Rank with the reranker if the decision model fails',
-                  ),
-                ],
               ].map(([key, label]) => {
                 const name = `${P}RECALL_DECISION_MODEL_${key}`;
                 return (

@@ -80,11 +80,11 @@ const catalog: Record<string, string> = {
   'true / false (défaut) ; sans requête de plus. Serveur 1.2.0':
     'true / false (default); no additional request. Server 1.2.0',
   'Recherche : retirer les doublons': 'Search: remove duplicates',
+  'Poids de la récence': 'Recency weight',
+  "Vide = 0.2 : après le reranker, un fait récent gagne jusqu'à α/2 et un ancien perd autant ; 0 = ignorer la date. Serveur 1.3.0":
+    'Empty = 0.2: after the reranker, a recent fact gains up to α/2 and an old one loses as much; 0 = ignore the date. Server 1.3.0',
   'true / false (défaut) ; une requête de plus par recherche. Serveur 1.2.0':
     'true / false (default); one additional request per search. Server 1.2.0',
-  'Recherche : reranker si la décision échoue': 'Search: reranker if the decision model fails',
-  'true / false (défaut : la recherche échoue avec la décision) ; le reranker configuré se charge alors dès le démarrage du serveur et reste en mémoire. Serveur 1.2.1':
-    'true / false (default: search fails with the decision model); the configured reranker then loads when the server starts and stays in memory. Server 1.2.1',
   'Ignoré par un serveur 1.0.0. Le fournisseur hindsight et les options prune/dedup demandent un serveur 1.2.0 ; sans URL locale, il envoie le contenu des faits à Hindsight Inference (Vectorize).':
     'Ignored by server 1.0.0. The hindsight provider and prune/dedup options require server 1.2.0; without a local URL, fact content is sent to Hindsight Inference (Vectorize).',
   'Vectorisation des faits.': 'Fact vectorization.',
@@ -105,8 +105,8 @@ const catalog: Record<string, string> = {
   'Clé Hindsight Inference': 'Hindsight Inference key',
   'Vide = clé enregistrée par « hindsight-admin cloud login »':
     'Empty = key saved by “hindsight-admin cloud login”',
-  "Changer de modèle ou de dimension d'embeddings rend les vecteurs existants incompatibles : la recherche se dégrade jusqu'à une ré-indexation complète (export puis import de la banque).":
-    'Changing the embedding model or dimensions makes existing vectors incompatible: search quality suffers until the bank is fully reindexed (export, then import).',
+  "Changer de modèle ou de dimension d'embeddings rend les vecteurs existants incompatibles : la recherche se dégrade jusqu'au recalcul des vecteurs (« hindsight-admin reembed », serveur 1.2.1, après une sauvegarde).":
+    'Changing the embedding model or dimensions makes existing vectors incompatible: search quality suffers until the vectors are recomputed (“hindsight-admin reembed”, server 1.2.1, after a backup).',
   'Réordonnancement des résultats de recherche.': 'Reranking of search results.',
   'Modèle Cohere': 'Cohere model',
   'Clé Cohere': 'Cohere key',

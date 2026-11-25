@@ -2,7 +2,7 @@ import Foundation
 
 /// Réglages serveur connus (variables d'environnement `HINDSIGHT_API_*`), regroupés par rôle.
 ///
-/// Source : `hindsight-api-slim/hindsight_api/config.py` du dépôt vectorize-io/hindsight (tag v1.2.1,
+/// Source : `hindsight-api-slim/hindsight_api/config.py` du dépôt vectorize-io/hindsight (tag v1.3.0,
 /// novembre 2026). Les noms peuvent différer selon la version installée : toute variable présente dans le
 /// script est de toute façon affichée et éditable, même absente de ce catalogue.
 public enum ServerSettingsCatalog {
@@ -116,9 +116,6 @@ public enum ServerSettingsCatalog {
                 Field(
                     name: "HINDSIGHT_API_RECALL_DECISION_MODEL_DEDUP", label: "Recherche : retirer les doublons",
                     help: "true / false (défaut) ; une requête de plus par recherche. Serveur 1.2.0"),
-                Field(
-                    name: "HINDSIGHT_API_RECALL_DECISION_MODEL_FALLBACK", label: "Recherche : reranker si la décision échoue",
-                    help: "true / false (défaut : la recherche échoue avec la décision) ; le reranker configuré se charge alors dès le démarrage du serveur et reste en mémoire. Serveur 1.2.1"),
             ] + ["RECALL", "REFLECT", "CONSOLIDATION"].flatMap { operation in
                 // Noms des fonctions tels que l'app les affiche partout (Recherche, Réponses, Consolidation).
                 let name = ["RECALL": "Recherche", "REFLECT": "Réponses"][operation] ?? "Consolidation"
@@ -160,7 +157,7 @@ public enum ServerSettingsCatalog {
                     name: "HINDSIGHT_API_EMBEDDINGS_HINDSIGHT_API_KEY", label: "Clé Hindsight Inference",
                     help: "Vide = clé enregistrée par « hindsight-admin cloud login »"),
             ], fallback: nil,
-            caution: "Changer de modèle ou de dimension d'embeddings rend les vecteurs existants incompatibles : la recherche se dégrade jusqu'à une ré-indexation complète (export puis import de la banque)."),
+            caution: "Changer de modèle ou de dimension d'embeddings rend les vecteurs existants incompatibles : la recherche se dégrade jusqu'au recalcul des vecteurs (« hindsight-admin reembed », serveur 1.2.1, après une sauvegarde)."),
         Role(id: "reranker", title: "Reranker", help: "Réordonnancement des résultats de recherche.",
             fields: [
                 Field(
@@ -182,6 +179,9 @@ public enum ServerSettingsCatalog {
                 Field(
                     name: "HINDSIGHT_API_RERANKER_HINDSIGHT_API_KEY", label: "Clé Hindsight Inference",
                     help: "Vide = clé enregistrée par « hindsight-admin cloud login »"),
+                Field(
+                    name: "HINDSIGHT_API_RECENCY_ALPHA", label: "Poids de la récence",
+                    help: "Vide = 0.2 : après le reranker, un fait récent gagne jusqu'à α/2 et un ancien perd autant ; 0 = ignorer la date. Serveur 1.3.0"),
             ], fallback: nil,
             caution: "Le reranker ne touche pas aux vecteurs : on peut en changer sans ré-indexer. En 1.2.0, le modèle local par défaut devient hs-rerank-1."),
         Role(id: "observability", title: "Journalisation", help: "Audit des accès et traces des appels LLM.",

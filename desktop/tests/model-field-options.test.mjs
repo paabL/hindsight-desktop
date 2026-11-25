@@ -72,7 +72,6 @@ test('decision toggles are booleans even though their variable name ends in MODE
   for (const name of [
     'HINDSIGHT_API_REFLECT_USE_DECISION_MODEL',
     'HINDSIGHT_API_RECALL_DECISION_MODEL_PRUNE',
-    'HINDSIGHT_API_RECALL_DECISION_MODEL_FALLBACK',
     'HINDSIGHT_API_AUDIT_LOG_ENABLED',
   ])
     assert.ok(isBooleanField({ name }));
